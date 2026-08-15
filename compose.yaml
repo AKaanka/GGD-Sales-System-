@@ -1,0 +1,112 @@
+name: ggd-sales-system
+
+services:
+  odoo-db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${ODOO_DB_USER}
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD}
+    volumes:
+      - odoo_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - private
+
+  odoo:
+    image: odoo:${ODOO_VERSION}
+    restart: unless-stopped
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: ${ODOO_DB_USER}
+      PASSWORD: ${ODOO_DB_PASSWORD}
+    command:
+      - odoo
+      - --admin-passwd=${ODOO_MASTER_PASSWORD}
+      - --db-filter=^${ODOO_DB_NAME}$$
+    ports:
+      - "127.0.0.1:${ODOO_LOCAL_PORT}:8069"
+    volumes:
+      - odoo_data:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons:ro
+    networks:
+      - private
+
+  n8n-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${N8N_DB_NAME}
+      POSTGRES_USER: ${N8N_DB_USER}
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD}
+    volumes:
+      - n8n_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${N8N_DB_USER} -d ${N8N_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - private
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      n8n-db:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_EDITOR_BASE_URL: http://localhost:${N8N_LOCAL_PORT}/
+      WEBHOOK_URL: http://localhost:${N8N_LOCAL_PORT}/
+      N8N_SECURE_COOKIE: "False"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "True"
+      N8N_RUNNERS_ENABLED: "True"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "True"
+      N8N_DIAGNOSTICS_ENABLED: "False"
+      N8N_PERSONALIZATION_ENABLED: "False"
+      EXECUTIONS_DATA_PRUNE: "True"
+      EXECUTIONS_DATA_MAX_AGE: 336
+      GENERIC_TIMEZONE: ${TIMEZONE}
+      TZ: ${TIMEZONE}
+    ports:
+      - "127.0.0.1:${N8N_LOCAL_PORT}:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./shared-files:/files
+    networks:
+      - private
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  odoo_db_data:
+    name: ggd_odoo_db_data
+  odoo_data:
+    name: ggd_odoo_data
+  n8n_db_data:
+    name: ggd_n8n_db_data
+  n8n_data:
+    name: ggd_n8n_data

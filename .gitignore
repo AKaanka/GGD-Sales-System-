@@ -1,0 +1,8 @@
+.env
+backups/*
+!backups/.gitkeep
+shared-files/*
+!shared-files/.gitkeep
+*.log
+.DS_Store
+

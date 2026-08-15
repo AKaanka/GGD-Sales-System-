@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_lead_view_form_ggd" model="ir.ui.view">
+        <field name="name">crm.lead.form.ggd.controls</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button
+                    name="action_ggd_approve_outreach"
+                    type="object"
+                    string="Approve Outreach"
+                    class="oe_highlight"
+                    invisible="ggd_outreach_approved or ggd_do_not_contact"
+                />
+                <button
+                    name="action_ggd_revoke_outreach"
+                    type="object"
+                    string="Revoke Approval"
+                    invisible="not ggd_outreach_approved"
+                />
+            </xpath>
+
+            <xpath expr="//notebook" position="inside">
+                <page string="GGD Intelligence" name="ggd_intelligence">
+                    <group string="Qualification" col="2">
+                        <group>
+                            <field name="ggd_industry"/>
+                            <field name="ggd_source_url" widget="url"/>
+                            <field name="ggd_fit_score"/>
+                        </group>
+                        <group>
+                            <field name="ggd_product_focus"/>
+                            <field name="ggd_fit_summary"/>
+                            <field name="ggd_personalization_angle"/>
+                        </group>
+                    </group>
+
+                    <group string="Outreach control" col="2">
+                        <group>
+                            <field name="ggd_contact_basis"/>
+                            <field name="ggd_contact_basis_note"/>
+                            <field name="ggd_do_not_contact"/>
+                        </group>
+                        <group>
+                            <field name="ggd_outreach_approved" readonly="1"/>
+                            <field name="ggd_outreach_approved_by" readonly="1"/>
+                            <field name="ggd_outreach_approved_at" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="Reply analysis" col="2">
+                        <group>
+                            <field name="ggd_reply_category"/>
+                            <field name="ggd_reply_summary"/>
+                            <field name="ggd_suggested_next_action"/>
+                        </group>
+                        <group>
+                            <field name="ggd_ai_confidence"/>
+                            <field name="ggd_ai_last_analyzed_at" readonly="1"/>
+                            <field name="ggd_last_message_id"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+
