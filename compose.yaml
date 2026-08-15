@@ -29,15 +29,17 @@ services:
       PORT: 5432
       USER: ${ODOO_DB_USER}
       PASSWORD: ${ODOO_DB_PASSWORD}
+      ODOO_DB_NAME: ${ODOO_DB_NAME}
+      ODOO_MASTER_PASSWORD: ${ODOO_MASTER_PASSWORD}
     command:
-      - odoo
-      - --admin-passwd=${ODOO_MASTER_PASSWORD}
-      - --db-filter=^${ODOO_DB_NAME}$$
+      - /bin/bash
+      - /usr/local/bin/start-ggd-odoo.sh
     ports:
       - "127.0.0.1:${ODOO_LOCAL_PORT}:8069"
     volumes:
       - odoo_data:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons:ro
+      - ./scripts/start-odoo.sh:/usr/local/bin/start-ggd-odoo.sh:ro
     networks:
       - private
 
