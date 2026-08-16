@@ -147,5 +147,11 @@ class CrmLead(models.Model):
                     "ggd_outreach_approved_at": False,
                 }
             )
+        elif values.get("ggd_outreach_approved") is False:
+            values.update(
+                {
+                    "ggd_outreach_approved_by": False,
+                    "ggd_outreach_approved_at": False,
+                }
+            )
         return super().write(values)
-

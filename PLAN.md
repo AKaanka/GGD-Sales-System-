@@ -92,3 +92,15 @@
 | LLM credentials/provider selection | Requires Kaan's choice |
 | Live n8n workflows | Built interactively after credentials and Odoo database exist |
 | Public/VPS deployment | Deliberately deferred |
+
+## Current implementation status
+
+The local interactive setup progressed through the CRM controls and the five
+planned automation areas on 16 August 2026. Major fictional/manual paths have
+been tested, a backup was created, static validation passed, and the local
+services reported healthy. The workflows are not considered production-ready
+until the remaining failure-path, restore, permission, and lawful-contact checks
+are complete.
+
+See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
+remaining checklist, and current time estimate.

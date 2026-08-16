@@ -11,6 +11,9 @@ This package starts a private local sales stack for Germany Growth Desk:
 
 Read [PLAN.md](PLAN.md) before starting.
 
+For the current local implementation progress, remaining QA work, and time
+estimate, see [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md).
+
 ## Beginner route with Codex and GitHub
 
 If you are not technical, start with

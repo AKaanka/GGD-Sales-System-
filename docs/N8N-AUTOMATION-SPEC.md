@@ -2,6 +2,14 @@
 
 This is the build specification for the first production-safe workflows. Build and test each workflow separately. Never put real credentials directly into node parameters or exported workflow JSON.
 
+## Local implementation note — 16 August 2026
+
+The workflow set has been created interactively in the local n8n instance and
+the principal fictional/manual paths have been exercised. This does not replace
+the acceptance criteria below. Keep workflows manual or inactive until the
+remaining failure-path and recovery checks in
+[PROJECT-STATUS.md](PROJECT-STATUS.md) are complete.
+
 ## Shared rules
 
 Every outbound path must query the current Odoo record immediately before sending and require:
@@ -146,4 +154,3 @@ If send outcome is uncertain, never retry automatically. Check Zoho Sent and the
 - LLM API credential
 
 Use n8n's encrypted credential store. Keep `N8N_ENCRYPTION_KEY` in the `.env` file and a password manager. Losing that key can make restored credentials unreadable.
-
