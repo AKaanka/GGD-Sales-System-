@@ -14,6 +14,11 @@ Read [PLAN.md](PLAN.md) before starting.
 For the current local implementation progress, remaining QA work, and time
 estimate, see [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md).
 
+Before any real outreach, also review the
+[QA test pack](docs/QA-TEST-PACK.md) and the
+[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). Both still
+contain open approval or testing work and are not production sign-off.
+
 ## Beginner route with Codex and GitHub
 
 If you are not technical, start with

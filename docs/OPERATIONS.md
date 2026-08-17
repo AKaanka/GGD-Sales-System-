@@ -16,6 +16,27 @@ The backup script creates:
 
 The Odoo database and filestore are a pair; restore them from the same backup timestamp.
 
+**Filestore location.** Odoo stores files under the configured `data_dir`.
+`scripts/start-odoo.sh` sets `data_dir = /var/lib/odoo`, so the active filestore is
+`/var/lib/odoo/filestore/<db>`. Archives taken before that setting existed contain
+the default layout `.local/share/Odoo/filestore/<db>` instead. After restoring an
+older archive, consolidate the two into the `data_dir` path before starting Odoo:
+
+The following is **not** a command to run directly in the macOS host terminal.
+Run it only inside an isolated restoration Odoo container where the restored
+Odoo volume is mounted at `/var/lib/odoo`:
+
+```
+cp -rn /var/lib/odoo/.local/share/Odoo/filestore/<db>/. /var/lib/odoo/filestore/<db>/
+```
+
+Replace `<db>` with the restored database name and inspect both directories
+before copying. Keep the old directory until the isolated restore has passed
+its checks. Never run this consolidation against the working local instance.
+
+Skipping this produces a running server whose web UI is blank, because asset
+requests fail with `FileNotFoundError` and no CSS or JS is served.
+
 The `.env` is intentionally not copied into the backup. Save its values separately in a password manager. In particular, preserve `N8N_ENCRYPTION_KEY`.
 
 ## Backup schedule
