@@ -46,6 +46,7 @@
                             <field name="ggd_outreach_approved" readonly="1"/>
                             <field name="ggd_outreach_approved_by" readonly="1"/>
                             <field name="ggd_outreach_approved_at" readonly="1"/>
+                            <field name="ggd_contact_basis_verified_at" readonly="1"/>
                         </group>
                     </group>
 
@@ -59,6 +60,8 @@
                             <field name="ggd_ai_confidence"/>
                             <field name="ggd_ai_last_analyzed_at" readonly="1"/>
                             <field name="ggd_last_message_id"/>
+                            <field name="ggd_last_send_key" readonly="1"/>
+                            <field name="ggd_last_sent_at" readonly="1"/>
                         </group>
                     </group>
                 </page>
