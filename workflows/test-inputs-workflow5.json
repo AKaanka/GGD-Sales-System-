@@ -1,0 +1,75 @@
+{
+  "comment": "Manual test inputs for Workflow 5 (Daily Follow-Up) — use these in manual trigger node",
+  "inputs": [
+    {
+      "name": "WS-B6: Stale query (14-day-old)",
+      "description": "Test that query correctly includes 14-day-old opportunity",
+      "payload": {
+        "opportunity_id": 142,
+        "name": "WS-F4: 14-Day-Old",
+        "email_from": "ws-f4@ggd-qa.invalid",
+        "ggd_last_message_date": "2026-08-04",
+        "ggd_last_message_id": "<ws-f4-001@example.invalid>",
+        "ggd_do_not_contact": false,
+        "stage": "Qualified"
+      },
+      "expected": {
+        "in_query_results": true,
+        "follow_up_activity_created": true,
+        "draft_generated": true
+      }
+    },
+    {
+      "name": "WS-B6: Control (3-day-old, not stale)",
+      "description": "Test that query EXCLUDES 3-day-old opportunity",
+      "payload": {
+        "opportunity_id": 143,
+        "name": "WS-F5: 3-Day-Old",
+        "email_from": "ws-f5@ggd-qa.invalid",
+        "ggd_last_message_date": "2026-08-15",
+        "ggd_last_message_id": "<ws-f5-001@example.invalid>",
+        "ggd_do_not_contact": false,
+        "stage": "Qualified"
+      },
+      "expected": {
+        "in_query_results": false,
+        "follow_up_activity_created": false,
+        "reason": "Less than 7 days old"
+      }
+    },
+    {
+      "name": "WS-B8: Suppressed record (skip)",
+      "description": "Test that suppressed records don't get follow-up",
+      "payload": {
+        "opportunity_id": 140,
+        "name": "WS-F2: Suppressed",
+        "email_from": "ws-f2@ggd-qa.invalid",
+        "ggd_last_message_date": "2026-08-04",
+        "ggd_do_not_contact": true,
+        "stage": "Qualified"
+      },
+      "expected": {
+        "in_query_results": false,
+        "follow_up_activity_created": false,
+        "reason": "ggd_do_not_contact=true"
+      }
+    },
+    {
+      "name": "WS-B8: Won stage (skip)",
+      "description": "Test that won/lost records don't get follow-up",
+      "payload": {
+        "opportunity_id": 144,
+        "name": "WS-F-Won: Already Won",
+        "email_from": "ws-won@ggd-qa.invalid",
+        "ggd_last_message_date": "2026-08-04",
+        "ggd_do_not_contact": false,
+        "stage": "Won"
+      },
+      "expected": {
+        "in_query_results": false,
+        "follow_up_activity_created": false,
+        "reason": "stage=Won"
+      }
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "comment": "Manual test inputs for Workflow 3 (Approved Send) — use these in manual trigger node",
+  "inputs": [
+    {
+      "name": "WS-B2: Basic send (WS-F1)",
+      "description": "Test successful send workflow with approved opportunity",
+      "payload": {
+        "opportunity_id": 139,
+        "name": "WS-F1: Approved Prospect",
+        "email_from": "ws-f1@ggd-qa.invalid",
+        "ggd_contact_basis": "consent",
+        "ggd_contact_basis_note": "Opt-in via website form 2026-03-04, record ref WEB-1183.",
+        "ggd_do_not_contact": false,
+        "ggd_outreach_approved": true
+      },
+      "expected": {
+        "email_sent": true,
+        "send_key_claimed": true,
+        "approval_revoked": true
+      }
+    },
+    {
+      "name": "WS-B3: Idempotency test (re-claim same key)",
+      "description": "Test that re-running with claimed key prevents send",
+      "payload": {
+        "opportunity_id": 139,
+        "name": "WS-F1: Approved Prospect",
+        "email_from": "ws-f1@ggd-qa.invalid",
+        "ggd_last_send_key": "139-send-20260818-124000",
+        "ggd_do_not_contact": false,
+        "ggd_outreach_approved": true
+      },
+      "expected": {
+        "email_sent": false,
+        "error_message": "key already claimed",
+        "smtp_skipped": true
+      }
+    },
+    {
+      "name": "WS-B4: Suppression guard (WS-F2)",
+      "description": "Test that suppressed contact skips send",
+      "payload": {
+        "opportunity_id": 140,
+        "name": "WS-F2: Do Not Contact",
+        "email_from": "ws-f2@ggd-qa.invalid",
+        "ggd_contact_basis": "consent",
+        "ggd_contact_basis_note": "Opt-in via website form 2026-03-04, record ref WEB-1183.",
+        "ggd_do_not_contact": true,
+        "ggd_outreach_approved": true
+      },
+      "expected": {
+        "email_sent": false,
+        "approval_check_failed": true,
+        "violation": "ggd_do_not_contact is true",
+        "review_note_created": true
+      }
+    },
+    {
+      "name": "WS-B5: Basis-missing guard",
+      "description": "Test that missing contact basis prevents send",
+      "payload": {
+        "opportunity_id": 141,
+        "name": "WS-F3: No Basis",
+        "email_from": "ws-f3@ggd-qa.invalid",
+        "ggd_contact_basis": null,
+        "ggd_contact_basis_note": null,
+        "ggd_do_not_contact": false,
+        "ggd_outreach_approved": true
+      },
+      "expected": {
+        "email_sent": false,
+        "approval_check_failed": true,
+        "violation": "ggd_contact_basis is empty",
+        "review_note_created": true
+      }
+    }
+  ]
+}
