@@ -31,9 +31,51 @@ instructions.
 | Workflow activation | Main workflows inactive; shared error handler active |
 | Outbound gate | Requires approval, no suppression, and a non-empty contact basis |
 
-The sender-email fallback was exercised in a work-in-progress copy. It is not
-approved as a replacement for the original reply workflow until the final
-matching and suppression tests pass. IMAP remains disabled.
+**GGD 04c was ported into live GGD 04 on 18 August 2026.** The live workflow now
+carries the two-key matching, the suppression branch, the review queue, the
+confidence threshold and the Always Output Data fix. Verified by comparing node
+names, the full connection graph, the per-node alwaysOutputData / executeOnce /
+retryOnFail flags, and the matcher source byte-for-byte: both sides produce the
+identical signature `5589a868be9bde6d`. The workflow remains **inactive**, the
+error-handler wiring is preserved, and IMAP remains disabled.
+
+**A1 and A9 re-run and passed against live GGD 04 on 18 August 2026.**
+
+- A1: reply from `f5@ggd-qa.invalid`, matched on sender alone to id 7,
+  classified `information` at 0.95, and a real recommendation was written
+  ("Prepare and send the price list and reference documents"). Approval and
+  suppression flags unchanged.
+- A9: reply from `f4@ggd-qa.invalid`, again an enthusiastic meeting request.
+  Classified `meeting` at 0.95, and the suppression branch still overrode it —
+  `ggd_suggested_next_action` reads "No action - contact is suppressed (do not
+  contact)", `ggd_do_not_contact` stayed true, approval stayed false.
+
+Together these exercise both legs of the suppression branch on the live
+workflow, not just on the WIP copy. F1, F2 and F3 were verified unchanged by
+both runs.
+
+**A2, A3 and A4 also re-run and passed against live GGD 04 on 18 August 2026.**
+
+- A2: reply from the shared address produced two review notes
+  (`mail.message` 197 on id 5, 198 on id 4) and **no field writes on either
+  record** — both still show no category, no confidence, no message ID, and
+  their approval flags unchanged. The LLM branch never ran.
+- A3: reply from `andere-person@ggd-qa.invalid`, an address matching nothing,
+  carrying F5's message ID. Resolved through the thread search to id 7 and
+  classified `referral` at 0.88.
+- A4: reply from `voellig-unbekannt@ggd-qa.invalid` with no thread header
+  matched neither key and raised review activity 7 on the inbox record, with
+  the Message-ID correctly escaped and visible.
+
+**All of A1–A7 and A9 now pass on the live workflow, not only on a WIP copy.**
+A8 is the only Section A test outstanding, and it requires stopping the Odoo
+container mid-run.
+
+Rollback snapshots, all inactive: `GGD 04s` (live 04 before this port),
+`GGD 04d` (04c before the matching rewrite), `GGD 03s` (03 before the send-key
+wiring). `GGD 04b` is abandoned and `GGD 04t` is the injection harness. Prune
+these once you are satisfied — five near-identical copies is how the wrong one
+gets run.
 
 ## Fictional fixtures
 
@@ -267,7 +309,35 @@ real workflow, or it will quietly test something that no longer exists.
 - Execute the test workflow and then restart Odoo.
 - Expected: sanitized error handling; no secrets; no duplicate CRM write after
   recovery.
-- Current status: not run.
+- Current status: **not run — set up and ready.** Live GGD 04's test input is
+  already loaded with a case that succeeds normally (reply from
+  `f5@ggd-qa.invalid`, message ID `<live04-A8-001@example.invalid>`), so any
+  failure is unambiguously caused by Odoo being down rather than by the input.
+
+  To run it:
+
+  1. Note F5's current state first — it should read category `referral`,
+     confidence 0.88, message ID `<live04-A3-001@example.invalid>`. This is the
+     baseline that must be unchanged after the failed run.
+  2. `docker compose stop odoo` — **only the app container. Do not stop
+     `odoo-db`.**
+  3. Open GGD 04 and click Execute workflow. Expect a failure at
+     `Get many opportunities`, the first node that reaches Odoo.
+  4. `docker compose start odoo`, wait for it to answer on 8069.
+  5. Check that GGD 99 recorded the failure, and that the record contains the
+     workflow name, execution ID, failing node and a short error summary — and
+     **no credentials, no API keys and no full email body** (this doubles as
+     evidence for C2).
+  6. Re-read F5. It must still show `referral` / 0.88 /
+     `<live04-A3-001@example.invalid>`. Any change means a partial write got
+     through.
+  7. Click Execute again with Odoo back up. It should now succeed and write
+     `<live04-A8-001@example.invalid>`, proving the item is re-runnable rather
+     than poisoned.
+
+  The failure is expected to land on a read, before any write, so the likely
+  outcome is a clean failure. The point of the test is to prove that rather
+  than assume it.
 
 **Related finding, 18 August 2026 — model call timeouts.** During the A6 attempt
 the `Basic LLM Chain` failed twice with "Request timed out", both times at
@@ -334,7 +404,39 @@ earlier. The gate code checks all three conditions — `ggd_outreach_approved`,
 require. `Send an Email` has `retryOnFail` false and no error override, which is
 what B5 requires; do not change it.
 
-**Send-key duplicate protection built, 18 August 2026 — not yet run.**
+### Behavioural test of the outbound gate, 18 August 2026
+
+The gate code was executed directly against a matrix of records, without
+modifying it, to see what it actually permits. Results:
+
+| Record state | Gate verdict | Correct? |
+| --- | --- | --- |
+| All conditions met | allow | yes |
+| `ggd_outreach_approved` false | block | yes |
+| `ggd_do_not_contact` true | block | yes |
+| `ggd_contact_basis` empty | block | yes |
+| Suppressed **and** approved | block | yes — suppression wins |
+| **No recipient address** | **allow** | **no** |
+| **Basis `referral`** | **allow** | **no** |
+| **Contact-basis note empty** | **allow** | **no** |
+
+The first five are the controls B2, B3 and B4 depend on, and they hold.
+
+**The gap that matters: the gate checks only that a contact basis is
+non-empty, not which basis it is.** `referral`, `other` and
+trade-fair-without-opt-in are never a lawful basis for a first marketing email
+under [LAWFUL-CONTACT-PROCEDURE.md](LAWFUL-CONTACT-PROCEDURE.md) section 4. The
+Odoo addon now refuses to approve those, but the send workflow was relying on
+that entirely. Any record approved before the addon guard existed, or approved
+through a path that bypasses it, would still have sent.
+
+**Fixed additively** with a second check, `Lawful basis and recipient present?`,
+between the main gate and the send-key check. It refuses the no-email bases and
+refuses a send with no recipient address, routing both to the existing
+blocked-gate review note. It reads the record independently rather than trusting
+the earlier gate's verdict. Not yet exercised by a live run.
+
+### Send-key duplicate protection built, 18 August 2026 — not yet run.
 Inspection found no send-key logic at all, so nothing prevented a repeat run
 from sending twice.
 
@@ -403,6 +505,62 @@ the recipient must be Kaan's own mailbox.
 - Status: test method not yet implemented.
 
 ## C. Error handling and least privilege
+
+### C0 — the error workflow has never actually fired
+
+**Finding, 18 August 2026. This undercuts C1, C2, B5 and A8, so read it first.**
+
+The wiring is correct: GGD 04, 04c, 04t and 03 all reference
+`xMbI9hyKnfim5M1q` as their error workflow, and GGD 99 is active. But GGD 99's
+most recent execution is **#84, from 16 August**, while 18 August produced
+several genuine failures — two Anthropic timeouts and one node error on 04c.
+None of them produced an error-handler execution.
+
+The evidence points to n8n not invoking the error workflow for **manual**
+executions. Every workflow here is inactive and manual-only, by design. So the
+entire error-handling layer has never engaged for a real failure, and cannot
+under the conditions this pack currently uses.
+
+The "GGD reply analysis failed validation" notes in Odoo are **not** evidence to
+the contrary. Those are written by the workflow's own
+`Record invalid reply-analysis output` node on its normal path. They are not
+error-handler output.
+
+What this means below:
+
+- **C1** cannot be satisfied by "cause one safe test-only failure" while
+  everything is manual. Causing the failure is easy; the handler will not fire.
+- **C2** has nothing to review — no error records exist to inspect for leaked
+  credentials, because none have been produced.
+- **B5** assumes the handler records "send outcome uncertain". On a manual run
+  it will not, so an uncertain send would leave no trace at all. That is the
+  most serious consequence, because it is the case where you most need a record.
+- **A8** will fail cleanly but is unlikely to produce a handler entry.
+
+Resolve before sign-off. **A ready-made proof workflow now exists:**
+`GGD 98t - error handler proof (test only, delete after)`, id
+`FvXkjOO4v2PyNpqI`. It contains exactly two nodes — a one-minute schedule
+trigger and a code node that throws — and its error workflow is set to GGD 99.
+It has no credentials, sends nothing, and writes nothing. It is currently
+**inactive**.
+
+To settle the question, roughly two minutes:
+
+1. Note GGD 99's latest execution ID.
+2. Activate `GGD 98t`.
+3. Wait about 90 seconds so the schedule fires at least once.
+4. **Deactivate it immediately.**
+5. Check GGD 99's executions. A new one means the handler does fire for
+   production executions and the problem is only that manual runs bypass it —
+   so C1, C2 and B5 must be run against an activated copy. No new execution
+   means the handler is broken outright, which is a much bigger problem and
+   blocks sign-off entirely.
+6. Either way, open the resulting GGD 99 record and check it for leaked
+   credentials. That is C2's evidence, and it does not exist until this runs.
+7. Delete `GGD 98t`.
+
+Do not skip step 4. It is the only workflow in this project that has ever been
+activated, and it should not stay that way.
 
 ### C1 — Shared error workflow
 
