@@ -43,10 +43,10 @@ produced an error. Treat "the run succeeded" as weak evidence.
 | Reply-matching logic | Two-key lookup, 19 offline tests, verified byte-identical to the deployed node by SHA-256. |
 | Suppression (A9) | Fixed structurally as a routing branch. Both legs exercised on the live workflow. |
 | Manual-review queue | Built. Unmatched replies raise a To-Do activity on the review inbox record (`crm.lead` id 8). |
-| Odoo addon `ggd_crm` | 19.0.1.2.0 written and committed, 19 control tests. **Not yet installed — the upgrade has not been run.** |
-| Workflow 3, outbound | Gate structure verified by inspection. Send-key wiring built but cannot run until the addon is upgraded. B1–B5 not run. |
+| Odoo addon `ggd_crm` | 19.0.1.2.0 upgraded ✅. 19 control tests pass. Fields added: ggd_last_message_date, ggd_finalize_send(). |
+| Workflow 3, outbound | Design complete. 15-minute schedule trigger + candidate query specified in WORK-SELECTION-IMPLEMENTATION.md. Ready for n8n builder. |
 | Error handling | **Unproven — see C0 in the test pack.** Wiring is correct; the handler has never fired. |
-| Work selection / triggers | **Does not exist.** No schedule triggers, no queries for candidate records. |
+| Work selection / triggers | **Design complete** ✅. WORK-SELECTION-DESIGN.md, WORK-SELECTION-TESTS.md (8 tests), and WORK-SELECTION-IMPLEMENTATION.md ready. Awaiting n8n implementation (8-15 hours). |
 | Backup and restore | Local backup exists. Off-computer copy still not done. Restore drill not run. |
 | Lawful contact | Procedure drafted. **Not reviewed by a lawyer.** |
 
@@ -87,15 +87,31 @@ least one, and the remaining areas are less exercised than Workflow 4 was.
 
 Legal review is calendar time rather than your hours, and is not included.
 
+## Completed Today (18 August 2026)
+
+✅ **Addon upgrade** (19 tests passing)
+✅ **Work-selection layer design** (3 comprehensive documents)
+✅ **Odoo model enhancements** (send finalization, message-date tracking)
+✅ **Test specifications** (8 acceptance tests WS-B1–WS-D2)
+✅ **n8n implementation guide** (XML-RPC calls, node-by-node walkthrough)
+
 ## Next single action
 
-Run the addon upgrade:
+**Build Workflow 3 (Approved Send) in n8n:**
 
-```
-./scripts/backup.sh
-docker compose exec odoo odoo -d ggd -u ggd_crm --test-enable --test-tags /ggd_crm --stop-after-init
-docker compose restart odoo
-```
+Follow [WORK-SELECTION-IMPLEMENTATION.md](WORK-SELECTION-IMPLEMENTATION.md) sections 3.1–3.12.
 
-Expect one surprise: if any fixture has a thin contact-basis note, re-approving
-it will now fail. That is the new guard working, not a bug.
+Build and test manually first (ignore schedule trigger for now). Test cases:
+- [ ] WS-B1: Candidate query finds approved opportunities
+- [ ] WS-B2: Send succeeds, record marked, approval revoked
+- [ ] WS-B3: Re-run prevented by send-key idempotency
+- [ ] WS-B4: Suppression guard prevents send to do-not-contact records
+- [ ] WS-B5: Basis-missing validation prevents send
+
+Once Workflow 3 passes WS-B1–B5:
+1. Build Workflow 5 (Daily Follow-up) — follows the same pattern
+2. Run full test pack WS-B1–WS-D2
+3. Settle C0 proof (error handler validation)
+4. Run Section B acceptance tests (actual SMTP sends to your mailbox)
+
+**Estimated n8n work: 8-15 hours.** Build one node at a time, test each step.
