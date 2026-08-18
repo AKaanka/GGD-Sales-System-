@@ -147,6 +147,12 @@ class CrmLead(models.Model):
         readonly=True,
         copy=False,
     )
+    ggd_last_message_date = fields.Date(
+        string="Last message date",
+        copy=False,
+        readonly=True,
+        help="Latest date of any message (sent or received); used for follow-up scheduling.",
+    )
 
     @api.constrains("ggd_fit_score")
     def _check_ggd_fit_score(self):
@@ -239,6 +245,24 @@ class CrmLead(models.Model):
             "ggd_last_sent_at": fields.Datetime.now(),
         })
         return True
+
+    def ggd_finalize_send(self):
+        """Mark send as complete and revoke approval to prevent resends.
+
+        Called by the outbound workflow immediately AFTER successful SMTP.
+        Updates message date for follow-up scheduling and clears approval.
+        """
+        self.ensure_one()
+        now = fields.Datetime.now()
+        self.write({
+            "ggd_last_message_date": now.date(),
+            "ggd_outreach_approved": False,
+            "ggd_outreach_approved_by": False,
+            "ggd_outreach_approved_at": False,
+        })
+        self.message_post(
+            body=_("GGD outreach sent. Approval revoked; reply analysis will run on inbound.")
+        )
 
     def action_ggd_revoke_outreach(self):
         for lead in self:
