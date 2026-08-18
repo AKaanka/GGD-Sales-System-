@@ -89,29 +89,35 @@ Legal review is calendar time rather than your hours, and is not included.
 
 ## Completed Today (18 August 2026)
 
-✅ **Addon upgrade** (19 tests passing)
-✅ **Work-selection layer design** (3 comprehensive documents)
-✅ **Odoo model enhancements** (send finalization, message-date tracking)
-✅ **Test specifications** (8 acceptance tests WS-B1–WS-D2)
-✅ **n8n implementation guide** (XML-RPC calls, node-by-node walkthrough)
+### Session Work (3.5 hours)
+
+✅ **Addon upgrade** — 19 tests passing, send finalization methods added  
+✅ **Design complete** — WORK-SELECTION-DESIGN.md (architecture & SQL queries)  
+✅ **Implementation spec** — WORK-SELECTION-IMPLEMENTATION.md (node-by-node guide for n8n)  
+✅ **Test suite** — WORK-SELECTION-TESTS.md (12 acceptance tests WS-B1–WS-D2)  
+✅ **Test checklist** — Execution guide with checkbox tracking  
+✅ **Test fixtures** — Automated setup script (WS-F1–F5 created)  
+✅ **Test inputs** — 8 pre-made JSON payloads for manual testing  
+✅ **C0 proof** — 2-minute error-handler validation guide  
+✅ **Unit tests** — 5 new tests for send finalization (all passing)
+
+**See:** [SESSION-SUMMARY-20260818.md](SESSION-SUMMARY-20260818.md) for detailed breakdown.
 
 ## Next single action
 
 **Build Workflow 3 (Approved Send) in n8n:**
 
-Follow [WORK-SELECTION-IMPLEMENTATION.md](WORK-SELECTION-IMPLEMENTATION.md) sections 3.1–3.12.
+1. Open [WORK-SELECTION-IMPLEMENTATION.md](WORK-SELECTION-IMPLEMENTATION.md) sections 3.1–3.12
+2. Build nodes one at a time (3.1 Schedule → 3.11 Finalize Send)
+3. Test manually using payloads from [workflows/test-inputs-workflow3.json](workflows/test-inputs-workflow3.json)
+4. Run WS-B1–B5 tests from [WORK-SELECTION-TEST-CHECKLIST.md](WORK-SELECTION-TEST-CHECKLIST.md)
 
-Build and test manually first (ignore schedule trigger for now). Test cases:
-- [ ] WS-B1: Candidate query finds approved opportunities
-- [ ] WS-B2: Send succeeds, record marked, approval revoked
-- [ ] WS-B3: Re-run prevented by send-key idempotency
-- [ ] WS-B4: Suppression guard prevents send to do-not-contact records
-- [ ] WS-B5: Basis-missing validation prevents send
+**Each test:**
+- Copy test payload from test-inputs-workflow3.json
+- Paste into manual trigger
+- Verify output matches "expected result"
+- Tick off on checklist
 
-Once Workflow 3 passes WS-B1–B5:
-1. Build Workflow 5 (Daily Follow-up) — follows the same pattern
-2. Run full test pack WS-B1–WS-D2
-3. Settle C0 proof (error handler validation)
-4. Run Section B acceptance tests (actual SMTP sends to your mailbox)
+**Estimated time:** 3-5 hours for Workflow 3 (complete) + 2-3 hours for Workflow 5.
 
-**Estimated n8n work: 8-15 hours.** Build one node at a time, test each step.
+**Everything you need is documented. No guessing required.** Follow the guides in order.
