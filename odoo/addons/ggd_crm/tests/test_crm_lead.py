@@ -231,3 +231,107 @@ class TestGgdOutreachApproval(TransactionCase):
             with self.subTest(value=bad):
                 with self.assertRaises(ValidationError):
                     lead.write({"ggd_fit_score": bad})
+
+    # ------------------------------------------------------------------
+    # Work-selection layer: send finalization and idempotency
+    # ------------------------------------------------------------------
+
+    def test_finalize_send_updates_all_fields(self):
+        """Verify finalize_send() atomically marks send complete and revokes approval."""
+        from odoo import fields
+
+        lead = self._lead(
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+            ggd_outreach_approved=True,
+            ggd_outreach_approved_by=self.env.user.id,
+            ggd_outreach_approved_at=fields.Datetime.now(),
+            ggd_last_send_key="test-key-123",
+        )
+
+        # Verify initial state
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertIsNotNone(lead.ggd_outreach_approved_at)
+
+        # Call finalize_send
+        lead.ggd_finalize_send()
+
+        # Verify all fields updated
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_outreach_approved_by)
+        self.assertFalse(lead.ggd_outreach_approved_at)
+        self.assertEqual(lead.ggd_last_message_date, fields.Date.today())
+
+        # Verify chatter note created
+        messages = lead.message_ids.filtered(
+            lambda m: "GGD outreach sent" in m.body
+        )
+        self.assertTrue(messages, "Chatter note not created")
+
+    def test_finalize_send_revokes_approval_atomically(self):
+        """Finalize revokes approval in one atomic write."""
+        lead = self._lead(
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+            ggd_outreach_approved=True,
+            ggd_outreach_approved_by=self.env.user.id,
+            ggd_last_send_key="sent-key-1",
+        )
+
+        # Before finalize, approval is set
+        self.assertTrue(lead.ggd_outreach_approved)
+
+        lead.ggd_finalize_send()
+
+        # After finalize, approval is cleared (prevents automatic resends)
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_outreach_approved_by)
+        self.assertFalse(lead.ggd_outreach_approved_at)
+
+        # But record can be re-approved if conditions still met (that's okay)
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+
+    def test_last_message_date_set_on_finalize(self):
+        """ggd_last_message_date is set to today when send finalizes."""
+        from odoo import fields
+
+        lead = self._lead()
+        self.assertFalse(lead.ggd_last_message_date)
+
+        lead.ggd_finalize_send()
+
+        self.assertEqual(lead.ggd_last_message_date, fields.Date.today())
+
+    def test_last_message_date_persists_across_writes(self):
+        """ggd_last_message_date is not cleared by normal write operations."""
+        from odoo import fields
+
+        lead = self._lead()
+        today = fields.Date.today()
+        lead.ggd_last_message_date = today
+
+        # Write other fields — message date should persist
+        lead.write({"name": "Updated name"})
+
+        self.assertEqual(lead.ggd_last_message_date, today)
+
+    def test_send_key_claim_before_finalize(self):
+        """Typical send workflow: claim key, then finalize."""
+        from odoo import fields
+
+        lead = self._lead()
+
+        # Step 1: Claim send key
+        can_send = lead.ggd_claim_send_key("order-123-send-v1")
+        self.assertTrue(can_send)
+        self.assertEqual(lead.ggd_last_send_key, "order-123-send-v1")
+        self.assertIsNotNone(lead.ggd_last_sent_at)
+
+        # Step 2: Finalize (after SMTP succeeds)
+        lead.ggd_finalize_send()
+        self.assertEqual(lead.ggd_last_message_date, fields.Date.today())
+
+        # Step 3: Verify idempotency — re-claim same key returns False
+        can_resend = lead.ggd_claim_send_key("order-123-send-v1")
+        self.assertFalse(can_resend)
