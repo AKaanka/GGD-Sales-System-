@@ -6,3 +6,7 @@ shared-files/*
 *.log
 .DS_Store
 
+
+# Python bytecode (Odoo addons)
+__pycache__/
+*.pyc
