@@ -516,6 +516,58 @@ Use a newly created fictional fixture for B1–B5. Do not reuse F1 or F4.
 Before any actual email test, Kaan must explicitly approve that single test and
 the recipient must be Kaan's own mailbox.
 
+### B1 and B2 — RESULTS, 19 August 2026
+
+**B1 — controlled send: PASS**, on fixture F7 (`crm.lead` id 175), recipient the
+owner mailbox, receipt confirmed.
+
+| Check | Result |
+| --- | --- |
+| Email delivered | yes |
+| `ggd_last_send_key` written | `175-2026-08-19 09:25:05` |
+| `ggd_last_message_id` recorded | yes |
+| Approval consumed | true to false |
+| Unrelated fields untouched | `probability` still 50 |
+
+**B2 — send-key idempotency: PASS**, on fixture F8 (`crm.lead` id 176).
+
+Getting a *meaningful* result took four attempts, and the first three matter,
+because each looked like a pass and proved nothing:
+
+1. Re-running after the send blocked at the **approval gate** — approval was
+   already consumed, so the run never reached the key.
+2. Re-approving and re-running blocked at the **Message-ID guard** — the stored
+   outbound ID stopped it first.
+3. A second identical attempt blocked the same way.
+
+No email was sent in any of them, which is the safe outcome — but the send key
+was never exercised. **"No email arrived" is not evidence that the control you
+meant to test is working.**
+
+F8 was built to leave exactly one possible blocker: approved, not suppressed,
+`consent` basis with a note, recipient present, approval timestamp present, **no
+stored Message-ID**, and `ggd_last_send_key` pre-set to the value the run would
+compute — simulating a crash after claiming but before approval was consumed.
+The run blocked, no email arrived, and the review note gave **no other reason**,
+so the block is attributable to `Send key unused?` alone. The record was not
+written to at all.
+
+### Defects B1 exposed before it passed
+
+The first B1 attempt sent an email and revealed four faults, three of them
+silent:
+
+| Defect | Consequence |
+| --- | --- |
+| Claim node inherited seven unrelated fields set to 0 when cloned | A successful send would have zeroed `probability`, `expected_revenue`, `ggd_fit_score` and `ggd_ai_confidence`, as a side effect of an idempotency check |
+| Claim node's record ID expression was blank | The Odoo update targeted no record, **reported success**, wrote no send key — and the email went out anyway |
+| `ggd_last_sent_at` written as an ISO timestamp | Rejected by Odoo's `%Y-%m-%d %H:%M:%S` format; this error is the only reason the previous defect never reached production data |
+| `GGD controlled send audit` referenced `Prepare send audit record` without its trailing period | Latent since creation; unreachable until a send actually succeeded |
+
+The blank-ID case is the one to carry forward: **an Odoo update with an empty ID
+returns success and writes nothing**, so a safety control can report success
+while doing nothing. See OPERATIONS.md.
+
 ### B1 — Duplicate-send prevention
 
 - Execute the same approved item twice.
