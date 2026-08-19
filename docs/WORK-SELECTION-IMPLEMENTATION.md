@@ -93,7 +93,7 @@ Configuration:
     <param><value>
       <array><data>
         <value><array><data>
-          <value><string>ggd_outreach_approval_date</string></value>
+          <value><string>ggd_outreach_approved_at</string></value>
           <value><string>asc</string></value>
         </data></array></value>
       </data></array>

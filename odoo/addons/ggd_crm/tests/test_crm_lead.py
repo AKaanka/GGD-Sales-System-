@@ -179,6 +179,33 @@ class TestGgdOutreachApproval(TransactionCase):
         )
         self.assertFalse(lead.ggd_outreach_approved)
 
+    def test_direct_write_approval_stamps_metadata(self):
+        """Approval by any route must leave approver and timestamp behind.
+
+        The send key is derived from the approval time. A record approved
+        without one cannot be revoked, re-approved and sent again, because the
+        key would not change.
+        """
+        lead = self._lead(
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+        )
+        lead.write({"ggd_outreach_approved": True})
+
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertTrue(lead.ggd_outreach_approved_at)
+        self.assertEqual(lead.ggd_outreach_approved_by, self.env.user)
+        self.assertTrue(lead.ggd_contact_basis_verified_at)
+
+    def test_create_approved_stamps_metadata(self):
+        lead = self._lead(
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+            ggd_outreach_approved=True,
+        )
+        self.assertTrue(lead.ggd_outreach_approved_at)
+        self.assertEqual(lead.ggd_outreach_approved_by, self.env.user)
+
     # ------------------------------------------------------------------
     # Duplicate-send protection
     # ------------------------------------------------------------------

@@ -303,6 +303,9 @@ class CrmLead(models.Model):
                     values.get("ggd_contact_basis"),
                     values.get("ggd_contact_basis_note"),
                 )
+                values.setdefault("ggd_outreach_approved_by", self.env.user.id)
+                values.setdefault("ggd_outreach_approved_at", fields.Datetime.now())
+                values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
         return super().create(vals_list)
 
     def write(self, values):
@@ -333,4 +336,12 @@ class CrmLead(models.Model):
                     values.get("ggd_contact_basis", lead.ggd_contact_basis),
                     values.get("ggd_contact_basis_note", lead.ggd_contact_basis_note),
                 )
+            # Stamp the approval metadata that the button would have set.
+            # Without this, a record approved by a direct write carries no
+            # approver and no timestamp, and the outbound send key - which is
+            # derived from the approval time - cannot distinguish one approval
+            # from the next.
+            values.setdefault("ggd_outreach_approved_by", self.env.user.id)
+            values.setdefault("ggd_outreach_approved_at", fields.Datetime.now())
+            values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
         return super().write(values)

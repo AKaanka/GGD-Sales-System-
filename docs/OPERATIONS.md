@@ -66,6 +66,95 @@ The starter kit pins both applications to explicit image versions. Treat a
 change to `ODOO_VERSION` or `N8N_VERSION` as an update: back up first and test
 the new version before keeping it.
 
+## Known issues
+
+Both of these were found on 18 August 2026 and share a shape: **the system
+reports success, and the truth is different.** Neither raises an error, so
+neither is visible from a status field or a green execution.
+
+### Deactivating a workflow can silently fail
+
+**What happens.** A workflow's stored `active` flag reads `false`, the UI shows
+it switched off, and the schedule trigger keeps firing anyway. Observed on
+`GGD 98t`: seven consecutive one-minute executions while the flag read `false`,
+each one caught by the shared error handler.
+
+**Why it matters.** The rule that every workflow stays inactive is enforced by
+reading a toggle. This is a case where the toggle lies. On an outbound workflow
+it would select approved candidates and send email while appearing to be off.
+
+**How to verify a workflow is really off.** Do not trust the toggle. Watch the
+workflow's execution list and confirm **two consecutive missed schedule cycles**.
+Absence of executions is the only trustworthy evidence.
+
+**How to fix it.** Send an explicit deactivate even though the workflow already
+reads inactive — that is what unregistered the trigger here. Do **not** toggle it
+on first; that risks registering a second trigger. If the trigger persists,
+restart the n8n container, which rebuilds the trigger registry from stored
+state.
+
+Note that the n8n activate endpoint requires a `versionId` in the request body.
+A call without it fails with HTTP 400, which can look like a permissions problem
+rather than a malformed request.
+
+### Reading a missing Odoo record returns empty, not an error
+
+**What happens.** Fetching a `crm.lead` by an ID that does not exist completes
+**successfully** with an empty result. Confirmed with ID 999999: two scheduled
+runs, both `success`.
+
+**Why it matters.** A workflow whose record has been deleted or archived carries
+on with empty data instead of failing. Downstream nodes then act on blanks, and
+nothing in the execution log suggests a problem. This is the same failure shape
+as an Odoo search returning no rows, which ends the run while still marking it
+successful.
+
+**Consequence for testing.** A missing record cannot be used to provoke the
+error handler. Only a genuine outage will do it — stop the Odoo application
+container, never its database.
+
+**Consequence for design.** After any Odoo read whose result is then used, check
+that a record actually came back. Do not infer it from the node succeeding.
+
+### An Odoo update with an empty record ID reports success
+
+**What happens.** An n8n Odoo `update` node whose record ID expression evaluates
+to empty does not fail. It returns success, writes nothing, and the workflow
+continues as though the write had landed.
+
+**How it was found.** During B1 on 19 August the `Claim send key before SMTP`
+node had its ID expression blanked by an earlier edit. The send key was never
+written, the node reported success, and the email was sent anyway — removing
+duplicate-send protection while every indicator said the run had worked.
+
+**Why it matters.** This is the most dangerous member of the silent-success
+family, because it sits on the outbound path. A blank ID means the guard writes
+nothing and the send still happens.
+
+**What to do.** After editing any Odoo write node, check **both** the target ID
+expression and the field list. Do not assume a field-mapping edit preserved the
+ID. Where a write is a safety control, verify the record afterwards rather than
+trusting the node's success status.
+
+### Editing workflows through the API while an editor tab is open
+
+Changes made through the n8n REST API can be silently reverted by an open n8n
+editor tab re-saving its own stale copy. Observed on 19 August: a verified fix
+to the claim node was found undone later in the session.
+
+Close editor tabs for a workflow before changing it through the API, and
+re-read the workflow after saving to confirm the change is still there.
+
+### Pre-activation checklist
+
+Before activating any workflow, in this order:
+
+1. Read the toggle state and confirm it shows inactive.
+2. Watch the execution list for **two or more missed schedule cycles**.
+3. Only then treat the workflow as off.
+
+Step 2 is the one that matters. Step 1 on its own has already been wrong once.
+
 ## Local security
 
 - Both web ports bind to `127.0.0.1` only.

@@ -431,10 +431,54 @@ that entirely. Any record approved before the addon guard existed, or approved
 through a path that bypasses it, would still have sent.
 
 **Fixed additively** with a second check, `Lawful basis and recipient present?`,
-between the main gate and the send-key check. It refuses the no-email bases and
-refuses a send with no recipient address, routing both to the existing
-blocked-gate review note. It reads the record independently rather than trusting
-the earlier gate's verdict. Not yet exercised by a live run.
+between the main gate and the send-key check. It refuses the no-email bases,
+refuses a send with no recipient address, and refuses a record with no approval
+timestamp. It reads the record independently rather than trusting the earlier
+gate's verdict.
+
+### Work-selection layer and gate results, 18 August 2026
+
+The schedule trigger and candidate query were added to the existing GGD 03
+rather than to a new workflow, so the verified gate chain is reused rather than
+duplicated. The workflow remains **inactive**; the trigger does nothing until it
+is activated deliberately.
+
+| Test | Record | Result |
+| --- | --- | --- |
+| WS-B1 candidate query | — | **PASS.** Selects exactly ids 4 and 7: approved, not suppressed, active. |
+| WS-B4 suppression guard | F4, id 6 | **PASS.** Blocked at the main gate, review note written, `Send an Email` never ran. |
+| Message-ID guard | F5, id 7 | **PASS.** Blocked at the main gate because an outbound Message-ID is already stored. |
+| Approval-evidence guard | F6, id 144 | **PASS.** Passed the main gate, then blocked by `Lawful basis and recipient present?` because `ggd_outreach_approved_at` was empty. |
+
+**Defect found by the first scheduled run, and fixed.** Adding the schedule
+branch broke every scheduled execution with
+`Node 'Test input - Fictional Opportunity' hasn't been executed`. Two downstream
+nodes — `Prepare blocked-gate review note` and `Prepare send audit record.` —
+read the opportunity ID from the manual test-input node, which does not run on
+the scheduled path. Both now read the ID from the record that was actually
+fetched and gated, which is correct on both paths and is the more truthful
+source anyway.
+
+This is the same failure mode as the Workflow 4 rewiring earlier: adding a new
+entry point silently invalidates references that assumed the old one. **After
+any rewiring, search the whole workflow for references to nodes that no longer
+run on every path.** A programmatic check now confirms none remain.
+
+**Why F6 had to be created.** F5 could not exercise the approval-evidence check,
+because the main gate blocks it earlier for a different reason — it already has
+an outbound Message-ID. A test that is blocked for the wrong reason proves
+nothing about the control you meant to test. F6 was created specifically to pass
+the main gate and fail only on the missing timestamp.
+
+**The underlying defect this exposed.** F5 and F6 were both approved by a direct
+`create`, which passed the approval guard but never stamped
+`ggd_outreach_approved_at` — only the approval button did that. Since the send
+key is derived from the approval time, such a record's key never changes, so
+revoking and legitimately re-approving it would leave it permanently unsendable.
+Fixed in ggd_crm **19.0.1.3.0**, which stamps approver, approval time and
+basis-verified time on every approval route, with two new tests. **That upgrade
+has not been run yet**, so records approved by direct write still lack the
+timestamp until it is.
 
 ### Send-key duplicate protection built, 18 August 2026 — not yet run.
 Inspection found no send-key logic at all, so nothing prevented a repeat run
@@ -506,7 +550,38 @@ the recipient must be Kaan's own mailbox.
 
 ## C. Error handling and least privilege
 
-### C0 — the error workflow has never actually fired
+### C0 — SETTLED, 18 August 2026: the handler fires on production runs only
+
+**Result: the error handler works.** `GGD 98t` was activated and ran 88 times
+between 11:46 and 13:32 UTC, throwing deliberately each minute. GGD 99 caught
+every one — failure execution 333 at 13:32:41.049, handler execution 334 at
+13:32:41.103, 54 ms later. All handler runs completed with status `success`.
+`GGD 98t` has been deactivated and confirmed stopped.
+
+This proves the inference below was correct: **manual executions bypass the
+error workflow; scheduled and other production executions do not.** The handler
+is not broken. The gap was in how it was being tested.
+
+Consequences:
+
+- **C1** is satisfiable, but only against an activated workflow. A manual run
+  will never fire the handler no matter how deliberately it fails.
+- **B5** likewise. An uncertain send during a *manual* run leaves no handler
+  record. If B5 is run manually it will appear to fail its own criterion for a
+  reason that has nothing to do with the send logic.
+- **A8** will produce a handler entry only if the run is triggered on a
+  schedule, not by hand.
+
+**C2 is still not satisfied.** All 88 failures produced **zero** Odoo records,
+because `GGD 98t` carries no `opportunity_id`, so GGD 99 correctly took its
+`Keep sanitized error in execution log` branch. To get an Odoo error note to
+inspect for leaked credentials, the failing run must carry an opportunity ID —
+for example by stopping Odoo mid-run on a scheduled execution of a workflow
+that is processing a record. That is A8 and C2 in one test.
+
+The original finding, kept for the record:
+
+### C0 (original) — the error workflow had never fired
 
 **Finding, 18 August 2026. This undercuts C1, C2, B5 and A8, so read it first.**
 

@@ -1,0 +1,351 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "triggerType": "interval",
+        "triggerInterval": "15m"
+      },
+      "id": "node_schedule_trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.interval",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://odoo:8069/jsonrpc",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"search_read\", [[['ggd_outreach_approved', '=', true], ['ggd_do_not_contact', '=', false], ['ggd_contact_basis', '!=', ''], ['active', '=', true]], [\"id\", \"email_from\", \"partner_id\", \"name\", \"ggd_contact_basis\", \"ggd_do_not_contact\", \"ggd_outreach_approved\"]], {\"order\": \"ggd_outreach_approval_date asc\", \"limit\": 10}]}, \"id\": 1}",
+        "alwaysOutputData": true
+      },
+      "id": "node_query_approved",
+      "name": "Query Approved Opportunities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": "odoo_auth"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "booleanProperties": [
+            {
+              "condition": "empty",
+              "value1": "={{ $json.result }}"
+            }
+          ]
+        }
+      },
+      "id": "node_has_candidates",
+      "name": "Has Candidates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "item": "={{ $json.result }}"
+      },
+      "id": "node_loop_records",
+      "name": "Loop Through Records",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "code": "// Validate approval rules for current record\nconst record = $json;\nconst violations = [];\n\nif (record.ggd_do_not_contact) {\n  violations.push('ggd_do_not_contact is true');\n}\nif (!record.ggd_outreach_approved) {\n  violations.push('ggd_outreach_approved is false');\n}\nif (!record.ggd_contact_basis) {\n  violations.push('ggd_contact_basis is empty');\n}\n\nreturn {\n  ...record,\n  canSend: violations.length === 0,\n  violations: violations\n};"
+      },
+      "id": "node_validate_approval",
+      "name": "Validate Approval Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "booleanProperties": [
+            {
+              "condition": "equals",
+              "value1": "={{ $json.canSend }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node_branch_approved",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://odoo:8069/jsonrpc",
+        "method": "POST",
+        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"ggd_claim_send_key\", [[{{ $json.id }}], \"{{ $json.id }}-send-{{ now().format('YYYYMMDDHHmmss') }}\"]}, \"id\": 1}",
+        "alwaysOutputData": true
+      },
+      "id": "node_claim_send_key",
+      "name": "Claim Send Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "booleanProperties": [
+            {
+              "condition": "equals",
+              "value1": "={{ $json.result }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node_key_claimed",
+      "name": "Key Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "prompt": "Generate a short, personalized outreach email for this prospect:\n\nCompany: {{ $json.name }}\nContact: {{ $json.email_from }}\nBasis: {{ $json.ggd_contact_basis }}\n\nCreate subject line and body. Keep it brief and professional."
+      },
+      "id": "node_generate_draft",
+      "name": "Generate Draft",
+      "type": "n8n-nodes-base.anthropicChatModel",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "host": "{{ $env.SMTP_HOST }}",
+        "port": "{{ $env.SMTP_PORT }}",
+        "user": "{{ $env.SMTP_USER }}",
+        "pass": "{{ $env.SMTP_PASSWORD }}",
+        "toEmail": "={{ $json.email_from }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "message": "={{ $json.body }}"
+      },
+      "id": "node_send_smtp",
+      "name": "Send Email (SMTP)",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://odoo:8069/jsonrpc",
+        "method": "POST",
+        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"ggd_finalize_send\", [[{{ $json.id }}]]]}, \"id\": 1}",
+        "alwaysOutputData": true
+      },
+      "id": "node_finalize_send",
+      "name": "Finalize Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://odoo:8069/jsonrpc",
+        "method": "POST",
+        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"mail.message\", \"create\", [{\"model\": \"crm.lead\", \"res_id\": {{ $json.id }}, \"message_type\": \"notification\", \"body\": \"GGD: Outreach not sent — {{ $json.violations.join('; ') }}. Manual review required.\"}]}, \"id\": 1}"
+      },
+      "id": "node_create_review_note",
+      "name": "Create Review Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "node_schedule_trigger": {
+      "main": [
+        [
+          {
+            "node": "node_query_approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_query_approved": {
+      "main": [
+        [
+          {
+            "node": "node_has_candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_has_candidates": {
+      "main": [
+        [
+          {
+            "node": "node_loop_records",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "node_loop_records": {
+      "main": [
+        [
+          {
+            "node": "node_validate_approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_validate_approval": {
+      "main": [
+        [
+          {
+            "node": "node_branch_approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_branch_approved": {
+      "main": [
+        [
+          {
+            "node": "node_claim_send_key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "node_create_review_note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_claim_send_key": {
+      "main": [
+        [
+          {
+            "node": "node_key_claimed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_key_claimed": {
+      "main": [
+        [
+          {
+            "node": "node_generate_draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "node_generate_draft": {
+      "main": [
+        [
+          {
+            "node": "node_send_smtp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_send_smtp": {
+      "main": [
+        [
+          {
+            "node": "node_finalize_send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_finalize_send": {
+      "main": [
+        []
+      ]
+    },
+    "node_create_review_note": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "errorWorkflow": "xMbI9hyKnfim5M1q",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
