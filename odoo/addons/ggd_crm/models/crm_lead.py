@@ -22,6 +22,23 @@ class CrmLead(models.Model):
     # stop "ok" and "yes" from passing as evidence.
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH = 20
 
+    # Every column the outbound claim guard must re-read under its row lock.
+    # The workflow decides whether a send is lawful from a snapshot taken
+    # several RPCs before the claim; anything in that snapshot can be changed
+    # by a human in between, so all of it is read again while the row is
+    # locked. Fixed module-level names, never caller input - they are
+    # interpolated into the SELECT.
+    GGD_CLAIM_STATE_COLUMNS = (
+        "ggd_last_send_key",
+        "ggd_outreach_approved",
+        "ggd_outreach_approved_by",
+        "ggd_outreach_approved_at",
+        "ggd_do_not_contact",
+        "ggd_contact_basis",
+        "ggd_contact_basis_note",
+        "ggd_contact_basis_verified_at",
+    )
+
     ggd_industry = fields.Char(string="Industry")
     ggd_product_focus = fields.Text(string="Product / capability focus")
     ggd_source_url = fields.Char(string="Research source URL")
@@ -223,23 +240,156 @@ class CrmLead(models.Model):
             lead.message_post(body=_("GGD outreach approved for manual-gated automation."))
         return True
 
+    def _ggd_check_claim_access(self):
+        """Run the ORM's own access and record-rule checks before raw SQL.
+
+        The claim guard reads with SQL, which bypasses ir.model.access and
+        ir.rule completely. Calling the ORM check first means a user who could
+        not write these records cannot use the claim path to lock their rows or
+        to learn anything about their approval state.
+        """
+        checker = getattr(self, "check_access", None)
+        if checker is not None:
+            # Odoo 18+ merged the rights and rule checks into one call.
+            checker("write")
+            return
+        self.check_access_rights("write")
+        self.check_access_rule("write")
+
+    def _ggd_lock_outbound_state(self):
+        """Lock these crm.lead rows and return {id: committed outbound state}.
+
+        This is the core of the duplicate-send guard, and it deliberately uses
+        SQL rather than an ORM read. An ORM read is answered from this
+        transaction's cache and cannot see a change another n8n execution, or a
+        human in Odoo, committed a moment ago - which is precisely the case
+        that produces a duplicate or an unlawful send. SELECT ... FOR UPDATE
+        takes a row lock and, under PostgreSQL's READ COMMITTED default,
+        re-reads the latest committed version of the row once any competing
+        transaction has released it.
+
+        Every column in GGD_CLAIM_STATE_COLUMNS is read in that single locked
+        statement, not just the send key. The approval, suppression and
+        lawful-basis state is therefore read at the same instant as the key and
+        under the same lock, which closes the window between the workflow's
+        earlier snapshot and the claim.
+
+        Rows are locked one at a time in ascending id order. A single statement
+        with ORDER BY would usually lock in the same sequence, but the planner
+        is free to sort after locking; an explicit loop makes the ordering
+        guaranteed rather than probable. Deterministic ordering is what stops
+        two overlapping multi-record writes from deadlocking against each
+        other.
+
+        The lock is held until the surrounding transaction ends, so a caller
+        that locks and then writes cannot be overtaken in between.
+
+        SQL is used only for the lock and the read. The field update itself
+        always goes through the ORM, so tracking, chatter and constraints
+        behave normally.
+
+        The pending ORM write buffer is flushed first. Odoo defers the UPDATE
+        behind write() until something forces a flush, and raw SQL is not one
+        of those things, so without this the lock read could miss a change made
+        earlier in this same transaction.
+        """
+        self._ggd_check_claim_access()
+        self.flush_recordset(list(self.GGD_CLAIM_STATE_COLUMNS))
+        columns = ", ".join('"%s"' % name for name in self.GGD_CLAIM_STATE_COLUMNS)
+        query = "SELECT " + columns + " FROM crm_lead WHERE id = %s FOR UPDATE"
+        locked = {}
+        for lead_id in sorted(self.ids):
+            self.env.cr.execute(query, (lead_id,))
+            row = self.env.cr.dictfetchone()
+            if row is not None:
+                locked[lead_id] = row
+        return locked
+
+    def _ggd_claim_blockers(self, state):
+        """Reasons the stored record may not be claimed for an outbound send.
+
+        Takes the committed values read under the row lock, so this judges the
+        record as it is at claim time rather than as the workflow first saw it.
+
+        Returns reasons, never values. The caller turns these into an error
+        message that crosses the RPC boundary into n8n logs, and the contents
+        of a locked row must not travel with it.
+        """
+        blockers = []
+        if not state.get("ggd_outreach_approved"):
+            blockers.append(_("outreach is not approved"))
+        if not state.get("ggd_outreach_approved_by"):
+            blockers.append(_("the approving user is missing"))
+        if not state.get("ggd_outreach_approved_at"):
+            blockers.append(_("the approval timestamp is missing"))
+        if state.get("ggd_do_not_contact"):
+            blockers.append(_("the record is marked Do not contact"))
+        basis = state.get("ggd_contact_basis")
+        if not basis:
+            blockers.append(_("the contact basis is missing"))
+        elif basis in self.GGD_NO_EMAIL_BASES:
+            blockers.append(
+                _("the contact basis is not a lawful basis for a first marketing email")
+            )
+        note = (state.get("ggd_contact_basis_note") or "").strip()
+        if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
+            blockers.append(_("the contact-basis note is missing or too short"))
+        if not state.get("ggd_contact_basis_verified_at"):
+            blockers.append(_("the contact-basis verification timestamp is missing"))
+        return blockers
+
+    def _ggd_raise_claim_blocked(self, blockers):
+        raise ValidationError(
+            _(
+                "This opportunity cannot be claimed for an outbound send: "
+                "%(reasons)s. The stored record was re-read under a lock at "
+                "claim time, so this reflects the record as it is now, not as "
+                "the workflow first read it. No message was sent.",
+                reasons="; ".join(blockers),
+            )
+        )
+
     def ggd_claim_send_key(self, send_key):
         """Atomically claim a send key. Returns True if this caller may send.
 
         Called by the outbound workflow immediately BEFORE SMTP. The write
         happens first so that a crash between claiming and sending leaves the
-        key claimed — the failure mode is a missed send that a human can
+        key claimed - the failure mode is a missed send that a human can
         investigate, never a duplicate send.
 
         Returns False if the key is already claimed, which means the send has
         already happened or is in flight. The caller must then stop without
         contacting anyone.
+
+        Raises ValidationError if the stored record is not currently safe to
+        send: approval missing or incomplete, Do not contact set, or the
+        lawful-basis evidence absent or insufficient. False and a raise mean
+        different things and callers depend on the difference - False is
+        "already sent", a raise is "must not send" - so the two are never
+        collapsed.
+
+        The duplicate check runs before the approval check on purpose. A record
+        that has just been sent has had its approval consumed, so checking
+        approval first would report an already-sent key as "not approved" and
+        lose the idempotency signal the caller relies on.
+
+        The claim is decided here, under the row lock taken by
+        _ggd_lock_outbound_state(), rather than by catching the error write()
+        would raise. Catching would risk turning an unrelated ValidationError -
+        an approval-gate refusal, a field constraint - into a False that the
+        caller would read as "already sent". Because the lock is held for the
+        rest of the transaction, the re-check inside write() cannot disagree
+        with the decision taken here.
         """
         self.ensure_one()
         if not send_key:
             raise ValidationError(_("A send key is required before sending."))
-        if self.ggd_last_send_key == send_key:
+        state = self._ggd_lock_outbound_state().get(self.id) or {}
+        if state.get("ggd_last_send_key") == send_key:
             return False
+        blockers = self._ggd_claim_blockers(state)
+        if blockers:
+            self._ggd_raise_claim_blocked(blockers)
         self.write({
             "ggd_last_send_key": send_key,
             "ggd_last_sent_at": fields.Datetime.now(),
@@ -251,8 +401,24 @@ class CrmLead(models.Model):
 
         Called by the outbound workflow immediately AFTER successful SMTP.
         Updates message date for follow-up scheduling and clears approval.
+
+        Refuses unless a send key has actually been claimed and stamped. That
+        claim is the only evidence the record passed the locked outbound gate.
+        Without it, finalising would post a "message sent" audit note and set a
+        follow-up date for a send that was never authorised - a control
+        reporting success for something that did not happen, which is the
+        failure mode this addon has already been bitten by twice.
         """
         self.ensure_one()
+        if not self.ggd_last_send_key or not self.ggd_last_sent_at:
+            raise ValidationError(
+                _(
+                    "This opportunity has no claimed send to finalise. A send "
+                    "key must be claimed, and its send time stamped, before a "
+                    "completed send can be recorded. No audit note was posted "
+                    "and no follow-up date was set."
+                )
+            )
         now = fields.Datetime.now()
         self.write({
             "ggd_last_message_date": now.date(),
@@ -285,6 +451,21 @@ class CrmLead(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for values in vals_list:
+            if values.get("ggd_last_send_key"):
+                # A send key is a claim against an already-stored, already
+                # approved record. create() never passes through the locked
+                # approval check in write(), so a key accepted here would be a
+                # claim nobody validated - a record springing into existence
+                # with a send already marked as taken. There is no legitimate
+                # caller for this.
+                raise ValidationError(
+                    _(
+                        "A send key cannot be set when an opportunity is "
+                        "created. Create the record, have a human approve "
+                        "outreach, then let the send workflow claim the key "
+                        "against the stored record."
+                    )
+                )
             if values.get("ggd_do_not_contact"):
                 values.update(
                     {
@@ -308,7 +489,92 @@ class CrmLead(models.Model):
                 values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
         return super().create(vals_list)
 
+    @staticmethod
+    def _ggd_is_revoking_approval(values):
+        """True when this write sets outreach approval to any falsy value.
+
+        n8n, the Odoo client and a hand-written RPC call can each send False, 0
+        or None for a boolean. All three mean the same thing to a human, so all
+        three must clear the approver, the approval time and the basis-verified
+        time. Recognising only an exact False left the other two producing an
+        unapproved record that still carried the metadata of its old approval,
+        which reads as a live approval to anyone auditing it.
+
+        One definition, used both by the revocation branch in write() and by
+        the suppression check, so the two cannot drift apart again.
+        """
+        return "ggd_outreach_approved" in values and not values["ggd_outreach_approved"]
+
+    @classmethod
+    def _ggd_is_suppressing(cls, values):
+        """True when this write revokes approval or marks Do not contact.
+
+        Detected broadly, because letting a claim through by mistake is the
+        expensive error and dropping one is not.
+        """
+        if values.get("ggd_do_not_contact"):
+            return True
+        return cls._ggd_is_revoking_approval(values)
+
     def write(self, values):
+        send_key = values.get("ggd_last_send_key")
+        if send_key and self._ggd_is_suppressing(values):
+            # Suppression always wins. A write that marks Do not contact or
+            # revokes approval must succeed even when it also carries a send
+            # key, so the guard steps aside rather than refusing the write and
+            # rolling the suppression back. The key is dropped instead, because
+            # a suppression is not a send and must not leave a claim behind.
+            # An explicitly supplied ggd_last_sent_at is left alone; only the
+            # automatic stamp below is skipped.
+            values = dict(values)
+            values.pop("ggd_last_send_key", None)
+            send_key = None
+
+        if send_key:
+            # The duplicate-send guard lives here, not only in
+            # ggd_claim_send_key(), because the deployed n8n workflow does not
+            # call that method: its "Claim send key before SMTP" node performs
+            # an ordinary Odoo record update. A guard that protects only one
+            # route is not a guard. Enforcing it in write() covers the n8n
+            # update node, the RPC method, the Odoo interface and any future
+            # caller alike.
+            #
+            # Raising is what makes the n8n node fail closed: the RPC returns a
+            # fault, the node errors, and the run stops before the SMTP node.
+            if values.get("ggd_outreach_approved"):
+                raise ValidationError(
+                    _(
+                        "A send key cannot be claimed in the same write that "
+                        "grants outreach approval. Human approval must already "
+                        "be committed, and re-read under the claim lock, before "
+                        "a send is claimed."
+                    )
+                )
+            locked = self._ggd_lock_outbound_state()
+            for state in locked.values():
+                # Duplicate first: an already-sent record has had its approval
+                # consumed, and must be reported as a duplicate rather than as
+                # an approval failure.
+                if state.get("ggd_last_send_key") == send_key:
+                    raise ValidationError(
+                        _(
+                            "This send key is already claimed for this "
+                            "opportunity. A message for this approval has been "
+                            "sent or is in flight, so this send must stop "
+                            "before SMTP. Check the sent-mail folder before "
+                            "revoking and re-approving."
+                        )
+                    )
+                blockers = self._ggd_claim_blockers(state)
+                if blockers:
+                    self._ggd_raise_claim_blocked(blockers)
+            # A successful claim is what marks the send as in flight, so record
+            # when it happened. setdefault leaves an explicit value from the
+            # caller - ggd_claim_send_key() supplies one - untouched. The copy
+            # keeps the caller's dict unmodified.
+            values = dict(values)
+            values.setdefault("ggd_last_sent_at", fields.Datetime.now())
+
         if values.get("ggd_do_not_contact"):
             values.update(
                 {
@@ -318,7 +584,7 @@ class CrmLead(models.Model):
                     "ggd_contact_basis_verified_at": False,
                 }
             )
-        elif values.get("ggd_outreach_approved") is False:
+        elif self._ggd_is_revoking_approval(values):
             values.update(
                 {
                     "ggd_outreach_approved_by": False,

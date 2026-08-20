@@ -552,6 +552,66 @@ The run blocked, no email arrived, and the review note gave **no other reason**,
 so the block is attributable to `Send key unused?` alone. The record was not
 written to at all.
 
+**B3 — suppression gate: PASS**, on fixture F9 (`crm.lead` id 177).
+
+The fixture was approved first, then suppressed. Setting `ggd_do_not_contact`
+**automatically cleared the approval and its timestamp** — the addon's `write()`
+override makes "approved and suppressed" impossible to represent, so the state
+this test targets cannot exist in the database.
+
+The run blocked and the review note named **both** conditions: *"Outreach is not
+approved. Record is marked Do not contact."* The gate evaluated suppression
+rather than short-circuiting on approval, so that check is genuinely exercised.
+No email. Record 177 untouched — `write_date` still 09:57:11 from setup.
+
+**B4 — missing contact basis: PASS**, on fixture F10 (`crm.lead` id 178).
+
+Created with no contact basis. Approval was **refused** by Odoo: *"Record and
+review the contact basis before approving outreach."* The run then blocked with
+both reasons named: *"Outreach is not approved. Contact basis is missing."* No
+email. Record 178 untouched.
+
+**What B3 and B4 actually establish.** Both pass in the strongest available
+sense — not "the gate catches it" but "the state cannot occur". Odoo prevents
+both conditions before n8n is involved, and the n8n checks then catch them again
+as defence in depth. Unlike B2, the isolating case cannot be constructed,
+because the ORM refuses to create it; producing it would need direct SQL to
+manufacture a state that cannot arise in practice, which is not worth doing.
+
+Note that both review notes list **every** failing condition rather than the
+first one. That is what makes these results readable — a note naming only
+"not approved" would have left the suppression and basis checks unproven.
+
+**B5 — uncertain send: NOT YET TESTED. A first attempt found something else.**
+
+The attempt avoided touching the shared SMTP credential by pointing the send
+node's recipient at an unroutable address
+(`b5-uncertain-send@ggd-smtp-fail.invalid`) on fixture F11 (`crm.lead` id 179).
+
+**The send did not fail.** The SMTP server accepted the message for delivery, so
+the node succeeded and the workflow completed its whole success path: send key
+claimed (`179-2026-08-19 11:49:52`), Message-ID recorded, approval consumed.
+
+**Finding: SMTP acceptance is treated as delivery.** The address is unroutable
+and will bounce asynchronously, and nothing in the workflow will ever learn
+that. The record now reads as successfully contacted when no message was
+delivered. Alongside the "hard bounce ends sending to that address" rule in
+LAWFUL-CONTACT-PROCEDURE.md section 7, this means **there is currently no path
+by which a bounce reaches the CRM at all** — the rule exists but nothing
+implements it.
+
+Two consequences worth separating:
+
+- **For B5**, an invalid recipient is the wrong instrument. A true send failure
+  needs an unreachable SMTP host or an invalid credential, which is why the
+  original plan called for breaking the credential.
+- **For the system**, bounce handling is a gap in its own right, independent of
+  B5. Decide whether it is in scope before activation, because "message sent"
+  is currently an assumption rather than an observation.
+
+The run did serve as a second clean demonstration of the B1 happy path on a
+different record, which is worth having.
+
 ### Defects B1 exposed before it passed
 
 The first B1 attempt sent an email and revealed four faults, three of them
