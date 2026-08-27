@@ -109,6 +109,7 @@
       "name": "Create one deduplicated Odoo review activity",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
+      "position": [380, -20],
       "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
     },
     {
