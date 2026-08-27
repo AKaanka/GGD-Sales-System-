@@ -24,7 +24,7 @@ draft; it cannot approve outreach or send a follow-up by itself.
 
 ## Odoo CRM functions
 
-Implemented in addon version `19.0.1.6.0`:
+Implemented in addon version `19.0.1.8.0`:
 
 - qualification fields, source URL, fit score, fit summary, personalization
   angle, recommended buyer roles, confidence, and review status;

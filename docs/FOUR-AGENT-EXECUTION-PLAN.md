@@ -7,7 +7,7 @@ Status date: 26 August 2026
 The immediate goal is a **working local GGD sales system for controlled use**:
 
 - Odoo and n8n run locally and keep their data after restart;
-- addon version `19.0.1.6.0` is installed and all 102 addon tests pass;
+- addon version `19.0.1.8.0` is installed and all 108 addon tests pass;
 - the six tracked n8n workflows import successfully and remain inactive while
   they are tested;
 - Workflows 1, 2, 4, and 5 pass fictional-data acceptance tests;
@@ -26,7 +26,7 @@ deployment is deliberately outside this finish line.
 - Static project validation passes.
 - Current workflow export/decision tests: 22 passed, 0 failed.
 - Legacy reply-matching regression tests: 19 passed, 0 failed.
-- Odoo addon `19.0.1.6.0` is installed and all 102 live tests pass.
+- Odoo addon `19.0.1.8.0` is installed and all 108 live tests pass.
 - All six workflow exports are imported into n8n 2.34.6 and remain inactive.
 - Live node type/version, stored node-set, stored connections, and shared error
   workflow checks pass for all six imports.
@@ -78,8 +78,8 @@ Owner: Claude Code. Reviewer: Codex.
 
 1. Confirm Odoo and its database are healthy without deleting or recreating
    data.
-2. Upgrade `ggd_crm` to `19.0.1.6.0`.
-3. Run `./scripts/run-addon-tests.sh` and require 102/102 passing.
+2. Upgrade `ggd_crm` to `19.0.1.8.0`.
+3. Run `./scripts/run-addon-tests.sh` and require 108/108 passing.
 4. Fix only confirmed addon/test defects, using the smallest safe change.
 5. Record the exact result in the Claude handoff.
 
@@ -148,7 +148,7 @@ Gate passes only with Kaan's confirmation and matching Odoo/Zoho evidence.
 Owner: Codex. Human confirmation: Kaan.
 
 1. Run `./scripts/validate-project.sh`.
-2. Re-run the 102 addon tests and relevant workflow acceptance tests.
+2. Re-run the 108 addon tests and relevant workflow acceptance tests.
 3. Create a backup using the existing script.
 4. Restore into an isolated test project/volume set; never delete the live
    named volumes.

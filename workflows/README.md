@@ -6,7 +6,7 @@ only; no passwords, API keys, or mailbox secrets are stored in Git.
 
 ## Before importing
 
-1. Upgrade the `ggd_crm` addon in Odoo so version `19.0.1.6.0` is installed.
+1. Upgrade the `ggd_crm` addon in Odoo so version `19.0.1.8.0` is installed.
 2. In the dedicated Odoo automation user's preferences, create an Odoo 19 API
    key.
 3. In n8n, create an **HTTP Header Auth** credential named
@@ -55,7 +55,7 @@ After import:
 ## Test order
 
 1. Run `./scripts/validate-project.sh`.
-2. Run `./scripts/run-addon-tests.sh` and require all 102 tests to pass.
+2. Run `./scripts/run-addon-tests.sh` and require all 108 tests to pass.
 3. Manually test Workflows 1, 2, 4, and 5 with fictional `.invalid` records.
 4. Test Workflow 3 only with a Kaan-owned recipient and explicit approval for
    that test send.

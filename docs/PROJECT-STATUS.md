@@ -7,7 +7,7 @@ history.
 
 The current repository build and local installation have passed Gates 0–2:
 
-- Odoo addon `19.0.1.6.0` stores sourced qualification, an immutable reviewed
+- Odoo addon `19.0.1.8.0` stores sourced qualification, an immutable reviewed
   draft/version, the human approval attached to that version, a deterministic
   send claim, complete SMTP audit data, replies, bounces, response drafts, and
   deduplicated follow-up activities.
@@ -19,8 +19,8 @@ The current repository build and local installation have passed Gates 0–2:
   unsubscribe replies suppress further contact.
 - Workflow 5 runs at 08:30 Europe/Berlin on weekdays and calls an Odoo method
   that atomically deduplicates the review activity for each confirmed send.
-- Odoo database `ggd` confirms addon `19.0.1.6.0` is installed. The live addon
-  run completed with 0 failures and 0 errors across all 102 tests.
+- Odoo database `ggd` confirms addon `19.0.1.8.0` is installed. The live addon
+  run completed with 0 failures and 0 errors across all 108 tests.
 - Static project validation reports 24/24 current workflow checks and 19/19
   legacy reply-matcher regressions passing.
 - The six current exports were imported into n8n 2.34.6 in number order. All

@@ -95,7 +95,7 @@
 
 ## Current implementation status
 
-The repository contains addon version `19.0.1.6.0` and inactive, reproducible
+The repository contains addon version `19.0.1.8.0` and inactive, reproducible
 imports for all five automation areas plus shared error handling. Offline
 structure and decision tests pass. The current addon and imports are not
 considered live-ready until Docker access is available, all Odoo tests pass,
