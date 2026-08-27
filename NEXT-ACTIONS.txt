@@ -105,13 +105,19 @@ NOT YET PROVEN
                        RESUME HERE - NEXT SESSION
 ================================================================================
 
-STEP 9 first (cheap, and it unblocks a clean export):
+STEP 9 - DONE (27 August). GRAPH 0, UNEXPLAINED 0, PIN 0, exit 0.
+  validate-project.sh: 26/26 and 19/19, passed.
+  The live n8n workflows match the tracked files in behaviour.
+  Re-check any time with:
+    rm -rf shared-files/live-export && mkdir -p shared-files/live-export
+    docker exec -e N8N_RUNNERS_BROKER_PORT=5690 -e N8N_PORT=5699 \
+      ggd-sales-system-n8n-1 n8n export:workflow --all --separate \
+      --output=/files/live-export
+    node tests/workflows/compare-live-exports.js shared-files/live-export
 
-  1. In the n8n editor, open GGD-04 -> the "Manual pinned-email test" node and
-     REMOVE the pinned output, then save. Pinned test data will otherwise show
-     up as a diff against the tracked workflow JSON and look like a defect.
-  2. Re-export the six workflows, confirm the graphs match workflows/*.json,
-     and re-run ./scripts/validate-project.sh.
+  Optional tidy-up: rename the three n8n credentials to the documented names
+  ("Odoo JSON-2 bearer token", "Zoho SMTP", "Zoho IMAP"). That clears 17
+  cosmetic mismatches from every future comparison.
 
 STEP 8 last (it must be last, and it cannot use the CLI):
 

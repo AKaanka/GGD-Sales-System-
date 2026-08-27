@@ -1477,3 +1477,91 @@ The working tree still carries all of the earlier uncommitted work untouched.
 Resume point is written at the top of NEXT-ACTIONS.txt under "RESUME HERE".
 Short version: unpin the Workflow 4 test data and do step 9, then step 8 last
 via a scheduled run, then archive lead 685.
+
+================================================================================
+GATE 3 STEP 9 - live-vs-tracked workflow comparison (27 August)
+================================================================================
+
+**A tool was missing.** `tests/workflows/test-workflow-exports.js` checks the
+TRACKED files against their contract; it never looks at n8n. So "confirm the
+graphs match the tracked files" had nothing behind it. Editing a workflow in
+the n8n UI and forgetting to re-export would go unnoticed indefinitely.
+
+Added `tests/workflows/compare-live-exports.js`. It compares each live export
+to its committed file: node set, type, typeVersion, disabled flag, full
+parameters (path by path), credential slots by name, and the connection map.
+
+**Result on the 27 August export: 0 GRAPH, 0 UNEXPLAINED.** Every one of the
+27 raw differences is accounted for:
+
+  17  CRED   credential slot NAME only. Live kept n8n's defaults ("Header Auth
+             account", "SMTP account", "IMAP account") instead of the
+             documented names ("Odoo JSON-2 bearer token", "Zoho SMTP",
+             "Zoho IMAP"). The bindings demonstrably work. Cosmetic, but it
+             means the docs and the running system disagree on naming.
+   8  DEFAULT-OMIT  n8n omits parameters equal to the node default on export
+             (hoursInterval 1, schemaType fromJson, autoFix false, mailbox
+             INBOX). Reported honestly as explained-but-not-proven: an absent
+             key could ALSO mean someone cleared the setting, and this tool
+             cannot tell the difference offline.
+   1  WHITESPACE  a jsCode block differing only by a trailing newline
+             (2565 vs 2566 chars, identical once normalised).
+   2  CONFIRM  placeholder fields bound to live values - see below.
+   1  PIN     GGD-04 still had the scenario-6 payload pinned. Not yet cleared.
+
+**A hole in this tool, found by testing it and worth remembering.** The first
+version classified any REPLACE_WITH_* -> live-value difference as "expected"
+and moved on. A negative test that rewrote the Gate 4 recipient allowlist to
+`attacker@example.invalid` PASSED CLEAN. A placeholder field can be bound to
+anything, and these two fields decide who receives email. Placeholder-bound
+values are now class CONFIRM: the bound value is printed and blocks the run
+until a human reads it. Do not weaken this back to a silent pass.
+
+Currently bound, read and confirmed correct on 27 August:
+  Gate 4 recipient allowlist -> kaan@germanygrowthdesk.com
+  SMTP fromEmail             -> kaan@germanygrowthdesk.com
+
+The tool was verified in both directions before being trusted: identical
+inputs report a clean match, and injected faults (added node, changed
+parameter, leftover pinData, rewritten allowlist) are all caught with a
+non-zero exit.
+
+## GATE 3 STEP 9 - PASSED, 27 August 2026
+
+Final run after unpinning GGD-04:
+
+  GRAPH        0   no node added, removed, retyped or rewired
+  UNEXPLAINED  0   no node would behave differently from its committed file
+  PIN          0   editor fixtures cleared
+  CONFIRMED-OK 2   both placeholder-bound values unchanged since read
+  exit code    0
+
+  ./scripts/validate-project.sh: 26/26 workflow tests, 19/19 matcher
+  regressions, .env confirmed ignored, Compose config valid. PASSED.
+
+The six live workflows in n8n match the six tracked files in behaviour.
+
+**Confirmed bindings, and why they are hashed.** The CONFIRM class blocked on
+every run, and a check that can never go green is one people learn to ignore.
+The real risk was never "a placeholder is bound" - it is "the bound value
+changed and nobody noticed". `tests/workflows/confirmed-bindings.json` now
+stores SHA-256 of each value a human has read. A match reports CONFIRMED-OK
+and passes; any change reports "VALUE CHANGED since it was last confirmed",
+prints the new value and fails. Hashes, not plaintext, so the check survives
+being pushed to a git remote without publishing Kaan's addresses.
+
+Verified: recorded -> PASS exit 0; allowlist rewritten to
+attacker@example.invalid -> "VALUE CHANGED", value printed, exit 1.
+
+Re-record ONLY when a value legitimately changes, and read it again when you
+do:
+    node tests/workflows/compare-live-exports.js <dir> --record-confirmed
+
+**Still open, cosmetic:** 17 credential slot NAME mismatches. Live kept n8n's
+defaults ("Header Auth account", "SMTP account", "IMAP account") rather than
+the documented names ("Odoo JSON-2 bearer token", "Zoho SMTP", "Zoho IMAP").
+Bindings work; docs and reality disagree on naming. Renaming the three
+credentials in the n8n UI clears all 17 permanently.
+
+GATE 3 NOW HAS ONE STEP LEFT: step 8, the error-handler proof, which needs a
+genuinely scheduled run and must be done last.
