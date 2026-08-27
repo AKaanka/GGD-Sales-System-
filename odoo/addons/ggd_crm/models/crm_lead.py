@@ -1,5 +1,11 @@
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+from markupsafe import Markup, escape
+
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+from odoo.tools import email_normalize
 
 
 class CrmLead(models.Model):
@@ -37,6 +43,32 @@ class CrmLead(models.Model):
         "ggd_contact_basis",
         "ggd_contact_basis_note",
         "ggd_contact_basis_verified_at",
+        "email_from",
+        "ggd_draft_subject",
+        "ggd_draft_body",
+        "ggd_draft_version",
+        "ggd_approved_draft_version",
+        "ggd_approved_recipient",
+    )
+
+    GGD_DRAFT_FIELDS = (
+        "ggd_draft_subject",
+        "ggd_draft_body",
+        "ggd_draft_version",
+    )
+
+    GGD_APPROVAL_INPUT_FIELDS = GGD_DRAFT_FIELDS + ("email_from",)
+
+    GGD_REPLY_CATEGORIES = (
+        "interested",
+        "meeting",
+        "information",
+        "objection",
+        "referral",
+        "not_interested",
+        "out_of_office",
+        "unsubscribe",
+        "unclear",
     )
 
     ggd_industry = fields.Char(string="Industry")
@@ -48,6 +80,22 @@ class CrmLead(models.Model):
     )
     ggd_fit_summary = fields.Text(string="Fit assessment")
     ggd_personalization_angle = fields.Text(string="Personalisation angle")
+    ggd_recommended_buyer_roles = fields.Text(
+        string="Recommended buyer roles",
+        copy=False,
+    )
+    ggd_qualification_state = fields.Selection(
+        selection=[
+            ("pending", "Pending qualification"),
+            ("ready", "Qualified"),
+            ("review", "Needs human review"),
+            ("failed", "Qualification failed"),
+        ],
+        string="Qualification status",
+        default="pending",
+        copy=False,
+        index=True,
+    )
 
     ggd_contact_basis = fields.Selection(
         selection=[
@@ -102,6 +150,48 @@ class CrmLead(models.Model):
         string="Approved at",
         readonly=True,
         copy=False,
+    )
+    ggd_draft_subject = fields.Char(
+        string="Reviewed draft subject",
+        copy=False,
+    )
+    ggd_draft_body = fields.Text(
+        string="Reviewed draft body",
+        copy=False,
+    )
+    ggd_draft_version = fields.Char(
+        string="Draft version",
+        readonly=True,
+        copy=False,
+        index=True,
+    )
+    ggd_approved_draft_version = fields.Char(
+        string="Approved draft version",
+        readonly=True,
+        copy=False,
+        index=True,
+        help="The immutable draft version that the current outreach approval covers.",
+    )
+    ggd_approved_recipient = fields.Char(
+        string="Approved recipient",
+        readonly=True,
+        copy=False,
+        help=(
+            "Normalized recipient address covered by the current human approval. "
+            "A linked-contact email change invalidates the send at claim time."
+        ),
+    )
+    ggd_draft_status = fields.Selection(
+        selection=[
+            ("empty", "No draft"),
+            ("ready", "Ready for review"),
+            ("approved", "Approved for send"),
+            ("sent", "Sent"),
+        ],
+        string="Draft status",
+        default="empty",
+        copy=False,
+        index=True,
     )
     ggd_do_not_contact = fields.Boolean(
         string="Do not contact",
@@ -159,8 +249,68 @@ class CrmLead(models.Model):
             "that finds the key already claimed must stop before SMTP."
         ),
     )
+    ggd_last_confirmed_send_key = fields.Char(
+        string="Last SMTP-confirmed send key",
+        readonly=True,
+        copy=False,
+        index=True,
+        help="Identifies which claimed draft was most recently accepted by SMTP.",
+    )
     ggd_last_sent_at = fields.Datetime(
-        string="Last outbound send at",
+        string="Outbound send claimed at",
+        readonly=True,
+        copy=False,
+        help=(
+            "Legacy claim timestamp retained for compatibility. A message is "
+            "confirmed sent only when Confirmed sent at is populated."
+        ),
+    )
+    ggd_claimed_recipient = fields.Char(
+        string="Claimed recipient",
+        readonly=True,
+        copy=False,
+        help="Immutable approved recipient captured when the SMTP send is claimed.",
+    )
+    ggd_claimed_draft_version = fields.Char(
+        string="Claimed draft version",
+        readonly=True,
+        copy=False,
+        help="Immutable approved draft version captured when the SMTP send is claimed.",
+    )
+    ggd_send_confirmed_at = fields.Datetime(
+        string="Confirmed sent at",
+        readonly=True,
+        copy=False,
+        help="Set only after SMTP succeeds and the send is finalized in Odoo.",
+    )
+    ggd_last_claim_released_at = fields.Datetime(
+        string="Last failed claim released at",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_claim_released_by = fields.Many2one(
+        "res.users",
+        string="Last failed claim released by",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_sent_recipient = fields.Char(
+        string="Last sent recipient",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_sent_subject = fields.Char(
+        string="Last sent subject",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_sent_body_summary = fields.Text(
+        string="Last sent body summary",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_sent_draft_version = fields.Char(
+        string="Last sent draft version",
         readonly=True,
         copy=False,
     )
@@ -169,6 +319,77 @@ class CrmLead(models.Model):
         copy=False,
         readonly=True,
         help="Latest date of any message (sent or received); used for follow-up scheduling.",
+    )
+    ggd_delivery_status = fields.Selection(
+        selection=[
+            ("none", "No outbound delivery state"),
+            ("claimed", "Claimed — SMTP outcome unknown"),
+            ("accepted", "Accepted by SMTP"),
+            ("bounced", "Bounced"),
+        ],
+        string="Delivery status",
+        default="none",
+        copy=False,
+        index=True,
+    )
+    ggd_last_reply_received_at = fields.Datetime(
+        string="Last reply received at",
+        readonly=True,
+        copy=False,
+    )
+    ggd_last_reply_message_id = fields.Char(
+        string="Last reply message ID",
+        readonly=True,
+        copy=False,
+        index=True,
+    )
+    ggd_response_draft = fields.Text(
+        string="Suggested response draft",
+        copy=False,
+    )
+    ggd_suggested_follow_up_at = fields.Datetime(
+        string="Suggested follow-up at",
+        copy=False,
+    )
+    ggd_follow_up_draft = fields.Text(
+        string="Latest follow-up draft",
+        copy=False,
+    )
+    ggd_last_follow_up_queue_key = fields.Char(
+        string="Last follow-up queue key",
+        readonly=True,
+        copy=False,
+        index=True,
+    )
+    ggd_last_follow_up_queued_at = fields.Datetime(
+        string="Last follow-up queued at",
+        readonly=True,
+        copy=False,
+    )
+    ggd_automation_needs_review = fields.Boolean(
+        string="Automation needs review",
+        copy=False,
+        index=True,
+    )
+    ggd_qualification_needs_review = fields.Boolean(
+        string="Qualification needs review",
+        copy=False,
+    )
+    ggd_reply_needs_review = fields.Boolean(
+        string="Reply needs review",
+        copy=False,
+    )
+    ggd_delivery_needs_review = fields.Boolean(
+        string="Delivery needs review",
+        copy=False,
+    )
+    ggd_workflow_needs_review = fields.Boolean(
+        string="Workflow error needs review",
+        copy=False,
+    )
+    ggd_automation_review_summary = fields.Text(
+        string="Automation review summary",
+        copy=False,
     )
 
     @api.constrains("ggd_fit_score")
@@ -182,6 +403,355 @@ class CrmLead(models.Model):
         for lead in self:
             if not 0 <= lead.ggd_ai_confidence <= 1:
                 raise ValidationError(_("AI confidence must be between 0.00 and 1.00."))
+
+    def _ggd_check_draft_ready(self, subject, body, version):
+        """Require the exact reviewed draft before outreach can be approved."""
+        if not (subject or "").strip():
+            raise ValidationError(
+                _("Prepare and review an email subject before approving outreach.")
+            )
+        if not (body or "").strip():
+            raise ValidationError(
+                _("Prepare and review an email body before approving outreach.")
+            )
+        if not (version or "").strip():
+            raise ValidationError(
+                _("The reviewed email draft has no version. Prepare the draft again.")
+            )
+
+    @staticmethod
+    def _ggd_check_recipient_ready(recipient):
+        if not (email_normalize(recipient or "") or ""):
+            raise ValidationError(
+                _("A valid recipient email address is required before approval.")
+            )
+
+    def _ggd_check_draft_can_be_approved(self, version, last_sent_version):
+        if version and version == last_sent_version:
+            raise ValidationError(
+                _(
+                    "This exact draft version was already sent. Prepare a new "
+                    "draft before granting another outreach approval."
+                )
+            )
+
+    def _ggd_check_no_unresolved_send_claim(
+        self, delivery_status, send_key, confirmed_key
+    ):
+        if delivery_status == "claimed" and send_key != confirmed_key:
+            raise ValidationError(
+                _(
+                    "A previous SMTP outcome is unresolved. Check Zoho Sent. "
+                    "If no message left the mailbox, use Release Failed Claim "
+                    "before preparing or approving another draft."
+                )
+            )
+
+    @staticmethod
+    def _ggd_parse_workflow_datetime(value, field_label):
+        """Accept n8n ISO-8601 values and return Odoo's naive UTC datetime."""
+        if not value:
+            return False
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            timestamp = str(value).strip()
+            if timestamp.endswith("Z"):
+                timestamp = timestamp[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(timestamp)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    _("%(field)s must be a valid ISO-8601 timestamp.", field=field_label)
+                ) from exc
+        if parsed.tzinfo:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+
+    def _ggd_review_values(self, source_field, needs_review, summary=False):
+        """Update one workflow's review flag without clearing another's issue."""
+        review_labels = {
+            "ggd_qualification_needs_review": _("qualification"),
+            "ggd_reply_needs_review": _("reply"),
+            "ggd_delivery_needs_review": _("delivery"),
+            "ggd_workflow_needs_review": _("workflow error"),
+        }
+        review_fields = tuple(review_labels)
+        states = {name: bool(getattr(self, name)) for name in review_fields}
+        states[source_field] = bool(needs_review)
+        any_review = any(states.values())
+        remaining = ", ".join(
+            review_labels[name] for name, active in states.items() if active
+        )
+        return {
+            source_field: bool(needs_review),
+            "ggd_automation_needs_review": any_review,
+            "ggd_automation_review_summary": (
+                (summary or "").strip()
+                if needs_review
+                else (
+                    _("Review still required for: %(sources)s.", sources=remaining)
+                    if any_review
+                    else False
+                )
+            ),
+        }
+
+    def ggd_prepare_draft(self, subject, body):
+        """Store one reviewable outbound draft and return its immutable version.
+
+        Workflow 2 calls this method and then stops. Changing a draft always
+        consumes any older approval, so Workflow 3 can send only the exact
+        subject/body pair a human approved later in Odoo.
+
+        Returns a dict, {"draft_version": <hex>}, NOT a bare string. A bare
+        string is legal JSON (RFC 8259 allows a scalar at the top level) and
+        Odoo serialises it correctly, but n8n's HTTP Request node refuses to
+        parse a top-level scalar string and fails the node with "Response body
+        is not valid JSON" - even though Odoo has already stored and committed
+        the draft. That produced defect 13: Workflow 2 reported a failed run
+        for work that had actually succeeded, which is worse than a plain
+        failure because a retry mints a second draft version and silently
+        discards the one a human may already have read.
+
+        Every other method the workflows call returns a bool, int, dict or
+        list, and those all parse; only this one returned a scalar string.
+        Returning a dict fixes it at the source for every client rather than
+        depending on one node's Response Format setting, which would not
+        survive a workflow re-import.
+        """
+        self.ensure_one()
+        self._ggd_check_no_unresolved_send_claim(
+            self.ggd_delivery_status,
+            self.ggd_last_send_key,
+            self.ggd_last_confirmed_send_key,
+        )
+        if self.ggd_do_not_contact:
+            raise ValidationError(_("Do not contact is set; no outreach draft may be prepared."))
+        if not (self.email_from or "").strip():
+            raise ValidationError(_("A recipient email address is required before drafting."))
+        subject = (subject or "").strip()
+        body = (body or "").strip()
+        version = uuid4().hex
+        self._ggd_check_draft_ready(subject, body, version)
+        self.write(
+            {
+                "ggd_draft_subject": subject,
+                "ggd_draft_body": body,
+                "ggd_draft_version": version,
+                "ggd_draft_status": "ready",
+                "ggd_outreach_approved": False,
+                "ggd_approved_draft_version": False,
+                "ggd_approved_recipient": False,
+            }
+        )
+        self.message_post(
+            body=_("GGD outreach draft prepared for human review. Nothing was sent.")
+        )
+        return {"draft_version": version}
+
+    def ggd_apply_qualification(
+        self,
+        fit_score,
+        summary,
+        personalization_angle,
+        confidence,
+        source_url=False,
+        industry=False,
+        product_focus=False,
+        recommended_buyer_roles=False,
+    ):
+        """Apply validated Workflow 1 output without granting send approval."""
+        self.ensure_one()
+        try:
+            fit_score = int(fit_score)
+            confidence = float(confidence)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(_("Qualification score and confidence must be numbers.")) from exc
+        if not 0 <= fit_score <= 100:
+            raise ValidationError(_("GGD fit score must be between 0 and 100."))
+        if not 0 <= confidence <= 1:
+            raise ValidationError(_("AI confidence must be between 0.00 and 1.00."))
+        if not (summary or "").strip() or not (personalization_angle or "").strip():
+            raise ValidationError(
+                _("Qualification requires both a fit summary and a personalisation angle.")
+            )
+        needs_review = confidence < 0.7
+        values = {
+            "ggd_fit_score": fit_score,
+            "ggd_fit_summary": summary.strip(),
+            "ggd_personalization_angle": personalization_angle.strip(),
+            "ggd_ai_confidence": confidence,
+            "ggd_ai_last_analyzed_at": fields.Datetime.now(),
+            "ggd_qualification_state": "review" if needs_review else "ready",
+        }
+        if industry:
+            values["ggd_industry"] = str(industry).strip()
+        if product_focus:
+            values["ggd_product_focus"] = str(product_focus).strip()
+        if recommended_buyer_roles:
+            roles = (
+                recommended_buyer_roles
+                if isinstance(recommended_buyer_roles, (list, tuple))
+                else [recommended_buyer_roles]
+            )
+            values["ggd_recommended_buyer_roles"] = "\n".join(
+                str(role).strip() for role in roles if str(role).strip()
+            )
+        values.update(
+            self._ggd_review_values(
+                "ggd_qualification_needs_review",
+                needs_review,
+                _("Qualification confidence is below 0.70; review the result."),
+            )
+        )
+        if source_url:
+            values["ggd_source_url"] = source_url
+        self.write(values)
+        self.message_post(
+            body=_(
+                "GGD qualification recorded. Human review status: %(status)s.",
+                status=_("required") if needs_review else _("not required"),
+            )
+        )
+        return not needs_review
+
+    @api.model
+    def ggd_find_reply_candidates(self, in_reply_to=False, sender_email=False):
+        """Return the minimal Odoo match result needed by Workflow 4."""
+        fields_to_read = [
+            "id",
+            "name",
+            "email_from",
+            "ggd_last_message_id",
+            "ggd_do_not_contact",
+        ]
+        in_reply_to = (in_reply_to or "").strip()
+        sender_email = email_normalize(sender_email or "") or ""
+        searchable = self.with_context(active_test=False)
+        if in_reply_to:
+            exact = searchable.search(
+                [("ggd_last_message_id", "=", in_reply_to)], limit=2
+            )
+            if exact:
+                return {
+                    "match_type": "message_id",
+                    "candidates": exact.read(fields_to_read),
+                }
+        candidates = self.browse()
+        if sender_email:
+            candidates = searchable.search(
+                [("email_normalized", "=", sender_email)], limit=3
+            )
+        return {
+            "match_type": "sender" if candidates else "none",
+            "candidates": candidates.read(fields_to_read),
+        }
+
+    @api.model
+    def ggd_queue_unmatched_inbound(
+        self,
+        message_id,
+        sender_email,
+        subject,
+        reason,
+        received_at=False,
+    ):
+        """Create one visible CRM review record for unmatched inbound mail."""
+        message_id = (message_id or "").strip()
+        sender_email = email_normalize(sender_email or "") or ""
+        subject = (subject or "").strip()
+        reason = (reason or "").strip()
+        if not message_id or not sender_email or not reason:
+            raise ValidationError(
+                _("Unmatched inbound review requires Message-ID, sender, and reason.")
+            )
+        existing = self.with_context(active_test=False).search(
+            [("ggd_last_reply_message_id", "=", message_id)], limit=1
+        )
+        if existing:
+            return existing.id
+        received = self._ggd_parse_workflow_datetime(
+            received_at, _("Inbound received at")
+        ) or fields.Datetime.now()
+        lead = self.create(
+            {
+                "name": _(
+                    "Manual inbound review: %(subject)s",
+                    subject=subject[:120] or _("no subject"),
+                ),
+                "email_from": sender_email,
+                "description": reason[:1000],
+                "ggd_qualification_state": "failed",
+                "ggd_reply_category": "unclear",
+                "ggd_last_reply_message_id": message_id,
+                "ggd_last_reply_received_at": received,
+                "ggd_last_message_date": received.date(),
+                "ggd_reply_needs_review": True,
+                "ggd_automation_needs_review": True,
+                "ggd_automation_review_summary": reason[:1000],
+            }
+        )
+        lead.activity_schedule(
+            "mail.mail_activity_data_todo",
+            date_deadline=fields.Date.context_today(lead),
+            summary=_("Match inbound email manually"),
+            note=escape(reason[:1000]),
+            user_id=self.env.user.id,
+        )
+        lead.message_post(
+            body=_(
+                "GGD created this review record because inbound Message-ID "
+                "%(message_id)s could not be matched unambiguously.",
+                message_id=message_id,
+            )
+        )
+        return lead.id
+
+    def ggd_record_automation_error(self, summary, send_may_have_occurred=False):
+        """Record a concise shared-workflow failure without storing message bodies."""
+        self.ensure_one()
+        summary = (summary or "").strip()
+        if not summary:
+            raise ValidationError(_("An automation error summary is required."))
+        values = self._ggd_review_values(
+            "ggd_workflow_needs_review", True, summary
+        )
+        if send_may_have_occurred:
+            values.update(
+                self._ggd_review_values(
+                    "ggd_delivery_needs_review", True, summary
+                )
+            )
+        self.write(values)
+        self.message_post(
+            body=Markup("<p>%s</p><p>%s</p>")
+            % (escape(_("GGD automation error requires review.")), escape(summary))
+        )
+        return True
+
+    def action_ggd_resolve_automation_review(self):
+        """Let a human close reviewed workflow items without editing flags."""
+        for lead in self:
+            if not lead.ggd_automation_needs_review:
+                continue
+            lead.write(
+                {
+                    "ggd_qualification_needs_review": False,
+                    "ggd_reply_needs_review": False,
+                    "ggd_delivery_needs_review": False,
+                    "ggd_workflow_needs_review": False,
+                    "ggd_automation_needs_review": False,
+                    "ggd_automation_review_summary": False,
+                }
+            )
+            lead.message_post(
+                body=_(
+                    "GGD automation review resolved by %(user)s after manual review.",
+                    user=self.env.user.display_name,
+                )
+            )
+        return True
 
     def _ggd_check_approval_allowed(self, do_not_contact, contact_basis, basis_note):
         """Raise if this combination may not be approved for email outreach.
@@ -229,12 +799,29 @@ class CrmLead(models.Model):
                 lead.ggd_contact_basis,
                 lead.ggd_contact_basis_note,
             )
+            lead._ggd_check_draft_ready(
+                lead.ggd_draft_subject,
+                lead.ggd_draft_body,
+                lead.ggd_draft_version,
+            )
+            lead._ggd_check_recipient_ready(lead.email_from)
+            lead._ggd_check_no_unresolved_send_claim(
+                lead.ggd_delivery_status,
+                lead.ggd_last_send_key,
+                lead.ggd_last_confirmed_send_key,
+            )
+            lead._ggd_check_draft_can_be_approved(
+                lead.ggd_draft_version, lead.ggd_last_sent_draft_version
+            )
             lead.write(
                 {
                     "ggd_outreach_approved": True,
                     "ggd_outreach_approved_by": self.env.user.id,
                     "ggd_outreach_approved_at": fields.Datetime.now(),
                     "ggd_contact_basis_verified_at": fields.Datetime.now(),
+                    "ggd_approved_draft_version": lead.ggd_draft_version,
+                    "ggd_approved_recipient": email_normalize(lead.email_from),
+                    "ggd_draft_status": "approved",
                 }
             )
             lead.message_post(body=_("GGD outreach approved for manual-gated automation."))
@@ -336,6 +923,24 @@ class CrmLead(models.Model):
             blockers.append(_("the contact-basis note is missing or too short"))
         if not state.get("ggd_contact_basis_verified_at"):
             blockers.append(_("the contact-basis verification timestamp is missing"))
+        if not (state.get("email_from") or "").strip():
+            blockers.append(_("the recipient email address is missing"))
+        approved_recipient = (state.get("ggd_approved_recipient") or "").strip()
+        current_recipient = email_normalize(state.get("email_from") or "") or ""
+        if not approved_recipient:
+            blockers.append(_("the approved recipient is missing"))
+        elif current_recipient != approved_recipient:
+            blockers.append(_("the current recipient is not the recipient that was approved"))
+        if not (state.get("ggd_draft_subject") or "").strip():
+            blockers.append(_("the reviewed draft subject is missing"))
+        if not (state.get("ggd_draft_body") or "").strip():
+            blockers.append(_("the reviewed draft body is missing"))
+        draft_version = state.get("ggd_draft_version")
+        approved_version = state.get("ggd_approved_draft_version")
+        if not draft_version or not approved_version:
+            blockers.append(_("the reviewed draft version is missing"))
+        elif draft_version != approved_version:
+            blockers.append(_("the current draft is not the draft that was approved"))
         return blockers
 
     def _ggd_raise_claim_blocked(self, blockers):
@@ -348,6 +953,20 @@ class CrmLead(models.Model):
                 reasons="; ".join(blockers),
             )
         )
+
+    @staticmethod
+    def _ggd_expected_send_key(lead_id, state):
+        version = state.get("ggd_approved_draft_version")
+        return "%s:%s" % (lead_id, version) if version else False
+
+    def _ggd_check_send_key_matches_approved_draft(self, lead_id, state, send_key):
+        if send_key != self._ggd_expected_send_key(lead_id, state):
+            raise ValidationError(
+                _(
+                    "The send key does not identify the currently approved draft. "
+                    "Use opportunity ID + ':' + approved draft version. No message was sent."
+                )
+            )
 
     def ggd_claim_send_key(self, send_key):
         """Atomically claim a send key. Returns True if this caller may send.
@@ -390,45 +1009,357 @@ class CrmLead(models.Model):
         blockers = self._ggd_claim_blockers(state)
         if blockers:
             self._ggd_raise_claim_blocked(blockers)
+        self._ggd_check_send_key_matches_approved_draft(self.id, state, send_key)
         self.write({
             "ggd_last_send_key": send_key,
             "ggd_last_sent_at": fields.Datetime.now(),
         })
         return True
 
-    def ggd_finalize_send(self):
-        """Mark send as complete and revoke approval to prevent resends.
-
-        Called by the outbound workflow immediately AFTER successful SMTP.
-        Updates message date for follow-up scheduling and clears approval.
-
-        Refuses unless a send key has actually been claimed and stamped. That
-        claim is the only evidence the record passed the locked outbound gate.
-        Without it, finalising would post a "message sent" audit note and set a
-        follow-up date for a send that was never authorised - a control
-        reporting success for something that did not happen, which is the
-        failure mode this addon has already been bitten by twice.
-        """
+    def ggd_finalize_send(
+        self,
+        message_id=False,
+        recipient=False,
+        subject=False,
+        body_summary=False,
+    ):
+        """Confirm SMTP success, store its full audit data, and consume approval."""
         self.ensure_one()
-        if not self.ggd_last_send_key or not self.ggd_last_sent_at:
+        self._ggd_check_claim_access()
+        self.flush_recordset(
+            [
+                "ggd_last_send_key",
+                "ggd_last_sent_at",
+                "ggd_last_confirmed_send_key",
+                "ggd_delivery_status",
+                "ggd_claimed_recipient",
+                "ggd_claimed_draft_version",
+                "ggd_draft_subject",
+            ]
+        )
+        self.env.cr.execute(
+            "SELECT ggd_last_send_key, ggd_last_sent_at, "
+            "ggd_last_confirmed_send_key, ggd_delivery_status, "
+            "ggd_claimed_recipient, ggd_claimed_draft_version, "
+            "ggd_draft_subject FROM crm_lead WHERE id = %s FOR UPDATE",
+            (self.id,),
+        )
+        claim = self.env.cr.dictfetchone() or {}
+        if not claim.get("ggd_last_send_key") or not claim.get("ggd_last_sent_at"):
             raise ValidationError(
                 _(
                     "This opportunity has no claimed send to finalise. A send "
-                    "key must be claimed, and its send time stamped, before a "
-                    "completed send can be recorded. No audit note was posted "
-                    "and no follow-up date was set."
+                    "key must be claimed before a completed send can be recorded."
                 )
             )
+        supplied = [message_id, recipient, subject, body_summary]
+        if not all((value or "").strip() for value in supplied):
+            raise ValidationError(
+                _(
+                    "Finalising a workflow send requires the SMTP message ID, "
+                    "recipient, exact subject, and a body summary."
+                )
+            )
+        if claim.get("ggd_last_confirmed_send_key") == claim.get("ggd_last_send_key"):
+            return False
+        if claim.get("ggd_delivery_status") != "claimed":
+            raise ValidationError(_("The claimed send is no longer in flight."))
+        normalized_recipient = email_normalize(recipient or "") or ""
+        if normalized_recipient != (claim.get("ggd_claimed_recipient") or "").strip():
+            raise ValidationError(_("The SMTP recipient does not match the approved lead."))
+        if subject.strip() != (claim.get("ggd_draft_subject") or "").strip():
+            raise ValidationError(_("The sent subject does not match the approved draft."))
         now = fields.Datetime.now()
-        self.write({
+        values = {
             "ggd_last_message_date": now.date(),
+            "ggd_send_confirmed_at": now,
+            "ggd_last_confirmed_send_key": claim.get("ggd_last_send_key"),
+            "ggd_delivery_status": "accepted",
+            "ggd_last_sent_draft_version": claim.get("ggd_claimed_draft_version"),
+            "ggd_draft_status": "sent",
             "ggd_outreach_approved": False,
             "ggd_outreach_approved_by": False,
             "ggd_outreach_approved_at": False,
-        })
-        self.message_post(
-            body=_("GGD outreach sent. Approval revoked; reply analysis will run on inbound.")
+            "ggd_approved_recipient": False,
+            "ggd_claimed_recipient": False,
+            "ggd_claimed_draft_version": False,
+        }
+        values.update(
+            {
+                "ggd_last_message_id": message_id.strip(),
+                "ggd_last_sent_recipient": recipient.strip(),
+                "ggd_last_sent_subject": subject.strip(),
+                "ggd_last_sent_body_summary": body_summary.strip(),
+            }
         )
+        self.write(values)
+        self.message_post(
+            body=_(
+                "GGD outreach accepted by SMTP. Approval was consumed; inbound "
+                "reply and bounce monitoring must determine the delivery outcome."
+            )
+        )
+        return True
+
+    def ggd_record_reply(
+        self,
+        category,
+        summary,
+        suggested_next_action,
+        confidence,
+        response_draft=False,
+        reply_message_id=False,
+        received_at=False,
+        suggested_follow_up_at=False,
+    ):
+        """Apply one validated Workflow 4 result to the matched opportunity."""
+        self.ensure_one()
+        if category not in self.GGD_REPLY_CATEGORIES:
+            raise ValidationError(_("Unknown reply category."))
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(_("Reply confidence must be a number.")) from exc
+        if not 0 <= confidence <= 1:
+            raise ValidationError(_("AI confidence must be between 0.00 and 1.00."))
+        if not (summary or "").strip() or not (suggested_next_action or "").strip():
+            raise ValidationError(
+                _("Reply analysis requires a summary and suggested next action.")
+            )
+        received = self._ggd_parse_workflow_datetime(
+            received_at, _("Reply received at")
+        ) or fields.Datetime.now()
+        normalized_message_id = (reply_message_id or "").strip()
+        self._ggd_check_claim_access()
+        self.flush_recordset(
+            [
+                "ggd_last_reply_message_id",
+                "ggd_last_reply_received_at",
+                "ggd_do_not_contact",
+            ]
+        )
+        self.env.cr.execute(
+            "SELECT ggd_last_reply_message_id, ggd_last_reply_received_at, "
+            "ggd_do_not_contact FROM crm_lead WHERE id = %s FOR UPDATE",
+            (self.id,),
+        )
+        latest = self.env.cr.dictfetchone() or {}
+        if (
+            normalized_message_id
+            and normalized_message_id == latest.get("ggd_last_reply_message_id")
+        ):
+            return False
+        last_received = latest.get("ggd_last_reply_received_at")
+        if last_received and received <= last_received:
+            if category == "unsubscribe" and not latest.get("ggd_do_not_contact"):
+                self.write({"ggd_do_not_contact": True})
+                self.message_post(
+                    body=_(
+                        "GGD received an older unsubscribe message and applied suppression "
+                        "without replacing the latest reply analysis."
+                    )
+                )
+            return False
+        follow_up = self._ggd_parse_workflow_datetime(
+            suggested_follow_up_at, _("Suggested follow-up at")
+        )
+        needs_review = confidence < 0.7 or category == "unclear"
+        suppressed = latest.get("ggd_do_not_contact") or category == "unsubscribe"
+        values = {
+            "ggd_reply_category": category,
+            "ggd_reply_summary": summary.strip(),
+            "ggd_suggested_next_action": (
+                _("No outbound action — contact is suppressed.")
+                if suppressed
+                else suggested_next_action.strip()
+            ),
+            "ggd_ai_confidence": confidence,
+            "ggd_ai_last_analyzed_at": fields.Datetime.now(),
+            "ggd_last_reply_received_at": received,
+            "ggd_last_message_date": received.date(),
+            "ggd_response_draft": (
+                False if suppressed else (response_draft or "").strip() or False
+            ),
+            "ggd_suggested_follow_up_at": False if suppressed else follow_up,
+        }
+        values.update(
+            self._ggd_review_values(
+                "ggd_reply_needs_review",
+                needs_review,
+                _("Reply analysis needs human review because confidence is low or unclear."),
+            )
+        )
+        if normalized_message_id:
+            values["ggd_last_reply_message_id"] = normalized_message_id
+        if category == "unsubscribe":
+            values["ggd_do_not_contact"] = True
+        self.write(values)
+        self.message_post(
+            body=Markup("<p>%s</p><p>%s</p>")
+            % (
+                escape(_("GGD reply analysis recorded.")),
+                escape(summary.strip()),
+            )
+        )
+        return not needs_review
+
+    def ggd_record_bounce(self, message_id, summary, hard_bounce=True):
+        """Record a delivery failure and suppress hard-bounce recipients."""
+        self.ensure_one()
+        if not (message_id or "").strip() or not (summary or "").strip():
+            raise ValidationError(_("Bounce handling requires a message ID and summary."))
+        if (
+            not self.ggd_send_confirmed_at
+            or not self.ggd_last_message_id
+            or message_id.strip() != self.ggd_last_message_id
+        ):
+            raise ValidationError(_("The bounce message ID does not match this opportunity."))
+        values = {
+            "ggd_delivery_status": "bounced",
+        }
+        values.update(
+            self._ggd_review_values(
+                "ggd_delivery_needs_review", True, summary.strip()
+            )
+        )
+        if hard_bounce:
+            values["ggd_do_not_contact"] = True
+        self.write(values)
+        self.message_post(
+            body=Markup("<p>%s</p><p>%s</p>")
+            % (escape(_("GGD email bounce recorded.")), escape(summary.strip()))
+        )
+        return True
+
+    def ggd_queue_follow_up(self, draft):
+        """Atomically create one manual follow-up activity per confirmed send."""
+        self.ensure_one()
+        draft = (draft or "").strip()
+        if not draft:
+            raise ValidationError(_("A follow-up draft is required."))
+        self._ggd_check_claim_access()
+        self.flush_recordset(
+            [
+                "active",
+                "stage_id",
+                "ggd_do_not_contact",
+                "ggd_automation_needs_review",
+                "ggd_send_confirmed_at",
+                "ggd_last_confirmed_send_key",
+                "ggd_delivery_status",
+                "ggd_last_reply_received_at",
+                "ggd_last_follow_up_queue_key",
+            ]
+        )
+        self.env.cr.execute(
+            "SELECT active, stage_id, ggd_do_not_contact, "
+            "ggd_automation_needs_review, ggd_send_confirmed_at, "
+            "ggd_last_confirmed_send_key, ggd_delivery_status, "
+            "ggd_last_reply_received_at, ggd_last_follow_up_queue_key "
+            "FROM crm_lead WHERE id = %s FOR UPDATE",
+            (self.id,),
+        )
+        state = self.env.cr.dictfetchone() or {}
+        confirmed_at = state.get("ggd_send_confirmed_at")
+        stage = self.env["crm.stage"].browse(state.get("stage_id"))
+        if not state.get("active") or stage.is_won:
+            raise ValidationError(
+                _("Won, lost, or archived opportunities are not follow-up candidates.")
+            )
+        if state.get("ggd_do_not_contact"):
+            raise ValidationError(_("Do not contact is set; no follow-up may be queued."))
+        if state.get("ggd_automation_needs_review"):
+            raise ValidationError(
+                _("Resolve the automation review item before queuing follow-up.")
+            )
+        if state.get("ggd_delivery_status") != "accepted":
+            raise ValidationError(
+                _("Only an SMTP-accepted outbound message can be followed up.")
+            )
+        if not confirmed_at:
+            raise ValidationError(_("No confirmed outbound send exists to follow up."))
+        if confirmed_at > fields.Datetime.now() - timedelta(days=7):
+            raise ValidationError(_("The last confirmed send is not yet seven days old."))
+        reply_received_at = state.get("ggd_last_reply_received_at")
+        if reply_received_at and reply_received_at >= confirmed_at:
+            raise ValidationError(
+                _("A reply was received after the last send; follow-up is not due.")
+            )
+        confirmed_key = state.get("ggd_last_confirmed_send_key")
+        if not confirmed_key:
+            raise ValidationError(_("The confirmed send has no durable send key."))
+        queue_key = "%s:%s" % (self.id, confirmed_key)
+        if state.get("ggd_last_follow_up_queue_key") == queue_key:
+            return False
+        responsible = self.user_id or self.env.user
+        note = Markup("<p>%s</p><pre>%s</pre>") % (
+            escape(_("Review this suggested follow-up. Nothing was sent automatically.")),
+            escape(draft),
+        )
+        self.write(
+            {
+                "ggd_follow_up_draft": draft,
+                "ggd_last_follow_up_queue_key": queue_key,
+                "ggd_last_follow_up_queued_at": fields.Datetime.now(),
+            }
+        )
+        self.activity_schedule(
+            "mail.mail_activity_data_todo",
+            date_deadline=fields.Date.context_today(self),
+            summary=_("Review GGD follow-up draft"),
+            note=note,
+            user_id=responsible.id,
+        )
+        self.message_post(
+            body=_("GGD follow-up draft queued for manual review. Nothing was sent.")
+        )
+        return True
+
+    def action_ggd_release_failed_send_claim(self):
+        """Release a known-failed SMTP claim after a human checks Zoho Sent."""
+        for lead in self:
+            lead._ggd_check_claim_access()
+            lead.flush_recordset(
+                [
+                    "ggd_last_send_key",
+                    "ggd_last_confirmed_send_key",
+                    "ggd_delivery_status",
+                ]
+            )
+            lead.env.cr.execute(
+                "SELECT ggd_last_send_key, ggd_last_confirmed_send_key, "
+                "ggd_delivery_status FROM crm_lead WHERE id = %s FOR UPDATE",
+                (lead.id,),
+            )
+            state = lead.env.cr.dictfetchone() or {}
+            if (
+                state.get("ggd_delivery_status") != "claimed"
+                or not state.get("ggd_last_send_key")
+                or state.get("ggd_last_send_key")
+                == state.get("ggd_last_confirmed_send_key")
+            ):
+                raise ValidationError(
+                    _("Only an unresolved, unconfirmed SMTP claim can be released.")
+                )
+            lead.write(
+                {
+                    "ggd_last_send_key": False,
+                    "ggd_last_sent_at": False,
+                    "ggd_delivery_status": "none",
+                    "ggd_claimed_recipient": False,
+                    "ggd_claimed_draft_version": False,
+                    "ggd_last_claim_released_at": fields.Datetime.now(),
+                    "ggd_last_claim_released_by": self.env.user.id,
+                }
+            )
+            lead.message_post(
+                body=_(
+                    "GGD failed send claim released by %(user)s after manual "
+                    "mailbox verification. The approved draft may be claimed again.",
+                    user=self.env.user.display_name,
+                )
+            )
+        return True
 
     def action_ggd_revoke_outreach(self):
         for lead in self:
@@ -438,6 +1369,9 @@ class CrmLead(models.Model):
                     "ggd_outreach_approved_by": False,
                     "ggd_outreach_approved_at": False,
                     "ggd_contact_basis_verified_at": False,
+                    "ggd_approved_draft_version": False,
+                    "ggd_approved_recipient": False,
+                    "ggd_draft_status": "ready" if lead.ggd_draft_version else "empty",
                 }
             )
             lead.message_post(body=_("GGD outreach approval revoked."))
@@ -451,6 +1385,13 @@ class CrmLead(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for values in vals_list:
+            has_draft_content = bool(
+                (values.get("ggd_draft_subject") or "").strip()
+                or (values.get("ggd_draft_body") or "").strip()
+            )
+            if has_draft_content:
+                values.setdefault("ggd_draft_version", uuid4().hex)
+                values.setdefault("ggd_draft_status", "ready")
             if values.get("ggd_last_send_key"):
                 # A send key is a claim against an already-stored, already
                 # approved record. create() never passes through the locked
@@ -473,6 +1414,8 @@ class CrmLead(models.Model):
                         "ggd_outreach_approved_by": False,
                         "ggd_outreach_approved_at": False,
                         "ggd_contact_basis_verified_at": False,
+                        "ggd_approved_draft_version": False,
+                        "ggd_approved_recipient": False,
                     }
                 )
             elif values.get("ggd_outreach_approved"):
@@ -484,9 +1427,22 @@ class CrmLead(models.Model):
                     values.get("ggd_contact_basis"),
                     values.get("ggd_contact_basis_note"),
                 )
+                self._ggd_check_draft_ready(
+                    values.get("ggd_draft_subject"),
+                    values.get("ggd_draft_body"),
+                    values.get("ggd_draft_version"),
+                )
+                self._ggd_check_recipient_ready(values.get("email_from"))
                 values.setdefault("ggd_outreach_approved_by", self.env.user.id)
                 values.setdefault("ggd_outreach_approved_at", fields.Datetime.now())
                 values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
+                values.setdefault(
+                    "ggd_approved_draft_version", values.get("ggd_draft_version")
+                )
+                values.setdefault(
+                    "ggd_approved_recipient", email_normalize(values.get("email_from"))
+                )
+                values["ggd_draft_status"] = "approved"
         return super().create(vals_list)
 
     @staticmethod
@@ -506,6 +1462,30 @@ class CrmLead(models.Model):
         return "ggd_outreach_approved" in values and not values["ggd_outreach_approved"]
 
     @classmethod
+    def _ggd_is_clearing_draft(cls, values):
+        """True when this write REMOVES the draft rather than editing it.
+
+        write() treats any touch of a draft field as an edit and forces
+        ggd_draft_status to "ready". That is right for an edit and wrong for a
+        clear: writing subject, body and version all to False left the record
+        claiming to be draft-ready with no version and nothing to approve - a
+        state no legitimate path should be able to produce, and one that reads
+        to a human reviewer as "there is a draft here" when there is not.
+
+        The condition is deliberately narrow and record-independent: the write
+        must set BOTH the subject and the body, and both must be empty after
+        stripping. Anything less is an edit. Requiring both fields keeps this
+        correct for a multi-record write, because the answer depends only on
+        the values being written and never on what any individual record
+        currently holds.
+        """
+        if "ggd_draft_subject" not in values or "ggd_draft_body" not in values:
+            return False
+        subject = (values.get("ggd_draft_subject") or "").strip()
+        body = (values.get("ggd_draft_body") or "").strip()
+        return not subject and not body
+
+    @classmethod
     def _ggd_is_suppressing(cls, values):
         """True when this write revokes approval or marks Do not contact.
 
@@ -517,6 +1497,68 @@ class CrmLead(models.Model):
         return cls._ggd_is_revoking_approval(values)
 
     def write(self, values):
+        if len(self) > 1 and (
+            values.get("ggd_outreach_approved")
+            or any(
+                field_name in values
+                for field_name in self.GGD_APPROVAL_INPUT_FIELDS
+            )
+        ):
+            for lead in self:
+                lead.write(dict(values))
+            return True
+        approval_input_changed = any(
+            field_name in values for field_name in self.GGD_APPROVAL_INPUT_FIELDS
+        )
+        draft_changed = any(field_name in values for field_name in self.GGD_DRAFT_FIELDS)
+        if approval_input_changed:
+            for lead in self:
+                lead._ggd_check_no_unresolved_send_claim(
+                    lead.ggd_delivery_status,
+                    lead.ggd_last_send_key,
+                    lead.ggd_last_confirmed_send_key,
+                )
+        if draft_changed:
+            values = dict(values)
+            # A draft change always revokes approval, whether the draft was
+            # edited or removed: the human approved a specific version, and
+            # that version no longer stands either way.
+            revocation = {
+                "ggd_outreach_approved": False,
+                "ggd_outreach_approved_by": False,
+                "ggd_outreach_approved_at": False,
+                "ggd_contact_basis_verified_at": False,
+                "ggd_approved_draft_version": False,
+                "ggd_approved_recipient": False,
+            }
+            if self._ggd_is_clearing_draft(values):
+                values.update(revocation)
+                values.update(
+                    {
+                        "ggd_draft_version": False,
+                        "ggd_draft_status": "empty",
+                    }
+                )
+            else:
+                values.setdefault("ggd_draft_version", uuid4().hex)
+                values.update(revocation)
+                values["ggd_draft_status"] = "ready"
+        elif "email_from" in values and not values.get("ggd_outreach_approved"):
+            for lead in self.filtered("ggd_outreach_approved"):
+                values = dict(values)
+                values.update(
+                    {
+                        "ggd_outreach_approved": False,
+                        "ggd_outreach_approved_by": False,
+                        "ggd_outreach_approved_at": False,
+                        "ggd_contact_basis_verified_at": False,
+                        "ggd_approved_draft_version": False,
+                        "ggd_approved_recipient": False,
+                        "ggd_draft_status": (
+                            "ready" if lead.ggd_draft_version else "empty"
+                        ),
+                    }
+                )
         send_key = values.get("ggd_last_send_key")
         if send_key and self._ggd_is_suppressing(values):
             # Suppression always wins. A write that marks Do not contact or
@@ -551,7 +1593,7 @@ class CrmLead(models.Model):
                     )
                 )
             locked = self._ggd_lock_outbound_state()
-            for state in locked.values():
+            for lead_id, state in locked.items():
                 # Duplicate first: an already-sent record has had its approval
                 # consumed, and must be reported as a duplicate rather than as
                 # an approval failure.
@@ -568,12 +1610,26 @@ class CrmLead(models.Model):
                 blockers = self._ggd_claim_blockers(state)
                 if blockers:
                     self._ggd_raise_claim_blocked(blockers)
+                self._ggd_check_send_key_matches_approved_draft(
+                    lead_id, state, send_key
+                )
             # A successful claim is what marks the send as in flight, so record
             # when it happened. setdefault leaves an explicit value from the
             # caller - ggd_claim_send_key() supplies one - untouched. The copy
             # keeps the caller's dict unmodified.
             values = dict(values)
             values.setdefault("ggd_last_sent_at", fields.Datetime.now())
+            values.setdefault("ggd_delivery_status", "claimed")
+            if len(self) == 1:
+                claim_state = locked.get(self.id) or {}
+                values.setdefault(
+                    "ggd_claimed_recipient",
+                    email_normalize(claim_state.get("email_from") or ""),
+                )
+                values.setdefault(
+                    "ggd_claimed_draft_version",
+                    claim_state.get("ggd_approved_draft_version"),
+                )
 
         if values.get("ggd_do_not_contact"):
             values.update(
@@ -582,6 +1638,8 @@ class CrmLead(models.Model):
                     "ggd_outreach_approved_by": False,
                     "ggd_outreach_approved_at": False,
                     "ggd_contact_basis_verified_at": False,
+                    "ggd_approved_draft_version": False,
+                    "ggd_approved_recipient": False,
                 }
             )
         elif self._ggd_is_revoking_approval(values):
@@ -590,6 +1648,8 @@ class CrmLead(models.Model):
                     "ggd_outreach_approved_by": False,
                     "ggd_outreach_approved_at": False,
                     "ggd_contact_basis_verified_at": False,
+                    "ggd_approved_draft_version": False,
+                    "ggd_approved_recipient": False,
                 }
             )
         elif values.get("ggd_outreach_approved"):
@@ -602,12 +1662,43 @@ class CrmLead(models.Model):
                     values.get("ggd_contact_basis", lead.ggd_contact_basis),
                     values.get("ggd_contact_basis_note", lead.ggd_contact_basis_note),
                 )
-            # Stamp the approval metadata that the button would have set.
-            # Without this, a record approved by a direct write carries no
-            # approver and no timestamp, and the outbound send key - which is
-            # derived from the approval time - cannot distinguish one approval
-            # from the next.
+                lead._ggd_check_draft_ready(
+                    values.get("ggd_draft_subject", lead.ggd_draft_subject),
+                    values.get("ggd_draft_body", lead.ggd_draft_body),
+                    values.get("ggd_draft_version", lead.ggd_draft_version),
+                )
+                lead._ggd_check_recipient_ready(
+                    values.get("email_from", lead.email_from)
+                )
+                lead._ggd_check_no_unresolved_send_claim(
+                    values.get("ggd_delivery_status", lead.ggd_delivery_status),
+                    values.get("ggd_last_send_key", lead.ggd_last_send_key),
+                    values.get(
+                        "ggd_last_confirmed_send_key",
+                        lead.ggd_last_confirmed_send_key,
+                    ),
+                )
+                lead._ggd_check_draft_can_be_approved(
+                    values.get("ggd_draft_version", lead.ggd_draft_version),
+                    values.get(
+                        "ggd_last_sent_draft_version",
+                        lead.ggd_last_sent_draft_version,
+                    ),
+                )
+            # Stamp the approval metadata and approved draft version that the
+            # button would have set. Without these, the outbound claim cannot
+            # prove which human-reviewed subject/body it covers.
             values.setdefault("ggd_outreach_approved_by", self.env.user.id)
             values.setdefault("ggd_outreach_approved_at", fields.Datetime.now())
             values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
+            if len(self) == 1:
+                values.setdefault(
+                    "ggd_approved_draft_version",
+                    values.get("ggd_draft_version", self.ggd_draft_version),
+                )
+                values.setdefault(
+                    "ggd_approved_recipient",
+                    email_normalize(values.get("email_from", self.email_from)),
+                )
+                values.setdefault("ggd_draft_status", "approved")
         return super().write(values)

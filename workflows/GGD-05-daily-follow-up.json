@@ -1,0 +1,141 @@
+{
+  "name": "GGD-05 Daily follow-up review queue",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "30 8 * * 1-5"}]}},
+      "id": "783e0d98-44cf-4cc0-9a6c-0987b49e9f0a",
+      "name": "Weekdays at 08:30 Berlin",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-880, -100]
+    },
+    {
+      "parameters": {},
+      "id": "77c31495-a133-4482-bffd-e3827389512f",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-880, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/search_read",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { domain: [['active','=',true],['stage_id.is_won','=',false],['ggd_do_not_contact','=',false],['ggd_automation_needs_review','=',false],['ggd_delivery_status','=','accepted'],['ggd_send_confirmed_at','!=',false],['ggd_send_confirmed_at','<=',$now.minus({days: 7}).toFormat('yyyy-MM-dd HH:mm:ss')]], fields: ['id','name','partner_name','email_from','user_id','ggd_fit_summary','ggd_personalization_angle','ggd_last_sent_subject','ggd_last_sent_body_summary','ggd_send_confirmed_at','ggd_last_reply_received_at','ggd_last_follow_up_queue_key'], limit: 5, order: 'ggd_send_confirmed_at asc, id asc' } }}",
+        "options": {}
+      },
+      "id": "d95ae1f7-8cd2-43d1-8238-5ab8a02c7d1a",
+      "name": "Select stale contacted opportunities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-640, -20],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = $input.all().map(item => item.json);\nlet rows = incoming;\nif (incoming.length === 1) { const first = incoming[0]; rows = Array.isArray(first) ? first : (Array.isArray(first.body) ? first.body : (first?.id ? [first] : [])); }\nreturn rows.filter(row => !row.ggd_last_reply_received_at || new Date(row.ggd_last_reply_received_at) < new Date(row.ggd_send_confirmed_at)).map(row => ({ json: row }));"
+      },
+      "id": "0ad0d85e-c440-4f8e-ac43-fb820cd5c756",
+      "name": "Exclude opportunities with replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, -20]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Create one concise follow-up email draft for a human to review. Do not send it, invent facts, or add claims beyond the stored Odoo context. Acknowledge the prior subject without pretending the recipient read it. Return only the structured draft.\n\nOdoo context: {{ JSON.stringify($json) }}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "87b13581-663f-47c7-8ab2-2f49c704127d",
+      "name": "Draft manual follow-up",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [-150, -20]
+    },
+    {
+      "parameters": {"model": {"__rl": true, "value": "claude-sonnet-5", "mode": "list", "cachedResultName": "Claude Sonnet 5"}, "options": {}},
+      "id": "4e38a0e9-e68e-49d9-9453-01a24ffc39d1",
+      "name": "Anthropic follow-up model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [-180, 220],
+      "credentials": {"anthropicApi": {"id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL", "name": "Anthropic account"}}
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"draft\": \"Hello,\\n\\nA short fictional follow-up for manual review.\\n\\nBest regards\"\n}",
+        "autoFix": false
+      },
+      "id": "c379d6c4-523c-45a0-ae07-b8d3a2b19c59",
+      "name": "Follow-up JSON schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [40, 220]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let result = $json.output ?? $json.response ?? $json.text ?? $json;\nif (typeof result === 'string') { const match = result.match(/\\{[\\s\\S]*\\}/); if (!match) throw new Error('Follow-up output was not JSON.'); result = JSON.parse(match[0]); }\nconst lead = $('Exclude opportunities with replies').item.json;\nconst draft = String(result.draft || '').trim();\nif (draft.length < 40 || draft.length > 2500) throw new Error(`Follow-up for opportunity ${lead.id} failed length validation.`);\nreturn { json: { id: lead.id, draft } };"
+      },
+      "id": "9b413205-c48e-48cc-a62e-225981ac9121",
+      "name": "Validate follow-up draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [130, -20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_queue_follow_up",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], draft: $json.draft } }}",
+        "options": {}
+      },
+      "id": "2eec1418-aef3-494a-8f11-2b59274ec2f4",
+      "name": "Create one deduplicated Odoo review activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "content": "## Function\nRuns at 08:30 Europe/Berlin on weekdays. Selects confirmed sends at least seven days old, excludes won/lost/suppressed/replied/error records, and creates one deduplicated **manual review** activity. It never sends a follow-up automatically.",
+        "height": 240,
+        "width": 440
+      },
+      "id": "95bb8f34-aeb3-4d78-901d-a684ad3856f6",
+      "name": "Follow-up rules",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [350, -340]
+    }
+  ],
+  "connections": {
+    "Weekdays at 08:30 Berlin": {"main": [[{"node": "Select stale contacted opportunities", "type": "main", "index": 0}]]},
+    "Manual test trigger": {"main": [[{"node": "Select stale contacted opportunities", "type": "main", "index": 0}]]},
+    "Select stale contacted opportunities": {"main": [[{"node": "Exclude opportunities with replies", "type": "main", "index": 0}]]},
+    "Exclude opportunities with replies": {"main": [[{"node": "Draft manual follow-up", "type": "main", "index": 0}]]},
+    "Anthropic follow-up model": {"ai_languageModel": [[{"node": "Draft manual follow-up", "type": "ai_languageModel", "index": 0}]]},
+    "Follow-up JSON schema": {"ai_outputParser": [[{"node": "Draft manual follow-up", "type": "ai_outputParser", "index": 0}]]},
+    "Draft manual follow-up": {"main": [[{"node": "Validate follow-up draft", "type": "main", "index": 0}]]},
+    "Validate follow-up draft": {"main": [[{"node": "Create one deduplicated Odoo review activity", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "c0175d28-f0cd-4505-8f2a-c5c94e1928ef"
+}

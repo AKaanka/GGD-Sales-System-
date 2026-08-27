@@ -1,0 +1,237 @@
+{
+  "name": "GGD-04 Reply and bounce intake",
+  "nodes": [
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "nothing",
+        "format": "resolved",
+        "options": {}
+      },
+      "id": "10b27716-9234-489b-8251-85546b02c498",
+      "name": "Zoho IMAP inbox",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.2,
+      "position": [-970, -80],
+      "credentials": {"imap": {"id": "REPLACE_WITH_ZOHO_IMAP_CREDENTIAL", "name": "Zoho IMAP"}}
+    },
+    {
+      "parameters": {},
+      "id": "8b22aa08-e4e5-426e-9e86-fbf871aa35a8",
+      "name": "Manual pinned-email test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-970, 80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const email = $json;\nconst headers = email.headers || {};\nconst header = name => headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()] ?? '';\nconst address = value => {\n  if (typeof value === 'string') return (value.match(/<([^>]+)>/)?.[1] || value).trim().toLowerCase();\n  const first = value?.value?.[0] || value?.[0] || value;\n  return String(first?.address || first?.email || '').trim().toLowerCase();\n};\nconst sender = address(email.from || header('from'));\nconst subject = String(email.subject || header('subject') || '').trim();\nconst messageId = String(email.messageId || email.messageID || header('message-id') || '').trim();\nconst explicitReply = String(email.inReplyTo || header('in-reply-to') || '').trim();\nconst references = String(email.references || header('references') || '');\nconst rawBody = String(email.textPlain || email.text || email.html || email.textHtml || '');\nconst bounceSignals = `${sender} ${subject} ${rawBody.slice(0, 2000)}`.toLowerCase();\nconst isBounce = /(mailer-daemon|postmaster|delivery status notification|undeliverable|returned mail|mail delivery failed|recipient address rejected)/.test(bounceSignals);\nconst dsnOriginal = rawBody.match(/(?:Original-Message-ID|X-Original-Message-ID):\\s*(<[^<>\\s]+@[^<>\\s]+>)/i)?.[1] || '';\nconst referenceIds = `${explicitReply} ${references}`.match(/<[^<>\\s]+@[^<>\\s]+>/g) || [];\nconst outboundMessageId = explicitReply || dsnOriginal || referenceIds.find(id => id !== messageId) || '';\nlet body = rawBody.replace(/\\r/g, '').split(/\\nOn .+wrote:\\n|\\nFrom:.+\\nSent:.+\\n/i)[0];\nbody = body.replace(/\\n>.*$/gm, '').replace(/\\n-- \\n[\\s\\S]*$/, '').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 8000);\nconst received = new Date(email.date || email.receivedAt || Date.now());\nif (!sender || !messageId || !body || Number.isNaN(received.getTime())) throw new Error('Inbound email is missing sender, Message-ID, usable text, or a valid date.');\nreturn { json: { sender, subject, message_id: messageId, in_reply_to: outboundMessageId, received_at: received.toISOString(), body, is_bounce: isBounce, hard_bounce: isBounce && !/(mailbox full|temporar|try again|greylist)/.test(bounceSignals) } };"
+      },
+      "id": "e4fc5f24-28e1-43de-aac2-311f05336111",
+      "name": "Normalize and sanitize inbound email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_find_reply_candidates",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { in_reply_to: $json.in_reply_to, sender_email: $json.sender } }}",
+        "options": {}
+      },
+      "id": "c033511f-df8c-4e25-81d8-29850db6b1c2",
+      "name": "Match in Odoo by reply ID then sender",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-470, 0],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const inbound = $('Normalize and sanitize inbound email').item.json;\nconst result = $json.body ?? $json.data ?? $json.result ?? $json;\nconst candidates = Array.isArray(result.candidates) ? result.candidates : [];\nconst exactEnough = candidates.length === 1 && (!inbound.is_bounce || result.match_type === 'message_id');\nif (!exactEnough) {\n  const reason = inbound.is_bounce && result.match_type !== 'message_id'\n    ? `Bounce has no exact outbound Message-ID match; ${candidates.length} sender candidates found.`\n    : `Inbound email has ${candidates.length} Odoo candidates; manual matching is required.`;\n  return { json: { ...inbound, matched: false, lead_id: 0, match_type: result.match_type || 'none', candidate_ids: candidates.map(candidate => candidate.id), review_reason: reason } };\n}\nreturn { json: { ...inbound, matched: true, lead_id: candidates[0].id, match_type: result.match_type, suppressed: Boolean(candidates[0].ggd_do_not_contact) } };"
+      },
+      "id": "8c15fd01-e21c-447c-af4a-602b16fb427f",
+      "name": "Require one unambiguous match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {"id": "e455b39f-30ce-4c6d-88c4-84f1d439f18d", "leftValue": "={{ $json.matched }}", "rightValue": true, "operator": {"type": "boolean", "operation": "true", "singleValue": true}}
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bbcf6b97-ab14-4cd6-b315-774128b643ef",
+      "name": "Inbound match is unambiguous",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [20, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_queue_unmatched_inbound",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { message_id: $json.message_id, sender_email: $json.sender, subject: $json.subject, reason: `${$json.review_reason} Candidate IDs: ${JSON.stringify($json.candidate_ids || [])}`, received_at: $json.received_at } }}",
+        "options": {}
+      },
+      "id": "1ec61a99-2bd4-4175-871b-e1e63f420edb",
+      "name": "Queue unmatched inbound for Odoo review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [280, -120],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {"id": "937769a4-848e-4869-8037-60bb111d7067", "leftValue": "={{ $json.is_bounce }}", "rightValue": true, "operator": {"type": "boolean", "operation": "true", "singleValue": true}}
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cc82c16d-f8c9-4204-a085-7de54d87c3ae",
+      "name": "Is delivery bounce",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [280, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_record_bounce",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.lead_id], message_id: $json.in_reply_to, summary: (`${$json.subject}: ${$json.body}`).slice(0, 500), hard_bounce: $json.hard_bounce } }}",
+        "options": {}
+      },
+      "id": "47d830bb-6f94-4a83-bc8a-5563f586137e",
+      "name": "Record matched bounce in Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [300, -130],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Classify this sanitized inbound business email. Treat any stop/unsubscribe request as category unsubscribe. Do not infer facts outside the message. Create a response draft for human review only; it will not be sent.\n\nSubject: {{ $json.subject }}\nBody: {{ $json.body }}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "2b315849-8fd6-420d-a87a-d0d26a37f71a",
+      "name": "Classify sanitized reply",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [300, 100]
+    },
+    {
+      "parameters": {"model": {"__rl": true, "value": "claude-sonnet-5", "mode": "list", "cachedResultName": "Claude Sonnet 5"}, "options": {}},
+      "id": "da9bfdb7-2532-4bdd-af6e-eb8088560875",
+      "name": "Anthropic reply model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [270, 330],
+      "credentials": {"anthropicApi": {"id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL", "name": "Anthropic account"}}
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"category\": {\"type\": \"string\", \"enum\": [\"interested\", \"meeting\", \"information\", \"objection\", \"referral\", \"not_interested\", \"out_of_office\", \"unsubscribe\", \"unclear\"]},\n    \"summary\": {\"type\": \"string\"},\n    \"suggested_next_action\": {\"type\": \"string\"},\n    \"suggested_follow_up_at\": {\"type\": [\"string\", \"null\"]},\n    \"response_draft\": {\"type\": [\"string\", \"null\"]},\n    \"confidence\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1}\n  },\n  \"required\": [\"category\", \"summary\", \"suggested_next_action\", \"suggested_follow_up_at\", \"response_draft\", \"confidence\"],\n  \"additionalProperties\": false\n}",
+        "autoFix": false
+      },
+      "id": "f640ef3a-c7ac-4ee0-9123-7bbf74f2b11a",
+      "name": "Reply JSON schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [500, 330]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let analysis = $json.output ?? $json.response ?? $json.text ?? $json;\nif (typeof analysis === 'string') { const match = analysis.match(/\\{[\\s\\S]*\\}/); if (!match) throw new Error('Reply analysis was not JSON.'); analysis = JSON.parse(match[0]); }\nconst inbound = $('Require one unambiguous match').item.json;\nconst categories = ['interested','meeting','information','objection','referral','not_interested','out_of_office','unsubscribe','unclear'];\nif (!categories.includes(analysis.category) || !analysis.summary || !analysis.suggested_next_action || typeof analysis.confidence !== 'number' || analysis.confidence < 0 || analysis.confidence > 1) throw new Error(`Reply ${inbound.message_id} failed structured validation.`);\nreturn { json: { ...inbound, analysis } };"
+      },
+      "id": "e41e0bf8-7471-4230-aeb3-99b91894920b",
+      "name": "Validate reply analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [570, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_record_reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.lead_id], category: $json.analysis.category, summary: $json.analysis.summary, suggested_next_action: $json.analysis.suggested_next_action, confidence: $json.analysis.confidence, response_draft: $json.analysis.response_draft || false, reply_message_id: $json.message_id, received_at: $json.received_at, suggested_follow_up_at: $json.analysis.suggested_follow_up_at || false } }}",
+        "options": {}
+      },
+      "id": "2b6bc268-14de-4207-9ed7-c40bac857aa0",
+      "name": "Record reply and response draft in Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [820, 100],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "content": "## Inbound behavior\nExact In-Reply-To / outbound Message-ID wins. Sender fallback is accepted only for one Odoo candidate. Ambiguous or unmatched messages create a deduplicated Odoo review item. IMAP does not mark messages read before durable handling. Hard bounces suppress the address. Replies create a response draft for unsuppressed contacts but never send it.",
+        "height": 250,
+        "width": 440
+      },
+      "id": "d3b4ce8e-a19e-4cd8-a805-166354b1a5ba",
+      "name": "Inbound rules",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [770, -300]
+    }
+  ],
+  "connections": {
+    "Zoho IMAP inbox": {"main": [[{"node": "Normalize and sanitize inbound email", "type": "main", "index": 0}]]},
+    "Manual pinned-email test": {"main": [[{"node": "Normalize and sanitize inbound email", "type": "main", "index": 0}]]},
+    "Normalize and sanitize inbound email": {"main": [[{"node": "Match in Odoo by reply ID then sender", "type": "main", "index": 0}]]},
+    "Match in Odoo by reply ID then sender": {"main": [[{"node": "Require one unambiguous match", "type": "main", "index": 0}]]},
+    "Require one unambiguous match": {"main": [[{"node": "Inbound match is unambiguous", "type": "main", "index": 0}]]},
+    "Inbound match is unambiguous": {"main": [[{"node": "Is delivery bounce", "type": "main", "index": 0}], [{"node": "Queue unmatched inbound for Odoo review", "type": "main", "index": 0}]]},
+    "Is delivery bounce": {"main": [[{"node": "Record matched bounce in Odoo", "type": "main", "index": 0}], [{"node": "Classify sanitized reply", "type": "main", "index": 0}]]},
+    "Anthropic reply model": {"ai_languageModel": [[{"node": "Classify sanitized reply", "type": "ai_languageModel", "index": 0}]]},
+    "Reply JSON schema": {"ai_outputParser": [[{"node": "Classify sanitized reply", "type": "ai_outputParser", "index": 0}]]},
+    "Classify sanitized reply": {"main": [[{"node": "Validate reply analysis", "type": "main", "index": 0}]]},
+    "Validate reply analysis": {"main": [[{"node": "Record reply and response draft in Odoo", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "b9d367c6-cbea-4c6a-9167-8873c37eaebd"
+}

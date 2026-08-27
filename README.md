@@ -90,7 +90,14 @@ The extension adds approval, compliance, qualification, reply-analysis, and LLM 
 2. Create the local n8n owner account.
 3. Do not enable public webhooks yet.
 4. Add Zoho and LLM credentials only through n8n's **Credentials** interface.
-5. Follow [docs/N8N-AUTOMATION-SPEC.md](docs/N8N-AUTOMATION-SPEC.md).
+5. Upgrade the GGD addon, then follow the
+   [workflow import guide](workflows/README.md) to import Workflows 00–05.
+6. Keep every imported workflow inactive until its manual test is verified in
+   Odoo. Workflow 3 may be tested only with Kaan's explicit approval and a
+   Kaan-owned recipient.
+
+The imports use Odoo 19's JSON-2 API and a bearer token stored as an n8n HTTP
+Header Auth credential. No Odoo password is embedded in workflow JSON.
 
 ## Daily commands
 
@@ -128,6 +135,8 @@ Run this after Codex changes project files and before every GitHub push:
 ```
 
 GitHub runs the same validation automatically after each push and pull request.
+It also checks all six workflow graphs and runs the offline reply-matching
+decision suite.
 
 ## Backup
 

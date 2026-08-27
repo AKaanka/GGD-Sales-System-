@@ -1,351 +1,234 @@
 {
+  "name": "GGD-03 Approved reviewed draft send",
   "nodes": [
     {
-      "parameters": {
-        "triggerType": "interval",
-        "triggerInterval": "15m"
-      },
-      "id": "node_schedule_trigger",
-      "name": "Schedule Trigger",
-      "type": "n8n-nodes-base.interval",
+      "parameters": {"rule": {"interval": [{"field": "minutes", "minutesInterval": 15}]}},
+      "id": "bdcdfafe-39a8-4bf9-92f2-833e02dc4d19",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-900, -80]
+    },
+    {
+      "parameters": {},
+      "id": "9317cd16-b0fc-446d-85c6-d36f89bdba07",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        100,
-        300
-      ]
+      "position": [-900, 80]
     },
     {
       "parameters": {
-        "url": "http://odoo:8069/jsonrpc",
         "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/search_read",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"search_read\", [[['ggd_outreach_approved', '=', true], ['ggd_do_not_contact', '=', false], ['ggd_contact_basis', '!=', ''], ['active', '=', true]], [\"id\", \"email_from\", \"partner_id\", \"name\", \"ggd_contact_basis\", \"ggd_do_not_contact\", \"ggd_outreach_approved\"]], {\"order\": \"ggd_outreach_approval_date asc\", \"limit\": 10}]}, \"id\": 1}",
-        "alwaysOutputData": true
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { domain: [['active','=',true],['ggd_outreach_approved','=',true],['ggd_do_not_contact','=',false],['ggd_contact_basis','!=',false],['ggd_draft_status','=','approved'],['ggd_approved_draft_version','!=',false],['email_from','!=',false]], fields: ['id','name','email_from','ggd_contact_basis','ggd_outreach_approved','ggd_do_not_contact','ggd_draft_subject','ggd_draft_body','ggd_draft_version','ggd_approved_draft_version','ggd_draft_status'], limit: 10, order: 'ggd_outreach_approved_at asc, id asc' } }}",
+        "options": {}
       },
-      "id": "node_query_approved",
-      "name": "Query Approved Opportunities",
+      "id": "162c979d-74b9-464c-8728-106330a36de1",
+      "name": "Select approved reviewed drafts",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        300,
-        300
-      ],
-      "credentials": {
-        "httpBasicAuth": "odoo_auth"
-      }
+      "typeVersion": 4.3,
+      "position": [-650, 0],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
     },
     {
-      "parameters": {
-        "conditions": {
-          "booleanProperties": [
-            {
-              "condition": "empty",
-              "value1": "={{ $json.result }}"
-            }
-          ]
-        }
-      },
-      "id": "node_has_candidates",
-      "name": "Has Candidates?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        500,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "item": "={{ $json.result }}"
-      },
-      "id": "node_loop_records",
-      "name": "Loop Through Records",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        700,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "code": "// Validate approval rules for current record\nconst record = $json;\nconst violations = [];\n\nif (record.ggd_do_not_contact) {\n  violations.push('ggd_do_not_contact is true');\n}\nif (!record.ggd_outreach_approved) {\n  violations.push('ggd_outreach_approved is false');\n}\nif (!record.ggd_contact_basis) {\n  violations.push('ggd_contact_basis is empty');\n}\n\nreturn {\n  ...record,\n  canSend: violations.length === 0,\n  violations: violations\n};"
-      },
-      "id": "node_validate_approval",
-      "name": "Validate Approval Rules",
+      "parameters": {"jsCode": "const incoming = $input.all().map(item => item.json);\nlet rows = incoming;\nif (incoming.length === 1) {\n  const first = incoming[0];\n  rows = Array.isArray(first) ? first : (Array.isArray(first.body) ? first.body : (first && first.id ? [first] : []));\n}\nreturn rows.map(row => ({ json: row }));"},
+      "id": "7877b911-f2d8-48bc-a870-d014734aaf35",
+      "name": "One candidate per item",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        900,
-        300
-      ]
+      "position": [-410, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const lead = $json;\nconst required = lead.ggd_outreach_approved === true && lead.ggd_do_not_contact === false && Boolean(lead.ggd_contact_basis) && Boolean(lead.email_from) && Boolean(lead.ggd_draft_subject) && Boolean(lead.ggd_draft_body) && lead.ggd_draft_status === 'approved' && lead.ggd_draft_version === lead.ggd_approved_draft_version;\nif (!required) throw new Error(`Opportunity ${lead.id} failed the final reviewed-draft gate; nothing was sent.`);\nconst body = String(lead.ggd_draft_body).trim();\nreturn { json: { ...lead, send_key: `${lead.id}:${lead.ggd_approved_draft_version}`, body_summary: body.replace(/\\s+/g, ' ').slice(0, 500) } };"
+      },
+      "id": "79e4b5e2-69f4-4fde-a935-36c467475d61",
+      "name": "Prepare exact reviewed send",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-170, 0]
     },
     {
       "parameters": {
         "conditions": {
-          "booleanProperties": [
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
             {
-              "condition": "equals",
-              "value1": "={{ $json.canSend }}",
-              "value2": true
+              "id": "413bc6b4-b9d7-4f26-9249-d352a98a7b12",
+              "leftValue": "={{ $json.email_from }}",
+              "rightValue": "REPLACE_WITH_KAAN_TEST_RECIPIENT",
+              "operator": {"type": "string", "operation": "equals"}
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "node_branch_approved",
-      "name": "Approved?",
+      "id": "5510a8df-5111-4b16-9005-1015381238be",
+      "name": "Gate 4 recipient allowlist (temporary)",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        1100,
-        300
-      ]
+      "typeVersion": 2.2,
+      "position": [70, 0]
     },
     {
       "parameters": {
-        "url": "http://odoo:8069/jsonrpc",
+        "mode": "runOnceForEachItem",
+        "jsCode": "throw new Error('Recipient is not on the Gate 4 test allowlist; nothing was sent.');"
+      },
+      "id": "6a3ef005-a935-47cd-b36f-f67c0011ba88",
+      "name": "Reject recipient outside Gate 4 allowlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [310, 190]
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"ggd_claim_send_key\", [[{{ $json.id }}], \"{{ $json.id }}-send-{{ now().format('YYYYMMDDHHmmss') }}\"]}, \"id\": 1}",
-        "alwaysOutputData": true
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_claim_send_key",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], send_key: $json.send_key } }}",
+        "options": {}
       },
-      "id": "node_claim_send_key",
-      "name": "Claim Send Key",
+      "id": "e40ac194-4da8-4bb6-b9c4-d1e8a6b3f366",
+      "name": "Claim send key before SMTP",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1300,
-        100
-      ]
+      "typeVersion": 4.3,
+      "position": [310, 0],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
     },
     {
       "parameters": {
-        "conditions": {
-          "booleanProperties": [
-            {
-              "condition": "equals",
-              "value1": "={{ $json.result }}",
-              "value2": true
-            }
-          ]
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json;\nconst claimed = raw === true || raw.body === true || raw.data === true || raw.result === true;\nif (!claimed) return null;\nreturn { json: $('Prepare exact reviewed send').item.json };"
       },
-      "id": "node_key_claimed",
-      "name": "Key Claimed?",
-      "type": "n8n-nodes-base.if",
+      "id": "817df7da-60da-421a-ad82-42e17122d765",
+      "name": "Continue only for new claim",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1500,
-        100
-      ]
+      "position": [550, 0]
     },
     {
       "parameters": {
-        "prompt": "Generate a short, personalized outreach email for this prospect:\n\nCompany: {{ $json.name }}\nContact: {{ $json.email_from }}\nBasis: {{ $json.ggd_contact_basis }}\n\nCreate subject line and body. Keep it brief and professional."
-      },
-      "id": "node_generate_draft",
-      "name": "Generate Draft",
-      "type": "n8n-nodes-base.anthropicChatModel",
-      "typeVersion": 1,
-      "position": [
-        1700,
-        100
-      ]
-    },
-    {
-      "parameters": {
-        "host": "{{ $env.SMTP_HOST }}",
-        "port": "{{ $env.SMTP_PORT }}",
-        "user": "{{ $env.SMTP_USER }}",
-        "pass": "{{ $env.SMTP_PASSWORD }}",
+        "fromEmail": "REPLACE_WITH_KAAN_TEST_SENDER",
         "toEmail": "={{ $json.email_from }}",
-        "subject": "={{ $json.subject }}",
+        "subject": "={{ $json.ggd_draft_subject }}",
         "emailFormat": "text",
-        "message": "={{ $json.body }}"
+        "text": "={{ $json.ggd_draft_body }}",
+        "options": {"appendAttribution": false}
       },
-      "id": "node_send_smtp",
-      "name": "Send Email (SMTP)",
-      "type": "n8n-nodes-base.sendEmail",
+      "id": "d111e55a-a292-4090-bfcf-bb0a8a810091",
+      "name": "Send exact reviewed draft via Zoho",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [790, 0],
+      "credentials": {"smtp": {"id": "REPLACE_WITH_ZOHO_SMTP_CREDENTIAL", "name": "Zoho SMTP"}},
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const smtp = $json;\nconst prepared = $('Prepare exact reviewed send').item.json;\nconst messageId = smtp.messageId || smtp.messageID || smtp.response?.messageId || smtp.response?.messageID;\nif (!messageId) throw new Error(`SMTP reported success for opportunity ${prepared.id} but returned no Message-ID. Do not retry; inspect Zoho Sent and the claimed key.`);\nreturn { json: { ...prepared, smtp_message_id: String(messageId) } };"
+      },
+      "id": "3b4a94dd-130a-4297-a929-ab4f92c58fe2",
+      "name": "Require SMTP Message-ID",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1900,
-        100
-      ]
+      "position": [1030, 0]
     },
     {
       "parameters": {
-        "url": "http://odoo:8069/jsonrpc",
         "method": "POST",
-        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"crm.lead\", \"ggd_finalize_send\", [[{{ $json.id }}]]]}, \"id\": 1}",
-        "alwaysOutputData": true
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_finalize_send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], message_id: $json.smtp_message_id, recipient: $json.email_from, subject: $json.ggd_draft_subject, body_summary: $json.body_summary } }}",
+        "options": {}
       },
-      "id": "node_finalize_send",
-      "name": "Finalize Send",
+      "id": "20338b39-1171-4120-84ea-5846126ea42b",
+      "name": "Finalize complete send audit in Odoo",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2100,
-        100
-      ]
+      "typeVersion": 4.3,
+      "position": [1270, 0],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}},
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "url": "http://odoo:8069/jsonrpc",
-        "method": "POST",
-        "body": "={\"jsonrpc\": \"2.0\", \"method\": \"call\", \"params\": {\"service\": \"object\", \"method\": \"execute_kw\", \"args\": [\"ggd\", 2, \"{{ $env.ODOO_AUTOMATION_PASSWORD }}\", \"mail.message\", \"create\", [{\"model\": \"crm.lead\", \"res_id\": {{ $json.id }}, \"message_type\": \"notification\", \"body\": \"GGD: Outreach not sent — {{ $json.violations.join('; ') }}. Manual review required.\"}]}, \"id\": 1}"
+        "mode": "runOnceForEachItem",
+        "jsCode": "const prepared = $('Prepare exact reviewed send').item.json;\nconst message = String($json.error?.message || $json.message || $json.description || 'SMTP or final audit failed').replace(/\\s+/g, ' ').slice(0, 350);\nreturn { json: { id: prepared.id, send_may_have_occurred: true, summary: `Workflow 3 stopped after claiming ${prepared.send_key}: ${message}. Check Zoho Sent and the Odoo send key before any retry.` } };"
       },
-      "id": "node_create_review_note",
-      "name": "Create Review Note",
+      "id": "92f202a8-37d7-4383-88e4-0ee9c3b6cdcb",
+      "name": "Prepare uncertain-send review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 190]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_record_automation_error",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], summary: $json.summary, send_may_have_occurred: $json.send_may_have_occurred } }}",
+        "options": {}
+      },
+      "id": "28871797-ce20-4e69-85c4-190107052f12",
+      "name": "Record uncertain send for manual recovery",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1300,
-        500
-      ]
+      "typeVersion": 4.3,
+      "position": [1290, 190],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "content": "## Setup before activation\n1. Attach the Odoo JSON-2 bearer credential to every Odoo request.\n2. Attach Zoho SMTP and replace the sender placeholder.\n3. Set the shared GGD error workflow in workflow settings.\n4. Test only with a Kaan-owned recipient.\n\nThis workflow sends only the exact draft/version approved in Odoo. It never drafts after approval.",
+        "height": 300,
+        "width": 430
+      },
+      "id": "0a3b1f95-df62-4eef-a6a0-676707a50a71",
+      "name": "Activation checklist",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-910, -430]
     }
   ],
   "connections": {
-    "node_schedule_trigger": {
-      "main": [
-        [
-          {
-            "node": "node_query_approved",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_query_approved": {
-      "main": [
-        [
-          {
-            "node": "node_has_candidates",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_has_candidates": {
-      "main": [
-        [
-          {
-            "node": "node_loop_records",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "node_loop_records": {
-      "main": [
-        [
-          {
-            "node": "node_validate_approval",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_validate_approval": {
-      "main": [
-        [
-          {
-            "node": "node_branch_approved",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_branch_approved": {
-      "main": [
-        [
-          {
-            "node": "node_claim_send_key",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "node_create_review_note",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_claim_send_key": {
-      "main": [
-        [
-          {
-            "node": "node_key_claimed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_key_claimed": {
-      "main": [
-        [
-          {
-            "node": "node_generate_draft",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "node_generate_draft": {
-      "main": [
-        [
-          {
-            "node": "node_send_smtp",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_send_smtp": {
-      "main": [
-        [
-          {
-            "node": "node_finalize_send",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "node_finalize_send": {
-      "main": [
-        []
-      ]
-    },
-    "node_create_review_note": {
-      "main": [
-        []
-      ]
-    }
+    "Every 15 minutes": {"main": [[{"node": "Select approved reviewed drafts", "type": "main", "index": 0}]]},
+    "Manual test trigger": {"main": [[{"node": "Select approved reviewed drafts", "type": "main", "index": 0}]]},
+    "Select approved reviewed drafts": {"main": [[{"node": "One candidate per item", "type": "main", "index": 0}]]},
+    "One candidate per item": {"main": [[{"node": "Prepare exact reviewed send", "type": "main", "index": 0}]]},
+    "Prepare exact reviewed send": {"main": [[{"node": "Gate 4 recipient allowlist (temporary)", "type": "main", "index": 0}]]},
+    "Gate 4 recipient allowlist (temporary)": {"main": [[{"node": "Claim send key before SMTP", "type": "main", "index": 0}], [{"node": "Reject recipient outside Gate 4 allowlist", "type": "main", "index": 0}]]},
+    "Claim send key before SMTP": {"main": [[{"node": "Continue only for new claim", "type": "main", "index": 0}]]},
+    "Continue only for new claim": {"main": [[{"node": "Send exact reviewed draft via Zoho", "type": "main", "index": 0}]]},
+    "Send exact reviewed draft via Zoho": {"main": [[{"node": "Require SMTP Message-ID", "type": "main", "index": 0}], [{"node": "Prepare uncertain-send review", "type": "main", "index": 0}]]},
+    "Require SMTP Message-ID": {"main": [[{"node": "Finalize complete send audit in Odoo", "type": "main", "index": 0}]]},
+    "Finalize complete send audit in Odoo": {"main": [[], [{"node": "Prepare uncertain-send review", "type": "main", "index": 0}]]},
+    "Prepare uncertain-send review": {"main": [[{"node": "Record uncertain send for manual recovery", "type": "main", "index": 0}]]}
   },
+  "pinData": {},
   "active": false,
-  "settings": {
-    "errorWorkflow": "xMbI9hyKnfim5M1q",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
-  }
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "b58f84ef-3248-4f13-84e3-7d711140b009"
 }

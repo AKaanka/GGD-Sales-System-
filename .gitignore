@@ -10,3 +10,5 @@ shared-files/*
 # Python bytecode (Odoo addons)
 __pycache__/
 *.pyc
+
+.claude/settings.local.json

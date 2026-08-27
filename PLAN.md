@@ -90,17 +90,17 @@
 | Automatic GitHub validation | Built |
 | Zoho credentials | Requires Kaan's local setup |
 | LLM credentials/provider selection | Requires Kaan's choice |
-| Live n8n workflows | Built interactively after credentials and Odoo database exist |
+| Reproducible n8n workflow imports | Built for Workflows 1–5 and shared error handling; live import/acceptance pending |
 | Public/VPS deployment | Deliberately deferred |
 
 ## Current implementation status
 
-The local interactive setup progressed through the CRM controls and the five
-planned automation areas on 16 August 2026. Major fictional/manual paths have
-been tested, a backup was created, static validation passed, and the local
-services reported healthy. The workflows are not considered production-ready
-until the remaining failure-path, restore, permission, and lawful-contact checks
-are complete.
+The repository contains addon version `19.0.1.6.0` and inactive, reproducible
+imports for all five automation areas plus shared error handling. Offline
+structure and decision tests pass. The current addon and imports are not
+considered live-ready until Docker access is available, all Odoo tests pass,
+the imports execute against the local Odoo/n8n versions, and the controlled
+failure/send/reply paths are accepted.
 
 See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
 remaining checklist, and current time estimate.

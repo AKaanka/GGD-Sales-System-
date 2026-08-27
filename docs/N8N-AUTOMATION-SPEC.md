@@ -2,13 +2,15 @@
 
 This is the build specification for the first production-safe workflows. Build and test each workflow separately. Never put real credentials directly into node parameters or exported workflow JSON.
 
-## Local implementation note — 16 August 2026
+## Local implementation note — 21 August 2026
 
-The workflow set has been created interactively in the local n8n instance and
-the principal fictional/manual paths have been exercised. This does not replace
-the acceptance criteria below. Keep workflows manual or inactive until the
-remaining failure-path and recovery checks in
-[PROJECT-STATUS.md](PROJECT-STATUS.md) are complete.
+Inactive, reproducible imports for Workflows 1–5 and the shared error workflow
+are tracked under `workflows/`. They call the Odoo addon methods through Odoo
+19's JSON-2 API. Offline structure tests pass, but the current exports have not
+yet been imported or executed against the local containers. Follow
+[the import guide](../workflows/README.md), and keep every workflow inactive
+until the remaining acceptance checks in [PROJECT-STATUS.md](PROJECT-STATUS.md)
+are complete.
 
 ## Shared rules
 
@@ -70,8 +72,8 @@ Validation:
 1. Retrieve the opportunity and latest GGD qualification fields.
 2. Confirm `ggd_do_not_contact == false`.
 3. Generate one short draft in the appropriate language.
-4. Store the draft as an Odoo note or activity for review.
-5. Move to `Waiting for Approval`.
+4. Store its subject/body and a new immutable draft version in Odoo.
+5. Leave its draft status at `Ready for review` / waiting for approval.
 6. Stop.
 
 The LLM must not set `ggd_outreach_approved`. Only the Odoo approval action used by an authorised human may set it.
@@ -91,7 +93,10 @@ The LLM must not set `ggd_outreach_approved`. Only the Odoo approval action used
 7. Revoke or consume approval so the same message cannot be sent twice.
 8. Schedule the next review activity.
 
-**Idempotency:** store a unique send key such as `opportunity-id + draft-version`. Before sending, verify that the key has not already succeeded.
+**Idempotency:** claim the exact key `opportunity-id:draft-version` in Odoo
+before SMTP. A retry with another key for the same approved version is invalid,
+and a claimed key means “sent or outcome uncertain”, so it must not be retried
+automatically.
 
 ## Workflow 4 — Reply analysis
 

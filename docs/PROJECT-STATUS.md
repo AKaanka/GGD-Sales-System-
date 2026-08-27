@@ -1,4 +1,161 @@
-# Project Status — 18 August 2026
+# Project Status — 26 August 2026
+
+## Current verified state
+
+This section supersedes the older dated narrative retained below as an audit
+history.
+
+The current repository build and local installation have passed Gates 0–2:
+
+- Odoo addon `19.0.1.6.0` stores sourced qualification, an immutable reviewed
+  draft/version, the human approval attached to that version, a deterministic
+  send claim, complete SMTP audit data, replies, bounces, response drafts, and
+  deduplicated follow-up activities.
+- Inactive, reproducible n8n imports now exist for Workflows 1–5 and the shared
+  error handler under `workflows/`.
+- Workflow 3 no longer drafts after approval. It sends only the exact stored
+  and approved subject/body version.
+- Workflow 4 includes IMAP reply intake and bounce handling. Hard bounces and
+  unsubscribe replies suppress further contact.
+- Workflow 5 runs at 08:30 Europe/Berlin on weekdays and calls an Odoo method
+  that atomically deduplicates the review activity for each confirmed send.
+- Odoo database `ggd` confirms addon `19.0.1.6.0` is installed. The live addon
+  run completed with 0 failures and 0 errors across all 102 tests.
+- Static project validation reports 24/24 current workflow checks and 19/19
+  legacy reply-matcher regressions passing.
+- The six current exports were imported into n8n 2.34.6 in number order. All
+  are inactive and Workflows 01–05 reference GGD-00 as their error workflow.
+
+### Gate 2 import evidence
+
+| Workflow | Stored n8n workflow ID | Type/version | Saved nodes | Saved connections |
+| --- | --- | --- | --- | --- |
+| GGD-00 | `G00ERR20260826A` | PASS | PASS | PASS |
+| GGD-01 | `G01QUAL20260826` | PASS | PASS | PASS |
+| GGD-02 | `G02DRFT20260826` | PASS | PASS | PASS |
+| GGD-03 | `G03SEND20260826` | PASS | PASS | PASS |
+| GGD-04 | `G04RPLY20260826` | PASS | PASS | PASS |
+| GGD-05 | `G05FOLW20260826` | PASS | PASS | PASS |
+
+These are the actual stored workflow IDs returned by n8n's
+`export:workflow` command, not temporary import labels.
+
+The type/version check compared every saved node against the live n8n 2.34.6
+node registry; no unknown type or unsupported version was found. After import,
+n8n's own `export:workflow` command re-read each stored workflow. Its node set
+and connections matched the tracked export, all six stored `active: false`,
+and Workflows 01–05 stored error workflow ID `G00ERR20260826A`.
+
+Before Gate 3, GGD-03 gained the temporary Gate 4 recipient allowlist. Its true
+branch reaches the send-key claim, while its false branch throws a visible
+error before a claim can be consumed. The tracked export retains only
+`REPLACE_WITH_KAAN_TEST_RECIPIENT`; the real Kaan-owned address must be entered
+locally in n8n and must not be committed. The updated stored workflow was
+re-exported as `G03SEND20260826`: it remained inactive, retained GGD-00 as its
+error workflow, and its 15-node graph and connections matched the tracked
+export.
+
+Claude Code fixed the FX5 send-key shape defect, and the orchestrator then ran
+`scripts/create-gate3-fixtures.sh` successfully. Seven fictional `.invalid`
+fixtures were created as Odoo records 430–436; the exact summary is recorded
+in `docs/handoffs/CLAUDE-CODE.md`. Gate 3 workflow execution remains unstarted
+and manual-trigger only.
+
+### Gate 3 execution evidence
+
+Gate 3 preflight began on 26 August 2026. No n8n workflow has executed yet.
+
+| Step | Evidence | Result |
+| --- | --- | --- |
+| W1 selector before Step 1 | The exact tracked domain initially matched FX1 (ID 430) and stray test record `GGD Test – Anatolia Packaging` (ID 2). ID 2 was parked with `ggd_automation_needs_review = true`; the exact selector was rerun and then matched only FX1. | PASS |
+| W2 selector before Step 3 | The exact tracked domain matched only FX2 (ID 431). | PASS |
+| W1 error-path execution | Live W1 remains inactive, but both Odoo HTTP nodes still reference `REPLACE_WITH_ODOO_JSON2_CREDENTIAL`. The available n8n editor requires Kaan to sign in. Execution was not attempted because it could not authenticate to Odoo. | BLOCKED: KAAN CREDENTIAL BINDING |
+
+Decision 1 is approved for `https://www.germanygrowthdesk.com`, and
+Decision 2 approves temporary W1 activation only after Gate 3 Steps 1–7 are
+complete and evidenced. Claude Code added FX7 to the idempotent fixture script;
+the orchestrator reran it and created FX7 as Odoo ID 437. Gate 3 remains paused
+until Kaan confirms the full n8n credential-binding pass.
+
+Standing credential order: never export, read, copy, or query n8n credential
+material or its database table. Credential validity is verified only when a
+bound workflow node authenticates successfully during an authorized run.
+
+#### Pre-Gate 3 workflow-reference audit
+
+This audit used `n8n export:workflow` only. IDs below are node references from
+workflow definitions; no credential record or credential material was read.
+All six workflows were inactive.
+
+| Workflow | Credential node | Exported reference |
+| --- | --- | --- |
+| GGD-00 | Record concise error in Odoo | PLACEHOLDER — `REPLACE_WITH_ODOO_JSON2_CREDENTIAL` |
+| GGD-01 | Select unqualified opportunities | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-01 | Anthropic qualification model | BOUND — `NE8L3f7kbmNEzLMY` |
+| GGD-01 | Record qualification in Odoo | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-02 | Select qualified leads without drafts | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-02 | Anthropic drafting model | BOUND — `NE8L3f7kbmNEzLMY` |
+| GGD-02 | Store immutable draft for human approval | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-03 | Select approved reviewed drafts | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-03 | Claim send key before SMTP | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-03 | Send exact reviewed draft via Zoho | BOUND — `C3sp9peOXU3kpGft` |
+| GGD-03 | Finalize complete send audit in Odoo | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-03 | Record uncertain send for manual recovery | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-04 | Zoho IMAP inbox | BOUND — `hnoyVj7AN6kpoTQk` |
+| GGD-04 | Match in Odoo by reply ID then sender | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-04 | Queue unmatched inbound for Odoo review | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-04 | Record matched bounce in Odoo | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-04 | Anthropic reply model | BOUND — `NE8L3f7kbmNEzLMY` |
+| GGD-04 | Record reply and response draft in Odoo | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-05 | Select stale contacted opportunities | BOUND — `CXGIrrsgmgNhPGXQ` |
+| GGD-05 | Anthropic follow-up model | BOUND — `NE8L3f7kbmNEzLMY` |
+| GGD-05 | Create one deduplicated Odoo review activity | BOUND — `CXGIrrsgmgNhPGXQ` |
+
+The refreshed audit found one remaining incomplete binding: GGD-00's Odoo
+error-record node. Kaan's known pre-Gate-3 manual GGD-05 run is recorded separately
+from formal Gate 3 evidence: its selector authenticated successfully to Odoo
+and reached `Draft manual follow-up`, then failed with `resource not found`
+because all four Anthropic nodes still pin retired model
+`claude-sonnet-4-20250514`. The run did not reach the Odoo activity-creation
+node and is not counted as a Gate 3 W5 result.
+
+The live Anthropic dropdown listed `Claude Sonnet 5` as the newest Sonnet.
+GGD-01, GGD-02, GGD-04, and GGD-05 now all save exact model ID
+`claude-sonnet-5`; their tracked exports match. A regression test requires one
+identical non-retired model across all four exports. Validation now passes
+24/24 workflow checks plus 19/19 matcher regressions. A workflow-only re-export
+confirmed all six node sets and connections match the tracked files and all six
+are inactive.
+
+During the W1 editor save, n8n 2.34 treated `Publish` as activation. The
+orchestrator immediately unpublished W1, but one hourly execution (ID 476,
+17:00:18) fired first. It failed at `One qualification candidate per item`
+with `Opportunity 430 has an invalid public source URL`; Odoo verification
+showed FX1 remained pending, unapproved, and not parked. This execution is
+pre-Gate-3 evidence and does not count as Step 1. The exact W1 selector still
+matches only FX1, and the exact W2 selector still matches only FX2.
+
+The authenticated REST detail URL was blocked by the in-app browser's local
+security layer, so the saved-graph reread used n8n's database-backed export
+command rather than claiming an API verification that did not occur. No editor
+canvas was opened, avoiding the known stale-editor overwrite hazard.
+
+No credential was changed, no imported workflow was executed or activated,
+and no email was sent.
+
+### Remaining functional acceptance
+
+1. Bind the saved local credentials to the imported nodes without exposing
+   their values, including the required Odoo JSON-2 bearer credential.
+2. Run fictional/manual tests for Workflows 1, 2, 4, and 5.
+3. With separate explicit approval, run Workflow 3 once to a Kaan-owned test
+   address and verify the claim, Message-ID audit, approval consumption, reply,
+   bounce, and uncertain-send recovery paths.
+
+The import instructions are in [workflows/README.md](../workflows/README.md).
+The next single action is kept in [NEXT-ACTIONS.txt](../NEXT-ACTIONS.txt).
+
+## Historical status and defect log — 18–20 August 2026
 
 Supersedes the 16 August status. Detailed test evidence lives in
 [QA-TEST-PACK.md](QA-TEST-PACK.md); the history of how the reply-matching design

@@ -1,5 +1,8 @@
 # RIGHT NOW — Next 30 Minutes
 
+> Superseded task list from 19 August. Do not run these commit or live-workflow
+> steps as the current plan. Use [../NEXT-ACTIONS.txt](../NEXT-ACTIONS.txt).
+
 ## **Step 1: Commit (2 min)**
 
 ```bash

@@ -2,151 +2,179 @@
                   GGD SALES SYSTEM — NEXT IMMEDIATE ACTIONS
 ================================================================================
 
-DATE: 20 August 2026
-STATUS: Outbound path proven (B1-B4). Atomic duplicate-send guard built,
-        unit-tested and committed. Not yet proven on the live workflow.
+DATE: 27 August 2026 (supersedes the 26 August version)
+GATE: 3 of 5 (non-send functional flow), steps 4 and 6 now COMPLETE
+ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
+        Claude Code holds the Odoo lane and wrote today's evidence log.
 
 ================================================================================
-                           YOUR TASK RIGHT NOW
+                              WHERE THINGS STAND
 ================================================================================
 
-1. PROVE THE GUARD ON THE LIVE WORKFLOW (30 min)
-   ─────────────────────────────────────────────
-   → Open docs/GUARD-LIVE-PROOF.md and follow it end to end.
-   → It runs the "Claim send key before SMTP" node twice on one approved
-     .invalid fixture, with the SMTP node disabled.
-   → The second run MUST turn that node red with the duplicate-claim error.
-   → Nothing after it may execute.
+PROVEN LIVE (updated today)
+  * Odoo addon 19.0.1.8.0 installed; 108/108 addon tests pass (was 102).
+  * The live Odoo worker was RESTARTED after the last code change, so the
+    running system and the tests are on the same code. See the operational
+    rule below - this cost most of a day to learn.
+  * Workflow 2 completes end to end. The node that had failed all along now
+    returns {"draft_version": "..."} and the whole run is green.
+  * Workflow 4 passes all six Gate 3 scenarios (details below).
+  * Workflow 5 selects FX7, drafts a follow-up and deduplicates its queue.
+  * Workflows 00-05 imported into n8n 2.34.6; all credentials bound.
+  * GGD-00 error handler is bound and PUBLISHED.
+  * Fixtures FX1-FX7 exist as Odoo records 430-437, all .invalid.
+  * Odoo method smoke test on committed records: 27/27 pass.
+  * Static validation: 26/26 workflow tests, 19/19 matcher tests.
 
-   WHY THIS FIRST: the addon's 57 unit tests prove the guard in Odoo. They do
-   not prove that the live n8n node reaches it. The deployed node does NOT
-   call ggd_claim_send_key() — it performs a plain Odoo record update. The
-   guard was written to cover that route, but that has never been observed
-   on the running system. Until it is, duplicate-send protection is a claim,
-   not a result.
+GATE 3 STEP 4 AND STEP 6 - ALL SIX SCENARIOS PASS (27 August)
+  1. Sender-email match          FX2 received the reply.
+  2. Message-ID match            FX5, match_type message_id, right record.
+  3. Unmatched inbound           New review record id=810; replaying the same
+                                 email created NO second record (dedup works).
+  4. Ambiguous sender            FX6A and FX6B both untouched; routed to
+                                 review as id=811. The workflow refused to
+                                 guess between two candidates.
+  5. Unsubscribe                 FX2 -> do_not_contact YES. UWG s7 path.
+  6. Hard bounce                 FX5 -> bounced, do_not_contact YES, delivery
+                                 review raised. Matched via Original-Message-ID
+                                 pulled from the DSN body, with no In-Reply-To
+                                 header present.
 
-2. RUN B5 (30 min)
-   ───────────────
-   → The last outstanding Section B test.
-   → Duplicate the SMTP credential, give the copy a wrong password, point
-     Workflow 3 at the copy for one run, then switch back.
-   → An invalid RECIPIENT does not work: the server accepts it and the send
-     succeeds. That is the 19 Aug finding, not a B5 result.
-   → Procedure: docs/SECTION-B-EXECUTION.md
-
-3. REPORT BOTH RESULTS (2 min)
-   ───────────────────────────
-   Guard proof: second claim blocked YES / NO
-   Guard proof: no execution past the claim node YES / NO
-   B5: send failed as intended YES / NO
-   B5: record left in a reviewable state YES / NO
-
-================================================================================
-                          BEFORE YOU TOUCH n8n
-================================================================================
-
-⚠  CLOSE ALL STALE n8n EDITOR TABS FIRST.
-   n8n executes the workflow copy loaded in the browser, not necessarily the
-   saved one, and an open editor tab can re-save over changes made elsewhere.
-
-⚠  RELOAD THE WORKFLOW BEFORE RUNNING IT.
-   Verify by re-reading after saving. A workflow that looks correct on screen
-   may not be the one that runs.
-
-⚠  DEACTIVATING A WORKFLOW CAN SILENTLY FAIL.
-   GGD 98t once read active:false while still firing every minute for seven
-   cycles. On an outbound workflow that would send while appearing switched
-   off. Confirm by watching executions, not by reading the toggle.
-
-⚠  ALL WORKFLOWS STAY INACTIVE AND MANUAL. IMAP STAYS DISABLED.
-   Only .invalid fixtures and your own mailbox. No prospect has been
-   contacted and none may be until legal review is complete.
+NOT YET PROVEN
+  - The error handler has never caught a real failure. Manual and CLI runs
+    bypass it by design; only a genuinely scheduled run triggers it.
+  - No email has been sent by the current workflow set. GGD-03 stays off.
+  - Backup restore drill not run. Lawful-contact review not done.
 
 ================================================================================
-                          WHERE THINGS STAND
+                     OPERATIONAL RULE LEARNED TODAY - READ THIS
 ================================================================================
 
-DONE
-  ✓ Workflow 4, reply analysis — A1-A7, A9 pass on the live workflow
-  ✓ Workflow 3, outbound — built and tested; sends and blocks correctly
-  ✓ Section B: B1, B2, B3, B4 PASS (19 Aug, owner mailbox only)
-  ✓ Error handler — SETTLED. 88 deliberate failures, 88 catches.
-    Note: MANUAL runs bypass it. Scheduled runs do not.
-  ✓ A8 (Odoo unavailable) PASS. C2 (sanitised error notes) PASS.
-  ✓ Addon 19.0.1.4.0 — atomic send-key claim guard, covering BOTH
-    ggd_claim_send_key() AND a plain write(), enforced with a PostgreSQL
-    FOR UPDATE row lock. Verified 20 Aug: Odoo 19 ran 50 selected tests,
-    0 failures, 0 errors.
-  ✓ Committed 20 Aug.
+  After ANY change to odoo/addons/ggd_crm/** python, run:
 
-NOT YET DONE
-  ⏳ Live-workflow duplicate-claim proof        ← YOU ARE HERE
-  ⏳ B5, uncertain send                          30 min
-  ⏳ Re-run the addon suite                      5 min
-     7 hardening tests were added AFTER the 50-test run (create() send-key
-     rejection, finalize-without-a-claim refusal, falsy-revocation
-     alignment). The file now holds 57 tests. Those 7 have never been run.
-     ./scripts/run-addon-tests.sh
-  ⏳ Decide on bounce handling                   open question
-     "Message sent" is currently an assumption. SMTP acceptance is treated
-     as delivery and no bounce ever reaches the CRM, while
-     LAWFUL-CONTACT-PROCEDURE.md section 7 requires hard bounces to end
-     sending. The rule exists; nothing implements it.
-  ⏳ Workflow 5 work-selection layer             2-3 hours
-  ⏳ Prune surplus workflow copies               15 min
-     04b, 04d, 04s, 04t, 03s, 98t
-  ⏳ Copy a backup to encrypted storage off this computer
-  ⏳ Isolated restore drill, including confirming the n8n encryption key
-     makes restored credentials readable
-  ⏳ Lawful-contact procedure reviewed by a qualified German lawyer,
-     plus the Art. 14 information text and the Art. 6(1)(f) balancing note
+        docker compose restart odoo
+
+  Odoo does NOT re-import changed .py files when a module is upgraded. The
+  registry reloads from modules already in sys.modules, and start-odoo.sh runs
+  the server without --dev=reload. Passing tests therefore do NOT prove the
+  live HTTP endpoint changed: the test run gets a fresh process, the running
+  worker does not. Defect 13 below survived a correct fix for hours purely
+  because of this.
 
 ================================================================================
-                             KEY DOCUMENTS
+                        DEFECTS FOUND (26-27 AUGUST)
 ================================================================================
 
-  1. docs/GUARD-LIVE-PROOF.md          ← Start here (today's task)
-  2. docs/SECTION-B-EXECUTION.md       ← B5 procedure
-  3. docs/PROJECT-STATUS.md            ← Full current state and defect log
-  4. docs/QA-TEST-PACK.md              ← Test evidence, B1-B5
-  5. docs/WORK-SELECTION-IMPLEMENTATION.md  ← Workflow 5, after B5
-  6. docs/LAWFUL-CONTACT-PROCEDURE.md  ← Must be lawyer-reviewed
+11. THE ERROR WORKFLOW WAS ASSIGNED BUT NOT ACTIVE.  (26 Aug) FIXED.
+    n8n refuses to run an inactive error workflow, so every failure in
+    Workflows 01-05 went unrecorded. Assignment alone proves nothing.
+
+12. THE SOURCE-URL GUARD REJECTED EVERY URL, VALID OR NOT.  (26 Aug) FIXED.
+    n8n Code nodes run in a sandbox with no WHATWG URL global. The guard used
+    it inside a try/catch, so the ReferenceError surfaced as "invalid public
+    source URL" for every input. It failed shut, so nothing unsafe happened.
+    Guard rewritten without the missing global, plus two sandbox-fidelity
+    tests.
+
+13. WORKFLOW 2 COULD NEVER STORE A DRAFT.  (26-27 Aug) FIXED, addon 19.0.1.7.0.
+    ggd_prepare_draft returned a bare string, which Odoo serialises as a
+    top-level JSON *string*. n8n's HTTP Request node parses the body once,
+    sees the result is still a string, and parses it a second time -
+    JSON.parse on raw hex throws. Every other addon method returns a dict,
+    list, bool or int and never hits that second parse. The method now
+    returns {"draft_version": "..."}.
+    The fix appeared not to work for hours because the live Odoo worker was
+    still running the old python. See the operational rule above.
+
+14. CLEARING A DRAFT LEFT AN IMPOSSIBLE STATE.  (27 Aug) FIXED, addon 19.0.1.8.0.
+    write() treats any draft-field change as an edit and forced
+    ggd_draft_status = "ready". Clearing subject, body and version therefore
+    produced status "ready" with no version - a lead that looks draft-ready
+    with nothing to approve. New classifier _ggd_is_clearing_draft() handles
+    the clear case; five regression tests added (103 -> 108).
+    Not reachable from the six workflows; found while building test tooling.
+
+15. A GATE 3 TEST PAYLOAD WOULD HAVE PASSED WITHOUT TESTING ANYTHING. (27 Aug)
+    FIXED in scripts/gate3-workflow4-test-payloads.md.
+    The unsubscribe scenario carried a timestamp older than the reply already
+    stored on FX2. ggd_record_reply discards older replies, so the run would
+    have gone green with nothing suppressed. Timestamp moved to
+    2026-08-27T12:00:00Z. Re-check this if FX2 is ever reset.
 
 ================================================================================
-                          CARRY THESE FORWARD
+                       RESUME HERE - NEXT SESSION
 ================================================================================
 
-1. "THE RUN SUCCEEDED" IS WEAK EVIDENCE.
-   Defects 1, 2, 8 and 10 all reported success while doing nothing, or did
-   nothing while appearing switched on. Check the record, not the status.
+STEP 9 first (cheap, and it unblocks a clean export):
 
-2. A GUARD THAT PROTECTS ONE ROUTE IS NOT A GUARD.
-   The send-key check originally lived only in a method the live workflow
-   never calls. That is why the 1.4.0 guard sits in write() instead, where
-   every route reaches it — the n8n node, the RPC method, the Odoo screen.
+  1. In the n8n editor, open GGD-04 -> the "Manual pinned-email test" node and
+     REMOVE the pinned output, then save. Pinned test data will otherwise show
+     up as a diff against the tracked workflow JSON and look like a defect.
+  2. Re-export the six workflows, confirm the graphs match workflows/*.json,
+     and re-run ./scripts/validate-project.sh.
 
-3. EVERY TESTING SESSION HAS FOUND AT LEAST ONE DEFECT.
-   Budget 30-50% contingency on every remaining estimate.
+STEP 8 last (it must be last, and it cannot use the CLI):
+
+  Every `n8n execute` run today ended with
+  "Cannot read properties of undefined (reading 'run')" when n8n tried to hand
+  off to the error workflow. That is a CLI-mode limitation, not a defect in
+  GGD-00. Proving the error handler requires a temporary SCHEDULED activation
+  of GGD-01 so a real scheduled failure reaches GGD-00. Kaan has approved this;
+  switch the workflow back off immediately afterwards.
+
+HOUSEKEEPING
+  - ./scripts/make-workflow2-retest-lead.sh --archive    (retires lead 685)
+  - Odoo went from 45 to 76 installed modules on 27 August, about 31 new
+    modules. Understand what was installed and why BEFORE the Gate 5 backup
+    and restore drill - the restore has to account for them.
+
+FIXTURE STATE TO BE AWARE OF
+  - FX2 (431) and FX5 (434) are now both do_not_contact=YES by design. Neither
+    can be reused for a contactable-path test.
+  - FX4 (433) is still the clean approved draft reserved for the Gate 4
+    controlled send. It was not touched by any of today's testing.
 
 ================================================================================
-                           TIME TO LOCAL SIGN-OFF
+                        OUTSTANDING BEFORE GO-LIVE
 ================================================================================
 
-  Guard live proof              30 min   ← YOU ARE HERE
-  Addon suite re-run             5 min
-  B5                            30 min
-  Bounce-handling decision      1 hour
-  Workflow 5 work-selection    2-3 hours
-  Prune surplus workflows       15 min
-  Backup off-computer + restore drill  3-4 hours
-  Final local acceptance review 1-2 hours
-  ──────────────────────────────────────
-  TOTAL                        8-12 hours, plus legal review in calendar time
+  - Gate 3 steps 8 and 9 (above).
+  - Delete the legacy August workflows (approved, not yet done). GGD 03 and
+    GGD 03s can still send email and have real SMTP credentials attached. They
+    are off, but they carry none of this month's safety work. Export a backup
+    of them first.
+  - Gate 4: one controlled send to Kaan's own address.
+  - Gate 5: backup, isolated restore drill, final validation, integration
+    commit.
+  - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar
+    time; blocks real-prospect use, not local testing.
 
 ================================================================================
-                               START HERE
+                        DOCUMENTS THAT ARE NOW STALE
 ================================================================================
 
-  Open docs/GUARD-LIVE-PROOF.md and work through it in order.
+  These still cite addon 19.0.1.6.0 and/or "102 tests". Both are wrong: the
+  addon is 19.0.1.8.0 and the suite is 108 tests. Not edited from the Odoo
+  lane because they are owned elsewhere:
+
+    PLAN.md
+    docs/PROJECT-STATUS.md
+    docs/SYSTEM-CAPABILITIES.md
+    docs/FIELD-AUDIT.md
+    docs/FOUR-AGENT-EXECUTION-PLAN.md
+    workflows/README.md
+
+================================================================================
+                              KEY DOCUMENTS
+================================================================================
+
+  docs/handoffs/CLAUDE-CODE.md        TODAY'S full evidence log: defect 13
+                                      diagnosis, the draft-clear fix, and the
+                                      per-scenario Gate 3 results.
+  docs/handoffs/FABLE-5.md            Earlier Gate 3 execution log.
+  docs/FOUR-AGENT-EXECUTION-PLAN.md   Gate definitions and role boundaries.
+  scripts/gate3-workflow4-test-payloads.md
+                                      The six Workflow 4 payloads, corrected.
+  workflows/README.md                 Import and credential-binding procedure.
 
 ================================================================================
