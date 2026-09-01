@@ -56,8 +56,9 @@ ls -lh "$BK"
 ( cd "$BK" && shasum -a 256 -c SHA256SUMS )
 ```
 
-Every line must read `OK`. (The 20 August backup was verified this way on
-1 September: all four archives OK.)
+Every line must read `OK`. Verified this way on 1 September for both the
+20 August backup and the fresh `20260901T164244Z` one — all four archives OK
+in each.
 
 ## Phase 2 — Isolated stack
 
@@ -108,9 +109,18 @@ gzip -dc "$BK/n8n-database.sql.gz" \
 
 `scripts/start-odoo.sh` sets `data_dir = /var/lib/odoo`, so the live filestore
 is `/var/lib/odoo/filestore/<db>`. Archives that predate that setting use
-`.local/share/Odoo/filestore/<db>`. **The 20 August archive contains both**
-(verified: `./filestore/ggd/` 104 entries, `./.local/share/Odoo/filestore/ggd/`
-112 entries), so both must land and then be consolidated. Skipping this gives a
+`.local/share/Odoo/filestore/<db>`. **Every archive so far contains both**, so
+this is not a legacy-archive-only problem — the fresh backup taken on
+1 September has it too:
+
+| Archive | `./filestore/` | `./.local/share/Odoo/filestore/` |
+| --- | --- | --- |
+| `20260820T111048Z` | 104 entries | 112 entries |
+| `20260901T164244Z` | 878 entries | 112 entries |
+
+The legacy tree has not grown since August — nothing new writes there — but it
+still holds 112 files that the current `data_dir` tree does not, so both must
+land and then be consolidated. Skipping this gives a
 server that runs with a blank white UI — assets 404 and the logs do not
 obviously say why.
 
