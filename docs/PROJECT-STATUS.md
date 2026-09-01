@@ -1,4 +1,4 @@
-# Project Status — 27 August 2026
+# Project Status — 27 August 2026 (Gate 3 step 8 closed 1 September, see below)
 
 ## Current verified state
 
@@ -6,7 +6,8 @@ This section supersedes the older dated narrative retained below as an audit
 history.
 
 The current repository build and local installation have passed Gates 0–2 and
-all of Gate 3 except step 8:
+all of Gate 3, including step 8 (closed 1 September — see the note below the
+27 August evidence):
 
 - Odoo addon `19.0.1.8.0` stores sourced qualification, an immutable reviewed
   draft/version, the human approval attached to that version, a deterministic
@@ -69,12 +70,15 @@ printed. An earlier version of the comparator treated these as silently
 expected, and a negative test that rewrote the Gate 4 recipient allowlist to an
 attacker address passed clean. Do not weaken this.
 
-Step 8 is the only remaining Gate 3 item and must be done last. Every
-`n8n execute` run ends with `Cannot read properties of undefined (reading
-'run')` when n8n hands off to the error workflow — a CLI-mode limitation, not a
-defect in GGD-00. Proving the error handler requires a temporary scheduled
-activation of GGD-01 so a real scheduled failure reaches GGD-00, followed by
-switching GGD-01 off immediately.
+Step 8 — DONE, 1 September. A fresh fixture (Odoo lead 812, an `.invalid`
+source URL) was used to force a genuine scheduled (non-CLI, non-manual)
+failure in GGD-01 at the "Fetch approved public company page" node; GGD-00
+caught it, sanitized it, correctly recorded `send_may_have_occurred: false`,
+and logged it both in n8n and via Odoo's `ggd_record_automation_error`
+(executions #532–#535). GGD-01 was then unpublished (confirmed via the
+Executions list) and its schedule reverted to Hours/1 to match the tracked
+export; fixture 812 was archived. Gate 3 is now fully complete. Full
+step-by-step evidence is in NEXT-ACTIONS.txt.
 
 Open and cosmetic: 17 credential slot NAME mismatches. Live n8n kept its own
 defaults (`Header Auth account`, `SMTP account`, `IMAP account`) rather than the
@@ -204,8 +208,7 @@ and no email was sent.
 
 Items 1 and 2 of the original list are complete. What remains:
 
-1. Gate 3 step 8: prove the shared error handler by a temporary scheduled
-   activation of GGD-01, then switch it off immediately.
+1. ~~Gate 3 step 8~~ — DONE, 1 September (see above).
 2. Gate 4: with separate explicit approval given immediately beforehand, run
    Workflow 3 once to a Kaan-owned test address and verify the claim,
    Message-ID audit, approval consumption, reply, bounce, and uncertain-send
@@ -235,7 +238,7 @@ was reached is in [QA-INVESTIGATION-LOG.md](QA-INVESTIGATION-LOG.md) and
 
 Retained as history. Both concerns raised below have since been addressed: the
 workflows now select their own work, and the shared error handler is bound and
-published (its live proof is Gate 3 step 8, still outstanding). See the
+published, and its live proof (Gate 3 step 8) closed 1 September. See the
 27 August sections above for the current position.
 
 The local system runs, and Workflow 4 — reply analysis — is now genuinely

@@ -3,8 +3,8 @@
 ================================================================================
 
 DATE: 27 August 2026, updated end of day (supersedes the 26 August version)
-GATE: 3 of 5 (non-send functional flow). Steps 1-6 and 9 COMPLETE.
-      STEP 8 IS THE ONLY THING LEFT IN GATE 3.
+GATE: 3 of 5 (non-send functional flow) - ALL 9 STEPS COMPLETE, incl. step 8
+      (closed 1 September). Gate 3 is DONE. Next: Gate 4, then Gate 5.
 ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
         Claude Code holds the Odoo lane and wrote today's evidence log.
 
@@ -46,10 +46,11 @@ GATE 3 STEP 4 AND STEP 6 - ALL SIX SCENARIOS PASS (27 August)
                                  header present.
 
 NOT YET PROVEN
-  - The error handler has never caught a real failure. Manual and CLI runs
-    bypass it by design; only a genuinely scheduled run triggers it.
   - No email has been sent by the current workflow set. GGD-03 stays off.
   - Backup restore drill not run. Lawful-contact review not done.
+
+  (The error handler catching a real scheduled failure - Gate 3 step 8 -
+  WAS proven 1 September. See "STEP 8 - DONE" below.)
 
 ================================================================================
                      OPERATIONAL RULE LEARNED TODAY - READ THIS
@@ -110,7 +111,8 @@ NOT YET PROVEN
                        RESUME HERE - NEXT SESSION
 ================================================================================
 
-THE SINGLE NEXT ACTION IS STEP 8. Everything else in Gate 3 is done.
+GATE 3 IS FULLY DONE (step 8 closed 1 September, see below).
+THE SINGLE NEXT ACTION IS GATE 4.
 
 STEP 9 - DONE (27 August). GRAPH 0, UNEXPLAINED 0, PIN 0, exit 0.
   validate-project.sh: 26/26 and 19/19, passed.
@@ -126,14 +128,37 @@ STEP 9 - DONE (27 August). GRAPH 0, UNEXPLAINED 0, PIN 0, exit 0.
   ("Odoo JSON-2 bearer token", "Zoho SMTP", "Zoho IMAP"). That clears 17
   cosmetic mismatches from every future comparison.
 
-STEP 8 last (it must be last, and it cannot use the CLI):
+STEP 8 - DONE (1 September). GATE 3 IS NOW FULLY COMPLETE.
 
-  Every `n8n execute` run today ended with
-  "Cannot read properties of undefined (reading 'run')" when n8n tried to hand
-  off to the error workflow. That is a CLI-mode limitation, not a defect in
-  GGD-00. Proving the error handler requires a temporary SCHEDULED activation
-  of GGD-01 so a real scheduled failure reaches GGD-00. Kaan has approved this;
-  switch the workflow back off immediately afterwards.
+  Every `n8n execute` run on 27 August had ended with "Cannot read properties
+  of undefined (reading 'run')" - a CLI-mode limitation, not a defect in
+  GGD-00. Proof required a genuinely SCHEDULED (non-manual, non-CLI) run of
+  GGD-01 that fails at a real node.
+
+  What was done (1 September):
+    1. Built a fresh fixture, Odoo CRM lead id 812 ("[GGD-STEP8-FIXTURE]
+       Genuine schedule failure test"), research source URL
+       https://step8-genuine-failure-test.invalid/about - an IETF-reserved
+       .invalid TLD, guaranteed to fail DNS. (FX1, the original fixture, had
+       already been consumed and excluded on 26 Aug.)
+    2. Temporarily set GGD-01's "Hourly qualification poll" to Seconds/30 and
+       published it, so a genuine scheduled run landed within the session
+       instead of up to an hour later - the same speed-up technique used in
+       docs/C0-PROOF-WALKTHROUGH.md.
+    3. GGD-01 genuinely failed at "Fetch approved public company page":
+       "The connection cannot be established, this usually occurs due to an
+       incorrect host (domain) value" (execution #532 onward).
+    4. GGD-00 (Shared Automation Error Handler) caught it correctly: the
+       error summary was sanitized (no secrets/credentials present),
+       send_may_have_occurred was recorded as false, and the event was
+       durably logged both in n8n's execution history and via a POST to
+       Odoo's ggd_record_automation_error method (executions #533-#535).
+    5. Cleanup: GGD-01 was unpublished and confirmed stopped by watching the
+       Executions list (not just the toggle, per docs/GUARD-LIVE-PROOF.md) -
+       last execution 15:22:00 Berlin, none since. Its Trigger Interval was
+       reverted to Hours/1 to match the tracked
+       workflows/GGD-01-lead-qualification.json exactly. Fixture lead 812
+       was archived in Odoo.
 
 COMMITTED AND PUSHED - 27 August
   Branch gate3-odoo-19.0.1.8.0, tip 226025a, pushed to
@@ -170,7 +195,7 @@ FIXTURE STATE TO BE AWARE OF
                         OUTSTANDING BEFORE GO-LIVE
 ================================================================================
 
-  - Gate 3 step 8 (above). Step 9 is done.
+  - Gate 3: DONE (all 9 steps, including step 8, closed 1 September).
   - Delete the legacy August workflows (approved, not yet done). GGD 03 and
     GGD 03s can still send email and have real SMTP credentials attached. They
     are off, but they carry none of this month's safety work. Export a backup

@@ -35,7 +35,7 @@ Updated 27 August 2026.
 - Credential binding is COMPLETE. Every workflow node authenticates; only the
   credential slot NAMES differ from the documented ones (17 cosmetic
   mismatches, see Gate 3 below).
-- Gate 3 execution is complete except step 8: Workflows 2, 4, and 5 have run
+- Gate 3 execution is complete, including step 8 (closed 1 Sep): Workflows 2, 4, and 5 have run
   live against `.invalid` fixtures, and step 9 proves the live graphs match the
   tracked files.
 - No email has been sent by the current workflow set. GGD-03 stays off until
@@ -144,7 +144,8 @@ Use fictional `.invalid` records only:
 Gate passes when Odoo contains the expected durable records and no workflow
 has sent email.
 
-STATUS: STEP 8 OUTSTANDING; everything else passed on 27 August 2026.
+STATUS: ALL 9 STEPS DONE. Step 8 closed 1 September 2026 (see NEXT-ACTIONS.txt
+for the full evidence trail); everything else passed 27 August 2026.
 
 | Step | What it proves | Result |
 | --- | --- | --- |
@@ -280,9 +281,11 @@ Updated 27 August 2026. The original start-up lane is complete. Codex is out of
 tokens and Fable 5 has stopped, so Kaan is directing the remaining work
 directly and the single-orchestrator rule above is relaxed to that extent.
 
-1. Run Gate 3 step 8: temporarily activate GGD-01 on its real schedule so a
-   genuine scheduled failure reaches GGD-00, confirm the sanitized error record
-   appears in Odoo, then switch GGD-01 back OFF immediately.
+1. DONE 1 September: Gate 3 step 8. GGD-01 was temporarily activated on a
+   speeded-up real schedule, a genuine scheduled failure reached GGD-00, the
+   sanitized error record was confirmed in Odoo and n8n, and GGD-01 was
+   switched back off (confirmed via the Executions list) with its schedule
+   reverted to Hours/1. Full evidence in NEXT-ACTIONS.txt.
 2. Optional tidy-up: rename the three n8n credentials to the documented names
    to clear the 17 cosmetic mismatches permanently.
 3. Before Gate 5: free disk space (was at 98%) and account for the ~31 Odoo
