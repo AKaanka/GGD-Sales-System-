@@ -218,10 +218,15 @@ Items 1 and 2 of the original list are complete. What remains:
    isolated restore drill. Before that drill, free disk space (was at 98%,
    5.9 GB of 229 GB) and account for the roughly 31 Odoo modules installed on
    27 August, which the restore has to reproduce.
-4. Delete the legacy August workflows (approved, not yet done). GGD 03 and
-   GGD 03s can still send email and have real SMTP credentials attached. They
-   are off, but they carry none of this month's safety work. Export a backup of
-   them first.
+4. ~~Delete the legacy August workflows~~ — DONE, 1 September. `GGD 03`
+   (`OAuSsgxfMxGOFIs3`) and `GGD 03s` (`JfvdLsInvAabILwc`) were exported to
+   `backups/20260901T-legacy-send-workflows/` (git-ignored, local only) from
+   the 20 August database dump, which postdates both workflows' last edits,
+   then archived and permanently deleted in n8n. Workflow count went 20 → 18;
+   all six current workflows and all five credentials are untouched. An audit
+   of the same dump confirmed these two were the ONLY legacy August workflows
+   with an email-send node or SMTP credential — the remaining twelve reference
+   only Odoo/Anthropic and cannot send mail.
 5. Lawful-contact review before any real prospect is contacted.
 
 The import instructions are in [workflows/README.md](../workflows/README.md).

@@ -160,6 +160,38 @@ STEP 8 - DONE (1 September). GATE 3 IS NOW FULLY COMPLETE.
        workflows/GGD-01-lead-qualification.json exactly. Fixture lead 812
        was archived in Odoo.
 
+LEGACY SEND WORKFLOWS REMOVED - 1 September
+
+  Backed up first, to backups/20260901T-legacy-send-workflows/ (that path is
+  git-ignored, so the export stays on this computer only):
+    GGD-03-approved-send-and-record-manual-test.json   16 nodes
+    GGD-03s-snapshot-before-send-key-wiring.json       11 nodes
+    MANIFEST.json                                      provenance + cred refs
+
+  The JSON was extracted from backups/20260820T111048Z/n8n-database.sql.gz,
+  which was taken AFTER both workflows' last edits (GGD 03 last edited
+  20 Aug 05:55 UTC, GGD 03s 18 Aug 06:22 UTC), so the export is their final
+  state and not a stale copy. Both files parse as valid JSON and carry
+  credential REFERENCES only (name + id) - no secret values.
+
+  Then deleted in n8n (archive, then permanent delete, confirmation dialog
+  naming each workflow):
+    GGD 03 - Approved Send and Record (Manual Test)   id OAuSsgxfMxGOFIs3
+    GGD 03s - snapshot before send-key wiring         id JfvdLsInvAabILwc
+
+  Verified after: workflow count 20 -> 18; all six current workflows
+  (GGD-00..GGD-05) present and untouched - in particular the CURRENT
+  "GGD-03 Approved reviewed draft send" (created 26 Aug) is a different
+  workflow and was not affected. Credentials untouched: Header Auth, SMTP,
+  IMAP, Anthropic, Odoo all still present, with the SMTP credential now
+  referenced by exactly one workflow (the current GGD-03).
+
+  Audit done at the same time, from the same dump: of the 14 legacy August
+  workflows, ONLY these two had an email-send node or SMTP credential. The
+  other twelve (GGD 02, 04, 04b, 04c, 04d, 04s, 04t, 05, 97t, 98t, 99, and
+  "My GGD 01") reference only Odoo/Anthropic and cannot send mail. They are
+  clutter, not risk; deleting them is optional tidy-up, not a go-live item.
+
 COMMITTED AND PUSHED - 27 August
   Branch gate3-odoo-19.0.1.8.0, tip 226025a, pushed to
   github.com/AKaanka/GGD-Sales-System-. That commit added
@@ -196,10 +228,8 @@ FIXTURE STATE TO BE AWARE OF
 ================================================================================
 
   - Gate 3: DONE (all 9 steps, including step 8, closed 1 September).
-  - Delete the legacy August workflows (approved, not yet done). GGD 03 and
-    GGD 03s can still send email and have real SMTP credentials attached. They
-    are off, but they carry none of this month's safety work. Export a backup
-    of them first.
+  - DONE 1 September: the legacy August send workflows are backed up and
+    deleted. See "LEGACY SEND WORKFLOWS REMOVED" below.
   - Gate 4: one controlled send to Kaan's own address.
   - Gate 5: backup, isolated restore drill, final validation, integration
     commit.
