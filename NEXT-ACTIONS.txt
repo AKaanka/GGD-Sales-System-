@@ -322,8 +322,15 @@ FIXTURE STATE TO BE AWARE OF
     deleted. See "LEGACY SEND WORKFLOWS REMOVED" below.
   - Gate 4: PASSED 1 September (execution #550, receipt confirmed by Kaan).
     Only plan item 6, the uncertain-send drill, is still unrun.
-  - Gate 5: backup, isolated restore drill, final validation, integration
-    commit.
+  - Gate 5: IN PROGRESS. Static half is DONE (1 Sep): validate-project.sh
+    26/26 and 19/19 green, ggd_crm 19.0.1.8.0 confirmed installed on the live
+    Odoo, 76 modules, 25 leads with no real prospect data, and the 20 Aug
+    backup verified intact (all four archives pass SHA256SUMS). The Docker
+    half - fresh backup, 108 addon tests, isolated restore drill - needs a
+    terminal on the Mac and has NOT been run. Follow docs/RESTORE-DRILL.md,
+    NOT docs/SECTION-C-BACKUP-RESTORE.md: the latter is stale in three ways
+    that would each break the drill (see the top of the new file).
+    Disk is no longer blocking: 23 GB free (91%), was 5.9 GB (98%) on 27 Aug.
   - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar
     time; blocks real-prospect use, not local testing.
 
@@ -361,6 +368,8 @@ FIXTURE STATE TO BE AWARE OF
   scripts/gate3-workflow4-test-payloads.md
                                       The six Workflow 4 payloads, corrected.
   workflows/README.md                 Import and credential-binding procedure.
+  docs/RESTORE-DRILL.md               CURRENT backup/restore drill (1 Sep).
+                                      Supersedes SECTION-C-BACKUP-RESTORE.md.
 
 ================================================================================
                     EVERYTHING ELSE IN docs/ IS HISTORICAL
