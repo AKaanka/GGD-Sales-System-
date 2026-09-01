@@ -242,7 +242,12 @@ Items 1 and 2 of the original list are complete. What remains:
    of the same dump confirmed these two were the ONLY legacy August workflows
    with an email-send node or SMTP credential — the remaining twelve reference
    only Odoo/Anthropic and cannot send mail.
-5. Lawful-contact review before any real prospect is contacted.
+5. ~~Lawful-contact review before any real prospect is contacted.~~ —
+   **Dropped by Kaan's decision, 1 September 2026.** A German lawyer's review
+   of the procedure is not required before outreach. The technical control is
+   unchanged: `ggd_contact_basis` and a substantive basis note remain required
+   on every lead before outreach can be approved, enforced in the addon and
+   covered by the 108 tests.
 
 The import instructions are in [workflows/README.md](../workflows/README.md).
 The next single action is kept in [NEXT-ACTIONS.txt](../NEXT-ACTIONS.txt).
@@ -326,7 +331,7 @@ Two open findings, neither yet fixed:
 | Work selection / triggers | **Workflow 3 done. Workflow 5 unblocked** as of the 20 Aug upgrade — `ggd_last_message_date` is now on the model. |
 | Odoo addon deployment | **19.0.1.3.0 deployed and verified 20 Aug.** `ggd_last_message_date` queryable, `ggd_finalize_send()` callable, and approval by direct write now stamps approver, approval time and basis-verified time — confirmed behaviourally, not just by the test run. |
 | Backup and restore | Local backup exists. Off-computer copy still not done. Restore drill not run. |
-| Lawful contact | Procedure drafted. **Not reviewed by a lawyer.** |
+| Lawful contact | Procedure drafted. Lawyer review dropped by Kaan's decision, 1 Sep 2026. Contact-basis enforcement in the addon is unchanged. |
 
 ## Remaining before routine local use
 
@@ -343,7 +348,7 @@ Two open findings, neither yet fixed:
 5. Copy a backup to encrypted storage off this computer.
 6. Run the isolated restore drill, including confirming the n8n encryption key
    makes restored credentials readable.
-7. Get the lawful-contact procedure reviewed by a qualified German lawyer, and
+7. ~~Get the lawful-contact procedure reviewed by a qualified German lawyer~~ — dropped 1 Sep 2026 by Kaan's decision. Original wording kept below for the record, and
    write the Art. 14 information text and Art. 6(1)(f) balancing note.
 8. Prune the surplus workflow copies: `04b`, `04d`, `04s`, `04t`, `03s`, `98t`.
 9. Activate workflows one at a time, only after their checklist passes, keeping

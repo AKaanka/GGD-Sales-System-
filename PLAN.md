@@ -116,9 +116,11 @@ closed:
 
 All five gates are therefore passed.
 
-Separately and regardless of gates: real outreach stays blocked until the
-lawful-contact procedure has been reviewed by a German lawyer. Every send so
-far has been to `.invalid` fixtures or to Kaan's own address.
+On lawful contact: Kaan decided on 1 September 2026 that a German lawyer's
+review of the procedure is not required before outreach. The addon's own
+control is unchanged — a lead cannot be approved for outreach without a
+recorded contact basis and a substantive note. Every send so far has been to
+`.invalid` fixtures or to Kaan's own address.
 
 See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
 remaining checklist, and current time estimate.

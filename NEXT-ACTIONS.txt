@@ -6,9 +6,9 @@ DATE: 27 August 2026, updated end of day (supersedes the 26 August version)
 GATE: ALL FIVE GATES PASSED, 1 September 2026.
       Gate 3 (9 steps), Gate 4 (controlled send, receipt confirmed),
       Gate 5 (tests, backup, isolated restore drill verified).
-      Two items remain before REAL outreach, neither of them a gate:
-      the lawful-contact legal review, and the optional Gate 4
-      uncertain-send drill.
+      One optional item remains: the Gate 4 uncertain-send drill.
+      The lawful-contact legal review was dropped by Kaan's decision on
+      1 September (see OUTSTANDING BEFORE GO-LIVE).
 ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
         Claude Code holds the Odoo lane and wrote today's evidence log.
 
@@ -51,7 +51,7 @@ GATE 3 STEP 4 AND STEP 6 - ALL SIX SCENARIOS PASS (27 August)
 
 NOT YET PROVEN
   - No email has been sent by the current workflow set. GGD-03 stays off.
-  - Backup restore drill not run. Lawful-contact review not done.
+  - Backup restore drill not run.  [both since resolved - see below]
 
   (The error handler catching a real scheduled failure - Gate 3 step 8 -
   WAS proven 1 September. See "STEP 8 - DONE" below.)
@@ -340,8 +340,12 @@ FIXTURE STATE TO BE AWARE OF
         consolidation worked), and a restored credential opened on :5679
         with its secret still decryptable - values never displayed.
       * The drill did NOT touch live volumes. Verified, not assumed.
-  - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar
-    time; blocks real-prospect use, not local testing.
+  - DECISION 1 September 2026 (Kaan): a German lawyer's review of the
+    lawful-contact procedure is NOT required before outreach. This was a
+    deliberate call, not an oversight - recorded here so nobody re-adds it
+    as a blocker later. It does not change the system: ggd_contact_basis
+    and its note are still REQUIRED on every lead before outreach can be
+    approved, enforced in the addon and covered by the 108 tests.
 
 ================================================================================
                         VERSION REFERENCES - CORRECTED

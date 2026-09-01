@@ -18,11 +18,13 @@ fuller narrative and the time estimate.
 As of 1 September, **all five gates are passed**, including the isolated
 restore drill in [docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md).
 
-Before any real outreach, review the
-[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). It has not been
-through legal review, and that review — not any gate in this repo — is what
-gates contacting a real prospect. Every message sent so far has gone to a
-fictional `.invalid` fixture or to Kaan's own address.
+The [lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md) describes how
+a first email is kept defensible. It has not been through legal review; Kaan
+decided on 1 September 2026 that such a review is not required before outreach.
+The technical control is unchanged either way — every lead must carry a
+`ggd_contact_basis` and a substantive note before outreach can be approved.
+Every message sent so far has gone to a fictional `.invalid` fixture or to
+Kaan's own address.
 
 ## Beginner route with Codex and GitHub
 
