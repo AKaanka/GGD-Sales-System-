@@ -54,6 +54,10 @@ def check_url(url):
     return None
 
 
+TEMPLATE_MARKERS = ("replace me", "replace this", "example-company.invalid",
+                    "replace-me@", "delete this row")
+
+
 def check_row(i, row, seen_emails):
     errs = []
     for f in REQUIRED:
@@ -61,6 +65,15 @@ def check_row(i, row, seen_emails):
             errs.append(f"{f} is empty")
     if errs:
         return errs
+
+    # The template ships with one example row. Importing it unedited would put
+    # a real-looking company into the CRM carrying an opt-in reference that
+    # never existed. Catch it explicitly rather than relying on the operator
+    # noticing.
+    joined = " ".join((row.get(f) or "") for f in REQUIRED + OPTIONAL).lower()
+    if any(m in joined for m in TEMPLATE_MARKERS):
+        return ["this is the template's example row, not a real lead. "
+                "Replace every field with your own data (and delete the example row)."]
 
     email = row["contact_email"].strip().lower()
     if not EMAIL_RE.match(email):
