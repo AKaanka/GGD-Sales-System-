@@ -11,13 +11,19 @@ This package starts a private local sales stack for Germany Growth Desk:
 
 Read [PLAN.md](PLAN.md) before starting.
 
-For the current local implementation progress, remaining QA work, and time
-estimate, see [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md).
+[NEXT-ACTIONS.txt](NEXT-ACTIONS.txt) is the single most current status file —
+read it first. [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) carries the
+fuller narrative and the time estimate.
 
-Before any real outreach, also review the
-[QA test pack](docs/QA-TEST-PACK.md) and the
-[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). Both still
-contain open approval or testing work and are not production sign-off.
+As of 1 September, Gates 0–4 are closed and Gate 5 (backup, isolated restore
+drill, final acceptance) is the one remaining gate; see
+[docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md) for that procedure.
+
+Before any real outreach, review the
+[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). It has not been
+through legal review, and that review — not any gate in this repo — is what
+gates contacting a real prospect. Every message sent so far has gone to a
+fictional `.invalid` fixture or to Kaan's own address.
 
 ## Beginner route with Codex and GitHub
 

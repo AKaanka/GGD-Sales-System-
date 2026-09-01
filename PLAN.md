@@ -90,17 +90,35 @@
 | Automatic GitHub validation | Built |
 | Zoho credentials | Requires Kaan's local setup |
 | LLM credentials/provider selection | Requires Kaan's choice |
-| Reproducible n8n workflow imports | Built for Workflows 1–5 and shared error handling; live import/acceptance pending |
+| Reproducible n8n workflow imports | Built, imported, and accepted for Workflows 1–5 plus shared error handling (Gates 3–4, 1 Sep) |
 | Public/VPS deployment | Deliberately deferred |
 
 ## Current implementation status
 
-The repository contains addon version `19.0.1.8.0` and inactive, reproducible
-imports for all five automation areas plus shared error handling. Offline
-structure and decision tests pass. The current addon and imports are not
-considered live-ready until Docker access is available, all Odoo tests pass,
-the imports execute against the local Odoo/n8n versions, and the controlled
-failure/send/reply paths are accepted.
+Addon version `19.0.1.8.0` is installed and confirmed on the live Odoo. All
+five automation areas plus the shared error handler are imported, credential-
+bound, and have run against the live stack. As of 1 September, Gates 0–4 are
+closed:
+
+- Gate 3 (non-send functional flow) — all nine steps, including step 8, where
+  a genuinely scheduled failure was caught, sanitized and recorded by the
+  shared error handler.
+- Gate 4 (one controlled send) — Workflow 3 sent the exact approved draft to a
+  Kaan-owned address, and Kaan confirmed receipt. Message-ID audit,
+  deterministic send key, approval consumption and duplicate blocking all
+  verified.
+
+Gate 5 (recovery and final acceptance) is the remaining gate. Its static half
+passes: `validate-project.sh` is green at 26/26 and 19/19, and the most recent
+backup verifies intact against its checksums. Its recovery half — a fresh
+backup, a re-run of the 108 addon tests, and an isolated restore drill — has
+not been run yet and is the last thing standing between this repo and a
+final integration commit. Follow
+[docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md) for that drill.
+
+Separately and regardless of gates: real outreach stays blocked until the
+lawful-contact procedure has been reviewed by a German lawyer. Every send so
+far has been to `.invalid` fixtures or to Kaan's own address.
 
 See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
 remaining checklist, and current time estimate.
