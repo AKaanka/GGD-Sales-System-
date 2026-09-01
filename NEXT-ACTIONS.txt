@@ -217,3 +217,37 @@ FIXTURE STATE TO BE AWARE OF
   workflows/README.md                 Import and credential-binding procedure.
 
 ================================================================================
+                    EVERYTHING ELSE IN docs/ IS HISTORICAL
+================================================================================
+
+  1 September note (Kaan asked for the doc set trimmed down so it reads
+  faster - nothing below was deleted or rewritten, this just says which
+  files are live).
+
+  The files above, plus PLAN.md, README.md, AGENTS.md, CLAUDE.md, and
+  docs/PROJECT-STATUS.md, docs/SYSTEM-CAPABILITIES.md, docs/ODOO-SETUP.md,
+  docs/N8N-AUTOMATION-SPEC.md, docs/OPERATIONS.md,
+  docs/LAWFUL-CONTACT-PROCEDURE.md, and docs/WORKFLOW4-MATCHING-DESIGN.md,
+  are the only docs describing the CURRENT state or the CURRENT plan.
+
+  Every other file under docs/ is a dated record of a step that already
+  happened (a test walkthrough already run, a status snapshot from an
+  earlier day, a QA log, an implementation summary). They are kept for
+  evidence, not instruction - do not follow their steps as if they were
+  today's plan, and do not "update" them to match today; that would destroy
+  the only record of what was true when they were written. If a historical
+  doc and this file disagree, this file is right.
+
+  Skippable on a first read (dated 15-21 August, all superseded by the
+  27 August state above): ACTION-CARD-TODAY.md, ADDON-VERIFICATION-CHECKLIST.md,
+  ADDON-WORK-SUMMARY.md, B3-B4-TEST-SETUP.md, C0-PROOF-WALKTHROUGH.md,
+  COMPLETION-ROADMAP.md, CURRENT-STATE-SNAPSHOT.md, FIELD-AUDIT.md,
+  GUARD-LIVE-PROOF.md, PROJECT-COMPLETION-STATUS.md, QA-INVESTIGATION-LOG.md,
+  QA-TEST-PACK.md, RIGHT-NOW.md, SECTION-B-EXECUTION.md,
+  SECTION-C-BACKUP-RESTORE.md, SESSION-SUMMARY-20260818.md,
+  STRATEGIC-REPORT-NEXT-MOVE.md, WORK-SELECTION-IMPLEMENTATION.md,
+  WORK-SELECTION-TEST-CHECKLIST.md, WORK-SELECTION-TESTS.md,
+  docs/CODEX-GITHUB-GUIDE.md (Codex/GitHub Desktop how-to, not project status).
+
+
+================================================================================
