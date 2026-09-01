@@ -225,10 +225,14 @@ Items 1 and 2 of the original list are complete. What remains:
    duplicate-blocking drill. Reply and bounce paths were already proven in
    Gate 3. Note FX4 is now consumed and carries a real address; a future
    fresh-draft test needs a new fixture.
-3. Gate 5: re-run validation and the 108 addon tests, then the backup and
-   isolated restore drill. Before that drill, free disk space (was at 98%,
-   5.9 GB of 229 GB) and account for the roughly 31 Odoo modules installed on
-   27 August, which the restore has to reproduce.
+3. Gate 5 — PASSED 1 September. 108 addon tests green (0 failed, 0 errors);
+   `validate-project.sh` 26/26 and 19/19 plus the Compose config check; fresh
+   backup `20260901T164244Z` with checksums verified; and an isolated restore
+   drill whose volume isolation was proven by `docker inspect` before any
+   write. The restored copy reported `ggd_crm` 19.0.1.8.0, 76 modules, 41
+   crm_lead rows (25 active), 18 workflows, 5 credentials, 1 user; Odoo
+   rendered fully styled and a restored credential still decrypted.
+   Disk was 22 GB free at the time, not the 5.9 GB of 27 August.
 4. ~~Delete the legacy August workflows~~ — DONE, 1 September. `GGD 03`
    (`OAuSsgxfMxGOFIs3`) and `GGD 03s` (`JfvdLsInvAabILwc`) were exported to
    `backups/20260901T-legacy-send-workflows/` (git-ignored, local only) from

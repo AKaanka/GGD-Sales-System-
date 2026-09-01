@@ -15,9 +15,8 @@ Read [PLAN.md](PLAN.md) before starting.
 read it first. [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) carries the
 fuller narrative and the time estimate.
 
-As of 1 September, Gates 0–4 are closed and Gate 5 (backup, isolated restore
-drill, final acceptance) is the one remaining gate; see
-[docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md) for that procedure.
+As of 1 September, **all five gates are passed**, including the isolated
+restore drill in [docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md).
 
 Before any real outreach, review the
 [lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). It has not been

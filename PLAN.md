@@ -108,13 +108,13 @@ closed:
   deterministic send key, approval consumption and duplicate blocking all
   verified.
 
-Gate 5 (recovery and final acceptance) is the remaining gate. Its static half
-passes: `validate-project.sh` is green at 26/26 and 19/19, and the most recent
-backup verifies intact against its checksums. Its recovery half — a fresh
-backup, a re-run of the 108 addon tests, and an isolated restore drill — has
-not been run yet and is the last thing standing between this repo and a
-final integration commit. Follow
-[docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md) for that drill.
+- Gate 5 (recovery and final acceptance) — the 108 addon tests pass, a fresh
+  backup verifies against its checksums, and that backup was restored into an
+  isolated stack whose volume separation was proven before any write. The
+  restored copy matched live on every counted value, rendered correctly, and
+  its credentials still decrypted.
+
+All five gates are therefore passed.
 
 Separately and regardless of gates: real outreach stays blocked until the
 lawful-contact procedure has been reviewed by a German lawyer. Every send so
