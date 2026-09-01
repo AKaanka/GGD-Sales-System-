@@ -220,9 +220,13 @@ Items 1 and 2 of the original list are complete. What remains:
    A second run (#551) selected 0 candidates and sent nothing. The live
    allowlist and sender both still match their SHA-256 pins. Kaan CONFIRMED
    the message arrived, so Gate 4 is PASSED on the plan's own criterion.
-   STILL OPEN: plan item 6 only — the uncertain-send recovery drill, which
-   sends a real second email by design — plus an optional claim-level
-   duplicate-blocking drill. Reply and bounce paths were already proven in
+   Plan item 6 — uncertain-send recovery — was PROVEN on 1 September using
+   fixture lead 936 and a deliberately broken finalize node: SMTP succeeded,
+   the audit write failed, and the lead was left `claimed` but unconfirmed
+   with `send_may_have_occurred: true` and three review flags raised. A second
+   run with the claim still unresolved stopped at "Continue only for new
+   claim" (1 item in, 0 out) — the already-used key was refused and no second
+   email was sent. Gate 4 is complete on every item. Reply and bounce paths were already proven in
    Gate 3. Note FX4 is now consumed and carries a real address; a future
    fresh-draft test needs a new fixture.
 3. Gate 5 — PASSED 1 September. 108 addon tests green (0 failed, 0 errors);

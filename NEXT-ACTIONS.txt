@@ -6,9 +6,9 @@ DATE: 27 August 2026, updated end of day (supersedes the 26 August version)
 GATE: ALL FIVE GATES PASSED, 1 September 2026.
       Gate 3 (9 steps), Gate 4 (controlled send, receipt confirmed),
       Gate 5 (tests, backup, isolated restore drill verified).
-      One optional item remains: the Gate 4 uncertain-send drill.
-      The lawful-contact legal review was dropped by Kaan's decision on
-      1 September (see OUTSTANDING BEFORE GO-LIVE).
+      Nothing outstanding. The Gate 4 uncertain-send drill was proven on
+      1 September, and the lawful-contact legal review was dropped by
+      Kaan's decision the same day (see OUTSTANDING BEFORE GO-LIVE).
 ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
         Claude Code holds the Odoo lane and wrote today's evidence log.
 
@@ -242,6 +242,53 @@ GATE 4 CONTROLLED SEND - EXECUTED 1 September, 17:17:50 Berlin
       ggd_claim_send_key should refuse the already-used key
       433:7f261a44... so "Continue only for new claim" stops before SMTP.
       Safe - sends nothing if the guard works. NOT yet run.
+
+GATE 4 ITEM 6 - UNCERTAIN-SEND RECOVERY - PROVEN 1 September, 19:19
+
+  The last unproven line item in the five gates. It asks that a send whose
+  outcome is UNCERTAIN is recorded as such and is never retried automatically.
+
+  METHOD
+    Fixture lead 936, built through the addon's own ggd_prepare_draft so the
+    draft and version are made exactly as the real path makes them, recipient
+    kaan@germanygrowthdesk.com, approved by Kaan in Odoo at 17:18:32.
+    GGD-03's "Finalize complete send audit in Odoo" node was temporarily
+    pointed at http://odoo-unreachable-drill.invalid/... so SMTP would succeed
+    and the Odoo audit write would fail - the exact shape of a real uncertain
+    send. The workflow was never published; both runs were manual.
+
+  RUN 1 - the email really was sent, and the audit really did fail
+    ggd_last_send_key            936:412900856ea94870a7f774d71280d02f
+    ggd_last_confirmed_send_key  false      <- CLAIMED but UNCONFIRMED
+    ggd_delivery_status          claimed    (not "accepted")
+    ggd_last_message_id          false      (finalize never ran)
+    ggd_outreach_approved        still true (approval NOT consumed)
+    ggd_automation_needs_review  true
+    ggd_delivery_needs_review    true
+    ggd_workflow_needs_review    true
+    ggd_automation_review_summary:
+      "Workflow 3 stopped after claiming 936:412900856...: getaddrinfo
+       ENOTFOUND odoo-unreachable-drill.invalid. Check Zoho Sent and the
+       Odoo send key before any retry."
+    The n8n run reached "Record uncertain send for manual recovery" with
+    send_may_have_occurred: true.
+
+  RUN 2 - THE POINT OF THE DRILL: no automatic retry
+    GGD-03 was run again with the claim still unresolved and the lead still
+    approved, so it WAS selected again. The run stopped at "Continue only for
+    new claim": 1 item in, 0 items out. ggd_claim_send_key refused the
+    already-used key, the item was dropped, and the SMTP node never executed.
+    No second email. Exit was clean, not an error.
+
+  CLEANUP
+    The finalize URL was restored to
+    http://odoo:8069/json/2/crm.lead/ggd_finalize_send, matching the tracked
+    workflows/GGD-03-approved-send.json exactly. Fixture 936 was archived with
+    its unresolved claim left intact as evidence. Sendable candidates: 0.
+
+  Note the deliberate asymmetry this proves: a send that MIGHT have happened
+  leaves the approval intact and the claim unresolved, so a human has to look
+  at Zoho Sent and decide. The system will not guess.
 
 LEGACY SEND WORKFLOWS REMOVED - 1 September
 
