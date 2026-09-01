@@ -332,10 +332,30 @@ FIXTURE STATE TO BE AWARE OF
         pass SHA256SUMS, verified twice (by the script and independently).
       * Live Odoo confirmed: ggd_crm 19.0.1.8.0, 76 modules, 25 leads,
         no real prospect data.
-    NOT DONE: the isolated restore drill (steps 4-5 of the gate) and the
-    final integration commit (step 7, which depends on it).
-    Follow docs/RESTORE-DRILL.md, NOT docs/SECTION-C-BACKUP-RESTORE.md: the
-    latter is stale in three ways that would each break the drill.
+    NOT DONE: the isolated restore drill (steps 4-5) and the final
+    integration commit (step 7, which depends on it).
+
+    !! THE RESTORE DRILL DAMAGED THE LIVE SYSTEM ON 1 SEPTEMBER. !!
+    Both docs/RESTORE-DRILL.md and scripts/gate5-restore-drill.sh isolated
+    the drill by COMPOSE_PROJECT_NAME. That assumes Compose prefixes volume
+    names with the project, but compose.yaml pins EXPLICIT names
+    (name: ggd_odoo_data, ...), which Compose does not prefix. The drill
+    stack got its own containers and ports but mounted the LIVE VOLUMES, so
+    the dropdb, the restore and the workflow deactivation all hit live data.
+    The teardown command it printed (docker compose down -v) would have
+    deleted the live volumes outright; it was NOT run.
+    Damage: live n8n lost its owner/settings rows and fell back to the
+    "Set up owner account" screen. Recovered by restoring
+    backups/20260901T164244Z with only the live stack running. Odoo came
+    through intact (styled login page, database fine, sessions cleared).
+    The script is now disabled and the doc carries a stop banner.
+    Before retrying: prove isolation at the VOLUME level (separate compose
+    file with distinct volume names, or a machine that cannot see the live
+    volumes), verify with docker inspect that no live volume is mounted, and
+    run every psql restore with -v ON_ERROR_STOP=1 - without it a
+    half-applied restore reports success, which is how this went unnoticed.
+
+    docs/SECTION-C-BACKUP-RESTORE.md is separately stale in three ways.
     Disk is not blocking: 22 GB free (90%), was 5.9 GB (98%) on 27 Aug.
   - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar
     time; blocks real-prospect use, not local testing.

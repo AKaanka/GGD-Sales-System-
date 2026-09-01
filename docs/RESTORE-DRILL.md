@@ -1,5 +1,47 @@
 # Backup and Isolated Restore Drill — current procedure
 
+> ## ⛔ THIS PROCEDURE IS UNSAFE AS WRITTEN. DO NOT FOLLOW IT YET.
+>
+> **1 September 2026.** It was run and it damaged the live system. The
+> isolation below is built on `COMPOSE_PROJECT_NAME`, which assumes Compose
+> prefixes volume names with the project. `compose.yaml` pins explicit volume
+> names:
+>
+> ```yaml
+> volumes:
+>   odoo_db_data:
+>     name: ggd_odoo_db_data
+> ```
+>
+> Compose does **not** prefix explicitly named volumes. The "isolated" stack
+> therefore got its own containers and ports but mounted the **live volumes**.
+> The `dropdb`, the restore and the workflow-deactivation all ran against live
+> data, and the printed `docker compose down -v` teardown would have deleted
+> the live volumes outright.
+>
+> Damage on the day: live n8n lost its owner/settings rows and fell back to the
+> "Set up owner account" screen; it was recovered by restoring
+> `backups/20260901T164244Z` with only the live stack running. Odoo survived
+> intact.
+>
+> **Before this file is trusted again, isolation must be proven at the VOLUME
+> level, not the project level:**
+>
+> - give the restore stack its own compose file with distinct volume names
+>   (`ggd_restore_odoo_data`, …), or run the drill somewhere that cannot see
+>   the live volumes at all;
+> - verify with `docker volume ls` and `docker inspect` on the actual
+>   containers that no live volume is mounted, *before* restoring anything;
+> - run every `psql` restore with `-v ON_ERROR_STOP=1` — without it a
+>   half-applied restore reports success, which is how the first damage went
+>   unnoticed;
+> - never print a copy-pasteable `docker compose down -v`.
+>
+> `scripts/gate5-restore-drill.sh` has been disabled for the same reason.
+> Everything below is kept because the non-isolation parts (checksum
+> verification, the `CREATE DATABASE` gap, the filestore consolidation) are
+> correct and were verified — but the isolation model is broken.
+
 Written 1 September 2026 for Gate 5. This supersedes
 [SECTION-C-BACKUP-RESTORE.md](SECTION-C-BACKUP-RESTORE.md) as the procedure to
 follow. That file is kept as the August record of the drill as it was designed
