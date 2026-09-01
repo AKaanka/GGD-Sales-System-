@@ -209,11 +209,20 @@ and no email was sent.
 Items 1 and 2 of the original list are complete. What remains:
 
 1. ~~Gate 3 step 8~~ — DONE, 1 September (see above).
-2. Gate 4: with separate explicit approval given immediately beforehand, run
-   Workflow 3 once to a Kaan-owned test address and verify the claim,
-   Message-ID audit, approval consumption, reply, bounce, and uncertain-send
-   recovery paths. FX4 (record 433) is the clean approved draft reserved for
-   this and was not touched by Gate 3 testing.
+2. Gate 4 — controlled send EXECUTED 1 September (n8n execution #550,
+   1.072s). FX4 (record 433) was retargeted from its `.invalid` address to
+   `kaan@germanygrowthdesk.com`, which auto-revoked its approval; Kaan
+   re-approved in Odoo at 15:16:05 UTC, and GGD-03 was run manually (never
+   published). Verified: `ggd_delivery_status` accepted, `ggd_draft_status`
+   sent, Message-ID `<cba5013a-…@germanygrowthdesk.com>` recorded, sent
+   subject and draft version `7f261a44…` unchanged, deterministic send key
+   `433:7f261a44…` with the confirmed key equal to it, and approval consumed.
+   A second run (#551) selected 0 candidates and sent nothing. The live
+   allowlist and sender both still match their SHA-256 pins. STILL OPEN:
+   Kaan's confirmation that exactly one message arrived, plus two optional
+   drills (claim-level duplicate blocking, and uncertain-send recovery —
+   the latter sends a real second email by design). Reply and bounce paths
+   were already proven in Gate 3.
 3. Gate 5: re-run validation and the 108 addon tests, then the backup and
    isolated restore drill. Before that drill, free disk space (was at 98%,
    5.9 GB of 229 GB) and account for the roughly 31 Odoo modules installed on

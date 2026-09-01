@@ -3,8 +3,9 @@
 ================================================================================
 
 DATE: 27 August 2026, updated end of day (supersedes the 26 August version)
-GATE: 3 of 5 (non-send functional flow) - ALL 9 STEPS COMPLETE, incl. step 8
-      (closed 1 September). Gate 3 is DONE. Next: Gate 4, then Gate 5.
+GATE: 3 of 5 COMPLETE (all 9 steps, incl. step 8, 1 September).
+      GATE 4 SEND EXECUTED 1 September - evidence below; awaiting Kaan's
+      inbox confirmation to call Gate 4 formally passed. Then Gate 5.
 ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
         Claude Code holds the Odoo lane and wrote today's evidence log.
 
@@ -112,7 +113,8 @@ NOT YET PROVEN
 ================================================================================
 
 GATE 3 IS FULLY DONE (step 8 closed 1 September, see below).
-THE SINGLE NEXT ACTION IS GATE 4.
+GATE 4's controlled send RAN on 1 September (see "GATE 4 CONTROLLED SEND").
+THE SINGLE NEXT ACTION IS Kaan confirming the message arrived, then Gate 5.
 
 STEP 9 - DONE (27 August). GRAPH 0, UNEXPLAINED 0, PIN 0, exit 0.
   validate-project.sh: 26/26 and 19/19, passed.
@@ -159,6 +161,74 @@ STEP 8 - DONE (1 September). GATE 3 IS NOW FULLY COMPLETE.
        reverted to Hours/1 to match the tracked
        workflows/GGD-01-lead-qualification.json exactly. Fixture lead 812
        was archived in Odoo.
+
+GATE 4 CONTROLLED SEND - EXECUTED 1 September, 17:17:50 Berlin
+
+  PREPARATION
+    FX4 (lead 433) still pointed at fx4@ggd-gate3-fixture.invalid, exactly as
+    its own note warned. email_from was changed to kaan@germanygrowthdesk.com;
+    the addon's write() then auto-revoked the approval (approved flag,
+    approver, timestamp, approved recipient and approved draft version all
+    cleared, draft_status -> ready), leaving ZERO sendable candidates. The
+    fail-safe behaved exactly as designed: a recipient change invalidates the
+    human approval that was attached to the old recipient.
+
+    Kaan re-approved in Odoo at 15:16:05 UTC (Administrator), re-binding the
+    approval to the new recipient and to draft version
+    7f261a449f844b93a44a8b9f124f49dd. The approval click was left to Kaan on
+    purpose - that button is Gate 4's authorization artifact and records who
+    approved.
+
+  PRE-FLIGHT
+    Live allowlist rightValue and the send node's fromEmail both read
+    kaan@germanygrowthdesk.com, and both match the SHA-256 pins in
+    tests/workflows/confirmed-bindings.json (62bba9e7...), so neither had
+    drifted since they were confirmed on 27 August.
+    The selection query returned exactly ONE candidate (lead 433).
+
+  RUN 1 - n8n execution #550, succeeded in 1.072s
+    GGD-03 was run MANUALLY. It was never published; no schedule activation.
+    Allowlist took the true branch; "Reject recipient outside Gate 4
+    allowlist" and both uncertain-send nodes never executed.
+
+  ODOO EVIDENCE AFTER THE SEND (lead 433)
+    ggd_delivery_status          accepted
+    ggd_draft_status             sent
+    ggd_draft_version            7f261a449f844b93a44a8b9f124f49dd (unchanged)
+    ggd_last_message_id          <cba5013a-a0c8-9544-819e-3bf9d5030da9@
+                                 germanygrowthdesk.com>
+    ggd_last_message_date        2026-09-01
+    ggd_last_sent_at             2026-09-01 15:17:50 UTC
+    ggd_last_sent_recipient      kaan@germanygrowthdesk.com
+    ggd_last_sent_subject        matches the approved draft subject exactly
+    ggd_last_send_key            433:7f261a449f844b93a44a8b9f124f49dd
+    ggd_last_confirmed_send_key  433:7f261a449f844b93a44a8b9f124f49dd
+    ggd_outreach_approved        false  <- approval CONSUMED by the send
+    ggd_approved_*               cleared
+    ggd_automation_needs_review  false
+
+    The send key is exactly id:approved_draft_version, and the confirmed key
+    equals the claimed key, so no claim was left dangling.
+
+  RUN 2 - n8n execution #551, duplicate check, succeeded in 32ms
+    "Select approved reviewed drafts" returned 0 items and every downstream
+    node was skipped. Nothing was sent. Consuming the approval blocks a
+    resend of an already-sent draft.
+
+  STILL OPEN BEFORE GATE 4 IS FORMALLY PASSED
+    1. Kaan confirms exactly ONE message arrived at kaan@germanygrowthdesk.com
+       with the expected subject and body (the plan requires his confirmation,
+       not just matching Odoo evidence).
+    2. Optional deeper checks, both needing a fresh approval click:
+       - claim-level duplicate blocking: re-approve the SAME draft version and
+         run again; ggd_claim_send_key should refuse the already-used key
+         433:7f261a44... so "Continue only for new claim" stops the run before
+         SMTP.
+       - uncertain-send recovery: induce a failure AFTER the claim (e.g. break
+         the finalize node) and confirm the run records
+         send_may_have_occurred: true and does NOT auto-retry. Note this drill
+         sends a real second email by design - that is what makes the outcome
+         uncertain.
 
 LEGACY SEND WORKFLOWS REMOVED - 1 September
 
@@ -230,7 +300,8 @@ FIXTURE STATE TO BE AWARE OF
   - Gate 3: DONE (all 9 steps, including step 8, closed 1 September).
   - DONE 1 September: the legacy August send workflows are backed up and
     deleted. See "LEGACY SEND WORKFLOWS REMOVED" below.
-  - Gate 4: one controlled send to Kaan's own address.
+  - Gate 4: send EXECUTED 1 September (execution #550, evidence above).
+    Awaiting Kaan's inbox confirmation; two optional deeper checks listed.
   - Gate 5: backup, isolated restore drill, final validation, integration
     commit.
   - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar
