@@ -1565,3 +1565,82 @@ credentials in the n8n UI clears all 17 permanently.
 
 GATE 3 NOW HAS ONE STEP LEFT: step 8, the error-handler proof, which needs a
 genuinely scheduled run and must be done last.
+
+================================================================================
+END OF DAY 27 AUGUST - housekeeping, verification, and status refresh
+================================================================================
+
+## Lead 685 archived
+
+`./scripts/make-workflow2-retest-lead.sh --archive` returned `ARCHIVED id=685`.
+Odoo loaded 76 modules cleanly on the way through. This closes the Workflow 2
+retest housekeeping item. Nothing was committed for it and nothing should be:
+the script writes to the live Odoo database, not to a tracked file, so the
+archive itself is the record.
+
+## Confirmed bindings independently re-verified
+
+The comparator's two CONFIRM entries were checked rather than taken on trust.
+SHA-256 of the live value was recomputed from scratch and compared to both
+stored hashes in `tests/workflows/confirmed-bindings.json`; both match exactly.
+The terminal output showing "2 difference(s) need a decision" was from the run
+BEFORE `--record-confirmed`, and the file that was actually committed already
+carries the confirmation. A fresh comparator run reports CONFIRMED-OK twice and
+exits 0.
+
+Worth stating plainly, because it is the one place this could go wrong: a
+matching hash proves the bound value has not CHANGED since a human read it. It
+does not prove the value is correct. That judgement was made on 27 August when
+the value was read, and it has to be made again by a human on any future
+"VALUE CHANGED" report - re-recording without reading is the failure mode this
+whole mechanism exists to prevent.
+
+## Status documents refreshed to the proven state
+
+Kaan asked for the related documents to be brought up to date. Codex is out of
+tokens and Fable 5 has stopped, so Kaan is directing this directly; on his
+instruction this session edited shared status documents, which the four-agent
+plan would otherwise reserve to the orchestrator. Flagging it so the boundary
+is not later mistaken for having been ignored.
+
+  NEXT-ACTIONS.txt                   step 8 named as the single next action;
+                                     lead 685 marked done; commit tip corrected
+                                     from 9f27516 to 226025a
+  docs/PROJECT-STATUS.md             dated 27 Aug; Gate 3 results table added;
+                                     24/24 -> 26/26; the 26 Aug preflight and
+                                     the 18-20 Aug summary marked as history
+                                     rather than silently rewritten
+  docs/SYSTEM-CAPABILITIES.md        verification boundary rewritten - it still
+                                     claimed 14 workflow tests, 102 unverified
+                                     Odoo tests, and unbound credentials
+  docs/FOUR-AGENT-EXECUTION-PLAN.md  22 -> 26 tests; 102 -> 108; STATUS lines
+                                     on gates 0-3; Kaan's lane rewritten from
+                                     the start-up sequence to the real
+                                     remaining work
+
+One earlier decision was reversed, deliberately. The 27 August version-
+correction pass had left the Claude Code agent brief inside the code fence in
+FOUR-AGENT-EXECUTION-PLAN.md at "19.0.1.6.0 / 102 tests", classing it as a
+dated record. It is not a record. It is text meant to be pasted into a new
+session, and pasting it unchanged would have told that session to go prove an
+addon version that no longer exists. It now reads 19.0.1.8.0 / 108, and
+NEXT-ACTIONS.txt records the reversal and the reasoning.
+
+What was NOT touched: the dated evidence logs (FABLE-5.md, QA-TEST-PACK.md,
+SESSION-SUMMARY-*, and the pre-21-August docs). Rewriting a log to match
+today's state destroys the only evidence of what was actually believed at the
+time.
+
+## Still outstanding
+
+Gate 3 step 8, the error-handler proof, is the only thing left in Gate 3. It
+needs a genuinely scheduled GGD-01 run, and GGD-01 must be switched off again
+immediately afterwards.
+
+The 17 credential slot NAME mismatches remain open and cosmetic. Renaming the
+three credentials in the n8n UI to "Odoo JSON-2 bearer token", "Zoho SMTP" and
+"Zoho IMAP" clears all 17 from every future comparison.
+
+Before the Gate 5 restore drill: disk was at 98%, and Odoo went from 45 to 76
+installed modules on 27 August. Both need handling before the drill, not during
+it.

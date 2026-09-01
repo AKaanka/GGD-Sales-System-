@@ -1,6 +1,6 @@
 # Four-Agent Execution Plan
 
-Status date: 26 August 2026
+Status date: 27 August 2026
 
 ## Product outcome
 
@@ -23,16 +23,25 @@ deployment is deliberately outside this finish line.
 
 ## Current verified baseline
 
+Updated 27 August 2026.
+
 - Static project validation passes.
-- Current workflow export/decision tests: 22 passed, 0 failed.
+- Current workflow export/decision tests: 26 passed, 0 failed.
 - Legacy reply-matching regression tests: 19 passed, 0 failed.
 - Odoo addon `19.0.1.8.0` is installed and all 108 live tests pass.
 - All six workflow exports are imported into n8n 2.34.6 and remain inactive.
 - Live node type/version, stored node-set, stored connections, and shared error
   workflow checks pass for all six imports.
-- Credential binding and workflow execution have not started.
-- The working tree already contains a large uncommitted functional build. Do
-  not reset, clean, stash, overwrite, or switch branches.
+- Credential binding is COMPLETE. Every workflow node authenticates; only the
+  credential slot NAMES differ from the documented ones (17 cosmetic
+  mismatches, see Gate 3 below).
+- Gate 3 execution is complete except step 8: Workflows 2, 4, and 5 have run
+  live against `.invalid` fixtures, and step 9 proves the live graphs match the
+  tracked files.
+- No email has been sent by the current workflow set. GGD-03 stays off until
+  Gate 4.
+- Work is committed on branch `gate3-odoo-19.0.1.8.0` and pushed. Do not reset,
+  clean, stash, overwrite, or switch branches.
 
 ## One shared-workspace rule
 
@@ -72,6 +81,8 @@ Work begins in parallel:
 Gate passes when Docker is running and Codex confirms the four local
 containers without reading or printing `.env`.
 
+STATUS: PASSED.
+
 ### Gate 1 — Odoo green
 
 Owner: Claude Code. Reviewer: Codex.
@@ -83,8 +94,11 @@ Owner: Claude Code. Reviewer: Codex.
 4. Fix only confirmed addon/test defects, using the smallest safe change.
 5. Record the exact result in the Claude handoff.
 
-Gate passes only when the installed addon version is confirmed and all 102
+Gate passes only when the installed addon version is confirmed and all 108
 tests pass. Workflow live execution waits for this gate.
+
+STATUS: PASSED. Addon `19.0.1.8.0` installed, 108/108 tests passing, live Odoo
+worker restarted so the running code matches the tested code.
 
 ### Gate 2 — n8n imports green
 
@@ -104,6 +118,10 @@ Kaan.
 
 Gate passes when all six workflows load without broken nodes and remain
 inactive.
+
+STATUS: PASSED. All six imported into n8n 2.34.6, all inactive, all
+credentials bound and authenticating, GGD-00 assigned AND published as the
+error workflow for 01-05.
 
 ### Gate 3 — Non-send functional flow green
 
@@ -125,6 +143,41 @@ Use fictional `.invalid` records only:
 
 Gate passes when Odoo contains the expected durable records and no workflow
 has sent email.
+
+STATUS: STEP 8 OUTSTANDING; everything else passed on 27 August 2026.
+
+| Step | What it proves | Result |
+| --- | --- | --- |
+| 1 | W1 qualifies without approving outreach | PASS |
+| 2 | W2 stores one versioned draft and stops | PASS |
+| 3 | Kaan reviews the exact draft, no email sent | PASS |
+| 4 | W4 matched / unmatched / ambiguous / unsubscribe / bounce | PASS - all six scenarios |
+| 5 | W5 creates one deduplicated follow-up activity | PASS |
+| 6 | Bounce and unsubscribe suppression recorded in Odoo | PASS |
+| 8 | Shared error handler catches a real failure | NOT DONE - see below |
+| 9 | Live n8n graphs match the tracked exports | PASS - exit 0 |
+
+Step 8 must be done LAST and cannot use the n8n CLI. Every `n8n execute` run
+ends with `Cannot read properties of undefined (reading 'run')` when n8n hands
+off to the error workflow; that is a CLI-mode limitation, not a defect in
+GGD-00. Proving it requires a temporary SCHEDULED activation of GGD-01 so a
+real scheduled failure reaches GGD-00, then switching GGD-01 off immediately
+afterwards. Kaan has approved this.
+
+Step 9 is enforced by `tests/workflows/compare-live-exports.js`, which compares
+each live export to its committed file (node set, type, typeVersion, disabled
+flag, full parameters, credential slot names, connection map). Placeholder
+fields bound to live values are class CONFIRM: the bound value is printed and
+blocks the run until a human reads it, and confirmed values are stored as
+SHA-256 in `tests/workflows/confirmed-bindings.json` so a later change fails
+loudly. Do not weaken CONFIRM back to a silent pass - an early version did, and
+a negative test that rewrote the Gate 4 allowlist to an attacker address passed
+clean.
+
+Open and cosmetic: 17 credential slot NAME mismatches. Live n8n kept its
+defaults ("Header Auth account", "SMTP account", "IMAP account") instead of the
+documented names ("Odoo JSON-2 bearer token", "Zoho SMTP", "Zoho IMAP"). The
+bindings work; renaming the three credentials in the n8n UI clears all 17.
 
 ### Gate 4 — One controlled send green
 
@@ -170,7 +223,7 @@ tests, or shared status documents. Do not commit or change branches. Preserve
 all existing uncommitted work. Never read or print .env or secrets. Never use
 destructive Docker commands.
 
-Goal: prove addon 19.0.1.6.0 on the running local Odoo and get all 102 addon
+Goal: prove addon 19.0.1.8.0 on the running local Odoo and get all 108 addon
 tests passing. First perform read-only inspection. If Docker is unavailable,
 write BLOCKED: DOCKER_OFF in docs/handoffs/CLAUDE-CODE.md and stop live work.
 If it is available, upgrade the addon, run ./scripts/run-addon-tests.sh, fix
@@ -223,13 +276,19 @@ scope. Start by reporting the current gate and the single next action.
 
 ## Kaan's immediate lane
 
-1. Start Docker Desktop and wait until it says the engine is running.
-2. In the installed Claude Code VS Code extension, open two separate chat
-   tabs/sessions in this exact repository folder.
-3. Use the regular Claude Code session for Agent 2 and select Fable 5 for the
-   Agent 4 review session. Paste each assignment above into its matching tab.
-4. Do not approve an email test yet.
-5. Tell Codex: `Docker is running; Claude and Fable have started.`
+Updated 27 August 2026. The original start-up lane is complete. Codex is out of
+tokens and Fable 5 has stopped, so Kaan is directing the remaining work
+directly and the single-orchestrator rule above is relaxed to that extent.
 
-After that message, Codex coordinates the gates and gives Kaan only the next
-human action needed.
+1. Run Gate 3 step 8: temporarily activate GGD-01 on its real schedule so a
+   genuine scheduled failure reaches GGD-00, confirm the sanitized error record
+   appears in Odoo, then switch GGD-01 back OFF immediately.
+2. Optional tidy-up: rename the three n8n credentials to the documented names
+   to clear the 17 cosmetic mismatches permanently.
+3. Before Gate 5: free disk space (was at 98%) and account for the ~31 Odoo
+   modules installed on 27 August, which the restore drill has to reproduce.
+4. Gate 4 only after Gate 3 closes, and only with a fresh explicit approval
+   given immediately before the send.
+
+The current single next action is always kept at the top of
+[NEXT-ACTIONS.txt](../NEXT-ACTIONS.txt) under "RESUME HERE".

@@ -1,11 +1,12 @@
 # GGD Sales System — Functional Capabilities
 
-Status date: 21 August 2026.
+Status date: 27 August 2026.
 
 This document describes the current repository build. “Implemented” means the
-function exists in the Odoo addon and/or an inactive n8n import. It does not
-mean the current local containers have been upgraded and acceptance-tested.
-Live verification is still pending.
+function exists in the Odoo addon and/or an inactive n8n import. As of 27
+August the local containers HAVE been upgraded and acceptance-tested for
+Workflows 1, 2, 4, and 5; the boundary of what is proven live is stated at the
+end of this document.
 
 ## End-to-end flow
 
@@ -141,17 +142,30 @@ Verified offline:
 - six JSON exports parse and all connection names/targets exist;
 - Workflow 3 graph orders claim → SMTP → finalize;
 - Workflows 2, 4, and 5 contain no email-send node;
-- current workflow export/decision tests: 14 passed, 0 failed;
+- current workflow export/decision tests: 26 passed, 0 failed;
 - legacy reply-matcher regression tests: 19 passed, 0 failed (separate from the
   current export implementation).
 
+Verified live on the current build (27 August 2026):
+
+- addon `19.0.1.8.0` installed and all 108 Odoo tests passing;
+- all six workflows imported into n8n 2.34.6 and inactive;
+- every workflow credential bound and authenticating, including the Odoo JSON-2
+  bearer credential;
+- Workflow 2 stores one immutable draft end to end;
+- Workflow 4 passes all six reply/bounce/unsubscribe scenarios;
+- Workflow 5 selects, drafts, and deduplicates its follow-up queue;
+- the live n8n graphs match the tracked exports node for node
+  (`tests/workflows/compare-live-exports.js`, exit 0).
+
 Not yet verified on the current build:
 
-- addon upgrade and all 102 Odoo tests;
-- import compatibility and execution in the local n8n version;
-- live Odoo JSON-2 credential binding;
-- live Anthropic, IMAP, and SMTP behavior;
-- controlled end-to-end send/reply/bounce recovery.
+- the shared error handler catching a real failure (needs a genuinely
+  scheduled run; CLI runs bypass it by design);
+- live SMTP send behavior — no email has been sent by the current workflow
+  set, and Workflow 3 remains off;
+- controlled end-to-end send/reply/bounce recovery;
+- backup restore drill and lawful-contact review.
 
 See [PROJECT-STATUS.md](PROJECT-STATUS.md) and
 [the workflow import guide](../workflows/README.md) for the remaining steps.

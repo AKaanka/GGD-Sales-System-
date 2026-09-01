@@ -1,11 +1,12 @@
-# Project Status — 26 August 2026
+# Project Status — 27 August 2026
 
 ## Current verified state
 
 This section supersedes the older dated narrative retained below as an audit
 history.
 
-The current repository build and local installation have passed Gates 0–2:
+The current repository build and local installation have passed Gates 0–2 and
+all of Gate 3 except step 8:
 
 - Odoo addon `19.0.1.8.0` stores sourced qualification, an immutable reviewed
   draft/version, the human approval attached to that version, a deterministic
@@ -21,10 +22,65 @@ The current repository build and local installation have passed Gates 0–2:
   that atomically deduplicates the review activity for each confirmed send.
 - Odoo database `ggd` confirms addon `19.0.1.8.0` is installed. The live addon
   run completed with 0 failures and 0 errors across all 108 tests.
-- Static project validation reports 24/24 current workflow checks and 19/19
+- Static project validation reports 26/26 current workflow checks and 19/19
   legacy reply-matcher regressions passing.
 - The six current exports were imported into n8n 2.34.6 in number order. All
   are inactive and Workflows 01–05 reference GGD-00 as their error workflow.
+
+### Gate 3 results — 27 August 2026
+
+Gate 3 is complete except step 8. All testing used fictional `.invalid`
+fixtures (FX1–FX7, Odoo records 430–437) and no email was sent.
+
+| Step | What it proves | Result |
+| --- | --- | --- |
+| 1 | W1 qualifies a lead and never approves outreach | PASS |
+| 2 | W2 stores one versioned draft and stops for human review | PASS |
+| 3 | Kaan reviews the exact draft; no email sent | PASS |
+| 4 | W4 handles matched, unmatched, ambiguous, unsubscribe and bounce | PASS — all six scenarios |
+| 5 | W5 creates one deduplicated follow-up activity | PASS |
+| 6 | Bounce and unsubscribe suppression recorded durably in Odoo | PASS |
+| 8 | Shared error handler catches a real failure | OUTSTANDING |
+| 9 | Live n8n graphs match the tracked exports | PASS — exit 0 |
+
+Step 4/6 detail: FX2 matched by sender email; FX5 matched by Message-ID; an
+unmatched inbound created review record 810 and replaying the same email
+created no second record; an ambiguous sender created review record 811 and
+left both FX6A and FX6B untouched rather than guessing; an unsubscribe set
+FX2 to `do_not_contact`; and a hard bounce set FX5 to bounced with
+`do_not_contact` and a delivery review, matched via `Original-Message-ID`
+pulled from the DSN body with no `In-Reply-To` header present.
+
+Step 9 detail: `tests/workflows/compare-live-exports.js` compares each live
+export against its committed file — node set, type, typeVersion, disabled flag,
+full parameters path by path, credential slot names, and the connection map.
+The 27 August run reported GRAPH 0, UNEXPLAINED 0, PIN 0, CONFIRMED-OK 2, exit
+code 0. Ten differences are classified as expected (eight n8n default-omissions
+on export, one trailing-newline difference in a `jsCode` block, and the
+placeholder-bound fields below).
+
+Placeholder-bound fields are class CONFIRM, not auto-approved: the tracked
+files carry `REPLACE_WITH_*` by design so they can be shared, and the live
+value is printed and blocks the run until a human reads it. Both currently bind
+to a Kaan-owned address, read and confirmed on 27 August. Confirmed values are
+stored as SHA-256 in `tests/workflows/confirmed-bindings.json`, so the check can
+pass on repeat runs while any later change fails loudly with the new value
+printed. An earlier version of the comparator treated these as silently
+expected, and a negative test that rewrote the Gate 4 recipient allowlist to an
+attacker address passed clean. Do not weaken this.
+
+Step 8 is the only remaining Gate 3 item and must be done last. Every
+`n8n execute` run ends with `Cannot read properties of undefined (reading
+'run')` when n8n hands off to the error workflow — a CLI-mode limitation, not a
+defect in GGD-00. Proving the error handler requires a temporary scheduled
+activation of GGD-01 so a real scheduled failure reaches GGD-00, followed by
+switching GGD-01 off immediately.
+
+Open and cosmetic: 17 credential slot NAME mismatches. Live n8n kept its own
+defaults (`Header Auth account`, `SMTP account`, `IMAP account`) rather than the
+documented names (`Odoo JSON-2 bearer token`, `Zoho SMTP`, `Zoho IMAP`). The
+bindings authenticate correctly; only the names disagree with the
+documentation. Renaming the three credentials in the n8n UI clears all 17.
 
 ### Gate 2 import evidence
 
@@ -61,9 +117,10 @@ fixtures were created as Odoo records 430–436; the exact summary is recorded
 in `docs/handoffs/CLAUDE-CODE.md`. Gate 3 workflow execution remains unstarted
 and manual-trigger only.
 
-### Gate 3 execution evidence
+### Gate 3 preflight record — 26 August 2026
 
-Gate 3 preflight began on 26 August 2026. No n8n workflow has executed yet.
+Retained as history. The preflight below predates the 27 August results above;
+where the two disagree, the section above is current.
 
 | Step | Evidence | Result |
 | --- | --- | --- |
@@ -145,12 +202,24 @@ and no email was sent.
 
 ### Remaining functional acceptance
 
-1. Bind the saved local credentials to the imported nodes without exposing
-   their values, including the required Odoo JSON-2 bearer credential.
-2. Run fictional/manual tests for Workflows 1, 2, 4, and 5.
-3. With separate explicit approval, run Workflow 3 once to a Kaan-owned test
-   address and verify the claim, Message-ID audit, approval consumption, reply,
-   bounce, and uncertain-send recovery paths.
+Items 1 and 2 of the original list are complete. What remains:
+
+1. Gate 3 step 8: prove the shared error handler by a temporary scheduled
+   activation of GGD-01, then switch it off immediately.
+2. Gate 4: with separate explicit approval given immediately beforehand, run
+   Workflow 3 once to a Kaan-owned test address and verify the claim,
+   Message-ID audit, approval consumption, reply, bounce, and uncertain-send
+   recovery paths. FX4 (record 433) is the clean approved draft reserved for
+   this and was not touched by Gate 3 testing.
+3. Gate 5: re-run validation and the 108 addon tests, then the backup and
+   isolated restore drill. Before that drill, free disk space (was at 98%,
+   5.9 GB of 229 GB) and account for the roughly 31 Odoo modules installed on
+   27 August, which the restore has to reproduce.
+4. Delete the legacy August workflows (approved, not yet done). GGD 03 and
+   GGD 03s can still send email and have real SMTP credentials attached. They
+   are off, but they carry none of this month's safety work. Export a backup of
+   them first.
+5. Lawful-contact review before any real prospect is contacted.
 
 The import instructions are in [workflows/README.md](../workflows/README.md).
 The next single action is kept in [NEXT-ACTIONS.txt](../NEXT-ACTIONS.txt).
@@ -162,7 +231,12 @@ Supersedes the 16 August status. Detailed test evidence lives in
 was reached is in [QA-INVESTIGATION-LOG.md](QA-INVESTIGATION-LOG.md) and
 [WORKFLOW4-MATCHING-DESIGN.md](WORKFLOW4-MATCHING-DESIGN.md).
 
-## Plain-language summary
+## Plain-language summary — 18–20 August record
+
+Retained as history. Both concerns raised below have since been addressed: the
+workflows now select their own work, and the shared error handler is bound and
+published (its live proof is Gate 3 step 8, still outstanding). See the
+27 August sections above for the current position.
 
 The local system runs, and Workflow 4 — reply analysis — is now genuinely
 tested rather than assumed. Eight of the nine Section A acceptance tests pass
