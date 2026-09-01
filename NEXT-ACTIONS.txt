@@ -348,12 +348,22 @@ FIXTURE STATE TO BE AWARE OF
     "Set up owner account" screen. Recovered by restoring
     backups/20260901T164244Z with only the live stack running. Odoo came
     through intact (styled login page, database fine, sessions cleared).
-    The script is now disabled and the doc carries a stop banner.
-    Before retrying: prove isolation at the VOLUME level (separate compose
-    file with distinct volume names, or a machine that cannot see the live
-    volumes), verify with docker inspect that no live volume is mounted, and
-    run every psql restore with -v ON_ERROR_STOP=1 - without it a
-    half-applied restore reports success, which is how this went unnoticed.
+    FIXED, but NOT yet re-run. compose.restore.yaml now redefines all four
+    volumes to ggd_restore_* names, so the drill stack cannot mount live
+    storage at all. scripts/gate5-restore-drill.sh proves this before
+    writing anything: it docker-inspects every drill container, prints the
+    volumes each mounts, aborts if a live volume name appears, and then
+    STOPS - it only restores when re-run with --confirm. Every psql now
+    runs with -v ON_ERROR_STOP=1.
+
+    TO CLOSE GATE 5:
+      ./scripts/gate5-restore-drill.sh              # read the volume proof
+      ./scripts/gate5-restore-drill.sh --confirm    # then restore + verify
+    then check the two by-eye items (Odoo renders with styling; one n8n
+    credential opens without an encryption-key error) and record the result.
+
+    Lesson worth keeping: isolation by project name is not isolation.
+    Verify the volumes.
 
     docs/SECTION-C-BACKUP-RESTORE.md is separately stale in three ways.
     Disk is not blocking: 22 GB free (90%), was 5.9 GB (98%) on 27 Aug.

@@ -1,11 +1,10 @@
 # Backup and Isolated Restore Drill — current procedure
 
-> ## ⛔ THIS PROCEDURE IS UNSAFE AS WRITTEN. DO NOT FOLLOW IT YET.
+> ## What happened on 1 September, and what changed
 >
-> **1 September 2026.** It was run and it damaged the live system. The
-> isolation below is built on `COMPOSE_PROJECT_NAME`, which assumes Compose
-> prefixes volume names with the project. `compose.yaml` pins explicit volume
-> names:
+> The first version of this drill **damaged the live system**. It isolated by
+> `COMPOSE_PROJECT_NAME`, which assumes Compose prefixes volume names with the
+> project. `compose.yaml` pins explicit names:
 >
 > ```yaml
 > volumes:
@@ -13,70 +12,50 @@
 >     name: ggd_odoo_db_data
 > ```
 >
-> Compose does **not** prefix explicitly named volumes. The "isolated" stack
-> therefore got its own containers and ports but mounted the **live volumes**.
-> The `dropdb`, the restore and the workflow-deactivation all ran against live
-> data, and the printed `docker compose down -v` teardown would have deleted
-> the live volumes outright.
+> Compose does **not** prefix those. The drill stack got its own containers and
+> ports but mounted the **live volumes**, so the `dropdb`, the restore and the
+> workflow deactivation all ran against live data. Live n8n lost its
+> owner/settings rows and fell back to the "Set up owner account" screen. It
+> was recovered by restoring `backups/20260901T164244Z` with only the live
+> stack running and `psql -v ON_ERROR_STOP=1`. Odoo was unaffected beyond
+> cleared sessions. The printed `docker compose down -v` teardown would have
+> deleted the live volumes outright; it was never run.
 >
-> Damage on the day: live n8n lost its owner/settings rows and fell back to the
-> "Set up owner account" screen; it was recovered by restoring
-> `backups/20260901T164244Z` with only the live stack running. Odoo survived
-> intact.
+> **Three fixes, all now in place:**
 >
-> **Before this file is trusted again, isolation must be proven at the VOLUME
-> level, not the project level:**
+> 1. `compose.restore.yaml` redefines all four volumes to `ggd_restore_*`
+>    names. The drill stack physically cannot mount live storage.
+> 2. The script **proves** it before writing anything: it runs `docker inspect`
+>    on every drill container, prints the volumes each one mounts, and aborts
+>    if any live volume name appears. It then stops, and only restores when
+>    re-run with `--confirm`.
+> 3. Every `psql` runs with `-v ON_ERROR_STOP=1`. Without it a half-applied
+>    restore reports success, which is how the original damage went unnoticed.
 >
-> - give the restore stack its own compose file with distinct volume names
->   (`ggd_restore_odoo_data`, …), or run the drill somewhere that cannot see
->   the live volumes at all;
-> - verify with `docker volume ls` and `docker inspect` on the actual
->   containers that no live volume is mounted, *before* restoring anything;
-> - run every `psql` restore with `-v ON_ERROR_STOP=1` — without it a
->   half-applied restore reports success, which is how the first damage went
->   unnoticed;
-> - never print a copy-pasteable `docker compose down -v`.
->
-> `scripts/gate5-restore-drill.sh` has been disabled for the same reason.
-> Everything below is kept because the non-isolation parts (checksum
-> verification, the `CREATE DATABASE` gap, the filestore consolidation) are
-> correct and were verified — but the isolation model is broken.
+> Isolation by project name is not isolation. Verify the volumes.
 
-Written 1 September 2026 for Gate 5. This supersedes
-[SECTION-C-BACKUP-RESTORE.md](SECTION-C-BACKUP-RESTORE.md) as the procedure to
-follow. That file is kept as the August record of the drill as it was designed
-then; it is **not** safe to follow verbatim today. Three things in it no longer
-match the system, all three verified against the live repo on 1 September:
+## How to run it
 
-1. **The backup format changed.** It expects a single
-   `~/backups/20260818T*.tar.gz` to `tar -xzf`, containing `odoo-dump.sql` and
-   `n8n-dump.sql`. `scripts/backup.sh` actually writes a *directory*,
-   `backups/<UTC timestamp>/`, holding `odoo-database.sql.gz`,
-   `n8n-database.sql.gz`, `odoo-filestore.tar.gz`, `n8n-data.tar.gz` and
-   `SHA256SUMS`. There is no combined archive to extract.
-2. **It renames the databases inconsistently.** It sets
-   `ODOO_DB_NAME=ggd_restore_test` but then restores into `odoo_restore_test`.
-   The procedure below keeps the database names identical to live instead, and
-   isolates by Compose project name and host port, which is simpler and removes
-   the class of error entirely.
-3. **It never creates the Odoo database.** The dump is taken with
-   `pg_dump --clean --if-exists` and contains no `CREATE DATABASE`
-   (verified: zero matches). `odoo-db` starts with `POSTGRES_DB: postgres`, so
-   the target database does not exist in a fresh stack and `psql` has nothing
-   to restore into.
-
-## Fastest path: run the script
+Two steps, on purpose. The first proves the isolation and restores nothing:
 
 ```bash
-cd "/Users/kaan/Desktop/GGD -Sales-System " && ./scripts/gate5-restore-drill.sh
+cd "/Users/kaan/Desktop/GGD -Sales-System "
+./scripts/gate5-restore-drill.sh                # prints the volume proof, then stops
+./scripts/gate5-restore-drill.sh --confirm      # only after you have read the proof
 ```
 
-`scripts/gate5-restore-drill.sh` performs Phases 1-4 below against the newest
-backup, verifies the checksums before trusting it, aborts if the containers it
-is about to act on do not belong to the `ggd-restore-test` project, and writes
-`backups/gate5-restore-drill-<timestamp>.log`. It stops before teardown and
-prints the teardown command rather than running it. The manual phases below
-remain the reference, and the two browser checks at the end still need a human.
+The proof looks like this — every mount must be a `ggd_restore_*` volume:
+
+```
+ggd-restore-test-odoo-db-1 -> ggd_restore_odoo_db_data
+ggd-restore-test-odoo-1    -> ggd_restore_odoo_data
+PROOF: no live volume (ggd_odoo_db_data ggd_odoo_data ...) is mounted
+```
+
+If any live volume name appears there, the script aborts before writing
+anything. It never tears down, and its teardown command targets only the
+`ggd_restore_*` volumes. The manual phases below remain the reference, and the
+two browser checks at the end still need a human.
 
 ## A restored copy shares real credentials
 

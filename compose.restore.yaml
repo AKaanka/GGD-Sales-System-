@@ -1,0 +1,24 @@
+# Override used ONLY by the Gate 5 restore drill.
+#
+# compose.yaml pins explicit volume names (name: ggd_odoo_data, ...). Compose
+# does not prefix explicitly named volumes with the project name, so running
+# that file under a different project still mounts the LIVE volumes. That is
+# what damaged the live system on 1 September 2026.
+#
+# This override redefines all four volumes to ggd_restore_* names, so the
+# drill stack physically cannot touch live storage. Ports are handled by
+# ODOO_LOCAL_PORT / N8N_LOCAL_PORT in the drill's own .env, not here, because
+# Compose concatenates port lists rather than replacing them.
+#
+# Always use BOTH files together:
+#   docker compose -f compose.yaml -f compose.restore.yaml -p ggd-restore-test ...
+
+volumes:
+  odoo_db_data:
+    name: ggd_restore_odoo_db_data
+  odoo_data:
+    name: ggd_restore_odoo_data
+  n8n_db_data:
+    name: ggd_restore_n8n_db_data
+  n8n_data:
+    name: ggd_restore_n8n_data
