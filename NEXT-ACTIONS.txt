@@ -4,8 +4,9 @@
 
 DATE: 27 August 2026, updated end of day (supersedes the 26 August version)
 GATE: 3 of 5 COMPLETE (all 9 steps, incl. step 8, 1 September).
-      GATE 4 SEND EXECUTED 1 September - evidence below; awaiting Kaan's
-      inbox confirmation to call Gate 4 formally passed. Then Gate 5.
+      GATE 4 PASSED 1 September - send executed and Kaan CONFIRMED the
+      message arrived. One sub-drill is still open (uncertain-send
+      recovery, below). Next: Gate 5.
 ACTIVE: Kaan directing directly. Codex is out of tokens. Fable 5 has stopped.
         Claude Code holds the Odoo lane and wrote today's evidence log.
 
@@ -113,8 +114,9 @@ NOT YET PROVEN
 ================================================================================
 
 GATE 3 IS FULLY DONE (step 8 closed 1 September, see below).
-GATE 4's controlled send RAN on 1 September (see "GATE 4 CONTROLLED SEND").
-THE SINGLE NEXT ACTION IS Kaan confirming the message arrived, then Gate 5.
+GATE 4 IS PASSED: the send ran and Kaan confirmed receipt on 1 September
+(see "GATE 4 CONTROLLED SEND"). One optional drill remains open there.
+THE SINGLE NEXT ACTION IS GATE 5.
 
 STEP 9 - DONE (27 August). GRAPH 0, UNEXPLAINED 0, PIN 0, exit 0.
   validate-project.sh: 26/26 and 19/19, passed.
@@ -215,20 +217,29 @@ GATE 4 CONTROLLED SEND - EXECUTED 1 September, 17:17:50 Berlin
     node was skipped. Nothing was sent. Consuming the approval blocks a
     resend of an already-sent draft.
 
-  STILL OPEN BEFORE GATE 4 IS FORMALLY PASSED
-    1. Kaan confirms exactly ONE message arrived at kaan@germanygrowthdesk.com
-       with the expected subject and body (the plan requires his confirmation,
-       not just matching Odoo evidence).
-    2. Optional deeper checks, both needing a fresh approval click:
-       - claim-level duplicate blocking: re-approve the SAME draft version and
-         run again; ggd_claim_send_key should refuse the already-used key
-         433:7f261a44... so "Continue only for new claim" stops the run before
-         SMTP.
-       - uncertain-send recovery: induce a failure AFTER the claim (e.g. break
-         the finalize node) and confirm the run records
-         send_may_have_occurred: true and does NOT auto-retry. Note this drill
-         sends a real second email by design - that is what makes the outcome
-         uncertain.
+  KAAN CONFIRMED RECEIPT - 1 September. The message arrived at
+  kaan@germanygrowthdesk.com. With that confirmation plus the matching Odoo
+  evidence above, GATE 4 IS PASSED per the plan's own criterion ("Gate passes
+  only with Kaan's confirmation and matching Odoo/Zoho evidence").
+
+  Plan items 1-5 for Gate 4 are all proven: approval immediately beforehand,
+  Kaan-owned recipient, approval of the exact reviewed version in Odoo, one
+  run of Workflow 3, and confirmation of the received message, Message-ID
+  audit, exact subject/version, approval consumption, deterministic claim and
+  duplicate blocking.
+
+  STILL OPEN - Gate 4 plan item 6 only (optional drills, each needs a fresh
+  approval click):
+    - uncertain-send recovery: induce a failure AFTER the claim (e.g. break
+      the finalize node) and confirm the run records
+      send_may_have_occurred: true and does NOT auto-retry. This drill sends
+      a real second email by design - that is what makes the outcome
+      uncertain. NOT yet run.
+    - claim-level duplicate blocking (a stronger version of what run #551
+      already showed): re-approve the SAME draft version and run again;
+      ggd_claim_send_key should refuse the already-used key
+      433:7f261a44... so "Continue only for new claim" stops before SMTP.
+      Safe - sends nothing if the guard works. NOT yet run.
 
 LEGACY SEND WORKFLOWS REMOVED - 1 September
 
@@ -290,8 +301,17 @@ HOUSEKEEPING
 FIXTURE STATE TO BE AWARE OF
   - FX2 (431) and FX5 (434) are now both do_not_contact=YES by design. Neither
     can be reused for a contactable-path test.
-  - FX4 (433) is still the clean approved draft reserved for the Gate 4
-    controlled send. It was not touched by any of today's testing.
+  - FX4 (433) was CONSUMED by the Gate 4 send on 1 September. It is no
+    longer a clean approved draft: draft_status is "sent", the approval is
+    used up, and its email_from is now the REAL address
+    kaan@germanygrowthdesk.com rather than a .invalid one. Two consequences
+    worth remembering: (a) any future test needing a fresh approved draft
+    must build a new fixture, not reuse FX4; (b) because FX4 now holds a
+    real deliverable address and a recorded Message-ID
+    (<cba5013a-...@germanygrowthdesk.com>), it is a genuinely useful fixture
+    for a future Workflow 4 reply-matching test - replying to that message
+    would exercise real Message-ID matching. Nothing sends to it on its own:
+    GGD-03 is the only sender and it requires a fresh human approval.
 
 ================================================================================
                         OUTSTANDING BEFORE GO-LIVE
@@ -300,8 +320,8 @@ FIXTURE STATE TO BE AWARE OF
   - Gate 3: DONE (all 9 steps, including step 8, closed 1 September).
   - DONE 1 September: the legacy August send workflows are backed up and
     deleted. See "LEGACY SEND WORKFLOWS REMOVED" below.
-  - Gate 4: send EXECUTED 1 September (execution #550, evidence above).
-    Awaiting Kaan's inbox confirmation; two optional deeper checks listed.
+  - Gate 4: PASSED 1 September (execution #550, receipt confirmed by Kaan).
+    Only plan item 6, the uncertain-send drill, is still unrun.
   - Gate 5: backup, isolated restore drill, final validation, integration
     commit.
   - Legal: lawful-contact procedure reviewed by a German lawyer. Calendar

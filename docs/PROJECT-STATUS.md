@@ -218,11 +218,13 @@ Items 1 and 2 of the original list are complete. What remains:
    subject and draft version `7f261a44…` unchanged, deterministic send key
    `433:7f261a44…` with the confirmed key equal to it, and approval consumed.
    A second run (#551) selected 0 candidates and sent nothing. The live
-   allowlist and sender both still match their SHA-256 pins. STILL OPEN:
-   Kaan's confirmation that exactly one message arrived, plus two optional
-   drills (claim-level duplicate blocking, and uncertain-send recovery —
-   the latter sends a real second email by design). Reply and bounce paths
-   were already proven in Gate 3.
+   allowlist and sender both still match their SHA-256 pins. Kaan CONFIRMED
+   the message arrived, so Gate 4 is PASSED on the plan's own criterion.
+   STILL OPEN: plan item 6 only — the uncertain-send recovery drill, which
+   sends a real second email by design — plus an optional claim-level
+   duplicate-blocking drill. Reply and bounce paths were already proven in
+   Gate 3. Note FX4 is now consumed and carries a real address; a future
+   fresh-draft test needs a new fixture.
 3. Gate 5: re-run validation and the 108 addon tests, then the backup and
    isolated restore drill. Before that drill, free disk space (was at 98%,
    5.9 GB of 229 GB) and account for the roughly 31 Odoo modules installed on
