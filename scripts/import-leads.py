@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """Validate a CSV of real prospects and create them as Odoo leads.
 
-    ./scripts/import-leads.py leads.csv             # dry run: validate only
-    ./scripts/import-leads.py leads.csv --commit    # create them
+    ./scripts/import-leads.py leads.csv                    # dry run: validate only
+    ./scripts/import-leads.py leads.csv --commit           # create them
+    ./scripts/import-leads.py list.csv --research-only     # no address, no basis
+
+--research-only is for a list of companies you have NOT got permission to
+email: a directory, a trade list, search results. It creates leads with a
+source URL and no address, so GGD-01 researches and scores them and the
+approval path can never fire - a lead with no email_from and no contact
+basis cannot be approved for outreach. Use it to turn a raw list into a
+prioritised pipeline, then decide contact route and lawful basis per company.
 
 Dry run is the default on purpose. Nothing is written until --commit.
 
@@ -104,9 +112,36 @@ def check_row(i, row, seen_emails):
     return errs
 
 
+def check_research_row(i, row, seen_names):
+    """Research-only: a company and a public URL. No address, no basis."""
+    errs = []
+    name = (row.get("company_name") or "").strip()
+    if not name:
+        errs.append("company_name is empty")
+    u = check_url(row.get("source_url"))
+    if u:
+        errs.append(u)
+    joined = " ".join((row.get(f) or "") for f in REQUIRED + OPTIONAL).lower()
+    if any(m in joined for m in TEMPLATE_MARKERS):
+        errs.append("this is the template's example row, not a real company")
+    if (row.get("contact_email") or "").strip():
+        errs.append("contact_email must be EMPTY in --research-only mode. "
+                    "A lead with an address is one step from a send; import those "
+                    "normally, with a real contact basis.")
+    if (row.get("contact_basis") or "").strip():
+        errs.append("contact_basis must be EMPTY in --research-only mode")
+    key = name.lower()
+    if key in seen_names:
+        errs.append(f"company_name '{name}' appears twice (row {seen_names[key]})")
+    else:
+        seen_names[key] = i
+    return errs
+
+
 def main():
     args = [a for a in sys.argv[1:]]
     commit = "--commit" in args
+    research = "--research-only" in args
     paths = [a for a in args if not a.startswith("--")]
     if len(paths) != 1:
         print(__doc__)
@@ -121,7 +156,8 @@ def main():
     if not rows:
         print("ABORT: the CSV has no data rows", file=sys.stderr)
         return 1
-    missing = [c for c in REQUIRED if c not in rows[0]]
+    need = ["company_name", "source_url"] if research else REQUIRED
+    missing = [c for c in need if c not in rows[0]]
     if missing:
         print(f"ABORT: missing required column(s): {', '.join(missing)}", file=sys.stderr)
         print(f"Expected header: {','.join(REQUIRED + OPTIONAL)}", file=sys.stderr)
@@ -129,16 +165,17 @@ def main():
 
     good, bad, seen = [], [], {}
     for i, row in enumerate(rows, start=2):
-        errs = check_row(i, row, seen)
+        errs = check_research_row(i, row, seen) if research else check_row(i, row, seen)
         if errs:
             bad.append((i, row.get("company_name", "?"), errs))
         else:
             good.append({
                 "company_name": row["company_name"].strip(),
-                "contact_email": row["contact_email"].strip().lower(),
+                "research_only": research,
+                "contact_email": (row.get("contact_email") or "").strip().lower(),
                 "source_url": row["source_url"].strip(),
-                "contact_basis": row["contact_basis"].strip().lower(),
-                "contact_basis_note": row["contact_basis_note"].strip(),
+                "contact_basis": (row.get("contact_basis") or "").strip().lower(),
+                "contact_basis_note": (row.get("contact_basis_note") or "").strip(),
                 "industry": (row.get("industry") or "").strip(),
                 "notes": (row.get("notes") or "").strip(),
             })
@@ -154,7 +191,8 @@ def main():
         print("\nFix the rows above and re-run. Nothing was created.")
         return 1
     if not commit:
-        print("\nDry run only - nothing created. Re-run with --commit to create these leads.")
+        mode = " (research-only: no address, no contact basis)" if research else ""
+        print(f"\nDry run only{mode} - nothing created. Re-run with --commit to create these leads.")
         return 0
 
     payload = json.dumps(good)
@@ -162,26 +200,31 @@ def main():
 Lead = env["crm.lead"]
 created, skipped = [], []
 for r in ROWS:
-    existing = Lead.with_context(active_test=False).search(
-        [("email_from", "=ilike", r["contact_email"])], limit=1)
+    if r["contact_email"]:
+        dom = [("email_from", "=ilike", r["contact_email"])]
+    else:
+        dom = [("name", "=ilike", r["company_name"])]
+    existing = Lead.with_context(active_test=False).search(dom, limit=1)
     if existing:
-        skipped.append((existing.id, r["contact_email"]))
+        skipped.append((existing.id, r["contact_email"] or r["company_name"]))
         continue
     vals = {
         "name": r["company_name"],
         "partner_name": r["company_name"],
         "type": "opportunity",
-        "email_from": r["contact_email"],
         "ggd_source_url": r["source_url"],
-        "ggd_contact_basis": r["contact_basis"],
-        "ggd_contact_basis_note": r["contact_basis_note"],
     }
+    if r["contact_email"]:
+        vals["email_from"] = r["contact_email"]
+    if r["contact_basis"]:
+        vals["ggd_contact_basis"] = r["contact_basis"]
+        vals["ggd_contact_basis_note"] = r["contact_basis_note"]
     if r["industry"]:
         vals["ggd_industry"] = r["industry"]
     if r["notes"]:
         vals["description"] = r["notes"]
     lead = Lead.create(vals)
-    created.append((lead.id, r["contact_email"]))
+    created.append((lead.id, r["contact_email"] or r["company_name"]))
 env.cr.commit()
 print("CREATED %d, SKIPPED %d (already present)" % (len(created), len(skipped)))
 for i, e in created:
