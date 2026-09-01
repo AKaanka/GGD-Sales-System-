@@ -1,5 +1,8 @@
 # Project Completion Status — 19 August 2026
 
+> Historical completion estimate. Do not use its field, version, test-count,
+> or workflow claims as current. See [PROJECT-STATUS.md](PROJECT-STATUS.md).
+
 **Last Updated:** 19 Aug, after B3 pass  
 **Overall Status:** 55–60% complete (core system proven, automation layer pending)
 

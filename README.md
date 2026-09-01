@@ -11,13 +11,18 @@ This package starts a private local sales stack for Germany Growth Desk:
 
 Read [PLAN.md](PLAN.md) before starting.
 
-For the current local implementation progress, remaining QA work, and time
-estimate, see [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md).
+[NEXT-ACTIONS.txt](NEXT-ACTIONS.txt) is the single most current status file —
+read it first. [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) carries the
+fuller narrative and the time estimate.
 
-Before any real outreach, also review the
-[QA test pack](docs/QA-TEST-PACK.md) and the
-[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). Both still
-contain open approval or testing work and are not production sign-off.
+As of 1 September, **all five gates are passed**, including the isolated
+restore drill in [docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md).
+
+Before any real outreach, review the
+[lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md). It has not been
+through legal review, and that review — not any gate in this repo — is what
+gates contacting a real prospect. Every message sent so far has gone to a
+fictional `.invalid` fixture or to Kaan's own address.
 
 ## Beginner route with Codex and GitHub
 
@@ -90,7 +95,14 @@ The extension adds approval, compliance, qualification, reply-analysis, and LLM 
 2. Create the local n8n owner account.
 3. Do not enable public webhooks yet.
 4. Add Zoho and LLM credentials only through n8n's **Credentials** interface.
-5. Follow [docs/N8N-AUTOMATION-SPEC.md](docs/N8N-AUTOMATION-SPEC.md).
+5. Upgrade the GGD addon, then follow the
+   [workflow import guide](workflows/README.md) to import Workflows 00–05.
+6. Keep every imported workflow inactive until its manual test is verified in
+   Odoo. Workflow 3 may be tested only with Kaan's explicit approval and a
+   Kaan-owned recipient.
+
+The imports use Odoo 19's JSON-2 API and a bearer token stored as an n8n HTTP
+Header Auth credential. No Odoo password is embedded in workflow JSON.
 
 ## Daily commands
 
@@ -128,6 +140,8 @@ Run this after Codex changes project files and before every GitHub push:
 ```
 
 GitHub runs the same validation automatically after each push and pull request.
+It also checks all six workflow graphs and runs the offline reply-matching
+decision suite.
 
 ## Backup
 

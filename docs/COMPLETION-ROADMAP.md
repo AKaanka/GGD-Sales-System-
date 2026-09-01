@@ -1,5 +1,8 @@
 # Critical Path to Completion — 19 August 2026
 
+> Historical roadmap retained for audit context. Its percentages and next
+> actions are superseded by [PROJECT-STATUS.md](PROJECT-STATUS.md).
+
 **Goal:** Get the system to production-ready (locally tested and backed up) as quickly as possible.
 
 **Current state:** 

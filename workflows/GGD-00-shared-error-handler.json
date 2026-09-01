@@ -1,0 +1,82 @@
+{
+  "name": "GGD-00 Shared automation error handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ccf65c96-2183-4447-86d8-602e3439c17a",
+      "name": "Workflow error trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-500, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const event = $json;\nconst workflowName = String(event.workflow?.name || event.workflowName || 'Unknown workflow');\nconst executionId = String(event.execution?.id || event.executionId || 'unknown');\nconst failingNode = String(event.execution?.lastNodeExecuted || event.lastNodeExecuted || event.error?.node?.name || 'unknown node');\nconst rawMessage = String(event.execution?.error?.message || event.error?.message || event.message || 'Unknown automation error');\nconst summary = rawMessage.replace(/(password|token|secret|api[-_ ]?key)\\s*[:=]\\s*\\S+/gi, '$1=[redacted]').replace(/\\s+/g, ' ').slice(0, 500);\nconst messageLead = rawMessage.match(/opportunity\\s+#?(\\d+)/i)?.[1];\nconst directLead = event.lead_id || event.opportunity_id || event.execution?.data?.lead_id || event.error?.context?.lead_id || messageLead;\nconst leadId = Number(directLead) || 0;\nconst sendMayHaveOccurred = /(Send exact reviewed draft|Require SMTP Message-ID|Finalize complete send audit)/i.test(failingNode);\nreturn { json: { workflow_name: workflowName, execution_id: executionId, failing_node: failingNode, lead_id: leadId, send_may_have_occurred: sendMayHaveOccurred, summary: `${workflowName} execution ${executionId} failed at ${failingNode}: ${summary}${sendMayHaveOccurred ? ' Check Zoho Sent and the Odoo send key before any retry.' : ''}` } };"
+      },
+      "id": "be32a871-aee4-4f45-bf5f-ecc05c99dfe1",
+      "name": "Sanitize error context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-250, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {"id": "d6bb33c4-4c53-4448-94b2-49720bbfc37b", "leftValue": "={{ $json.lead_id }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d44057bb-adc5-45ad-a315-4707e79731a0",
+      "name": "Opportunity ID is available",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_record_automation_error",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.lead_id], summary: $json.summary, send_may_have_occurred: $json.send_may_have_occurred } }}",
+        "options": {}
+      },
+      "id": "8bb23cd0-e187-4761-aa4d-790997457e05",
+      "name": "Record concise error in Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [260, -80],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "content": "## Recovery rule\nAttach this workflow as the error workflow for GGD-01 through GGD-05. n8n keeps the execution record even when no opportunity ID is recoverable. When SMTP may have succeeded, never retry automatically: inspect Zoho Sent and the claimed Odoo key first.",
+        "height": 240,
+        "width": 440
+      },
+      "id": "d75a24a2-0555-4c67-a04e-372eeb64d51a",
+      "name": "Error recovery rule",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-240, -330]
+    }
+  ],
+  "connections": {
+    "Workflow error trigger": {"main": [[{"node": "Sanitize error context", "type": "main", "index": 0}]]},
+    "Sanitize error context": {"main": [[{"node": "Opportunity ID is available", "type": "main", "index": 0}]]},
+    "Opportunity ID is available": {"main": [[{"node": "Record concise error in Odoo", "type": "main", "index": 0}], []]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "912d349a-96eb-474d-acbe-c96523640ce4"
+}

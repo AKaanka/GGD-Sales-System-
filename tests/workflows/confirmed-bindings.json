@@ -1,0 +1,8 @@
+{
+  "note": "sha256 of confirmed live values for placeholder-backed fields",
+  "bindings": {
+    "GGD-03 Approved reviewed draft send::Gate 4 recipient allowlist (temporary)::conditions.conditions.0.rightValue": "62bba9e7ed22b11d4e5fc1f2fac19a9cc52b1023a6cc568797e8ad390a946fa6",
+    "GGD-03 Approved reviewed draft send::Send exact reviewed draft via Zoho::fromEmail": "62bba9e7ed22b11d4e5fc1f2fac19a9cc52b1023a6cc568797e8ad390a946fa6"
+  },
+  "recordedCount": 2
+}

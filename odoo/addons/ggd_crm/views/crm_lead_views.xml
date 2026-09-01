@@ -19,6 +19,20 @@
                     string="Revoke Approval"
                     invisible="not ggd_outreach_approved"
                 />
+                <button
+                    name="action_ggd_release_failed_send_claim"
+                    type="object"
+                    string="Release Failed Claim"
+                    confirm="Use this only after checking Zoho Sent and confirming that no email was sent. Release this failed claim?"
+                    invisible="ggd_delivery_status != 'claimed'"
+                />
+                <button
+                    name="action_ggd_resolve_automation_review"
+                    type="object"
+                    string="Resolve Automation Review"
+                    confirm="Confirm that the qualification, reply, delivery, and workflow review items on this opportunity have been checked and resolved?"
+                    invisible="not ggd_automation_needs_review"
+                />
             </xpath>
 
             <xpath expr="//notebook" position="inside">
@@ -28,11 +42,26 @@
                             <field name="ggd_industry"/>
                             <field name="ggd_source_url" widget="url"/>
                             <field name="ggd_fit_score"/>
+                            <field name="ggd_qualification_state"/>
                         </group>
                         <group>
                             <field name="ggd_product_focus"/>
                             <field name="ggd_fit_summary"/>
                             <field name="ggd_personalization_angle"/>
+                            <field name="ggd_recommended_buyer_roles"/>
+                        </group>
+                    </group>
+
+                    <group string="Reviewed outreach draft" col="2">
+                        <group>
+                            <field name="ggd_draft_subject"/>
+                            <field name="ggd_draft_body"/>
+                        </group>
+                        <group>
+                            <field name="ggd_draft_status" readonly="1"/>
+                            <field name="ggd_draft_version" readonly="1"/>
+                            <field name="ggd_approved_draft_version" readonly="1"/>
+                            <field name="ggd_approved_recipient" readonly="1"/>
                         </group>
                     </group>
 
@@ -59,9 +88,47 @@
                         <group>
                             <field name="ggd_ai_confidence"/>
                             <field name="ggd_ai_last_analyzed_at" readonly="1"/>
-                            <field name="ggd_last_message_id"/>
+                            <field name="ggd_last_message_id" readonly="1"/>
                             <field name="ggd_last_send_key" readonly="1"/>
+                            <field name="ggd_last_confirmed_send_key" readonly="1"/>
                             <field name="ggd_last_sent_at" readonly="1"/>
+                            <field name="ggd_claimed_recipient" readonly="1"/>
+                            <field name="ggd_claimed_draft_version" readonly="1"/>
+                            <field name="ggd_send_confirmed_at" readonly="1"/>
+                            <field name="ggd_last_claim_released_at" readonly="1"/>
+                            <field name="ggd_last_claim_released_by" readonly="1"/>
+                            <field name="ggd_delivery_status" readonly="1"/>
+                            <field name="ggd_last_message_date" readonly="1"/>
+                            <field name="ggd_last_reply_received_at" readonly="1"/>
+                            <field name="ggd_last_reply_message_id" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="Automation review and follow-up" col="2">
+                        <group>
+                            <field name="ggd_response_draft"/>
+                            <field name="ggd_suggested_follow_up_at"/>
+                            <field name="ggd_follow_up_draft"/>
+                        </group>
+                        <group>
+                            <field name="ggd_automation_needs_review" readonly="1"/>
+                            <field name="ggd_automation_review_summary"/>
+                            <field name="ggd_qualification_needs_review" readonly="1"/>
+                            <field name="ggd_reply_needs_review" readonly="1"/>
+                            <field name="ggd_delivery_needs_review" readonly="1"/>
+                            <field name="ggd_workflow_needs_review" readonly="1"/>
+                            <field name="ggd_last_follow_up_queued_at" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="Last confirmed outbound audit" col="2">
+                        <group>
+                            <field name="ggd_last_sent_recipient" readonly="1"/>
+                            <field name="ggd_last_sent_subject" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="ggd_last_sent_draft_version" readonly="1"/>
+                            <field name="ggd_last_sent_body_summary" readonly="1"/>
                         </group>
                     </group>
                 </page>
@@ -69,4 +136,3 @@
         </field>
     </record>
 </odoo>
-

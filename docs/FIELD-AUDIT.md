@@ -1,5 +1,9 @@
 # CRM Lead Fields Audit
 
+> Historical field audit from addon 19.0.1.3.0. The current addon is
+> 19.0.1.8.0; current functions are listed in
+> [SYSTEM-CAPABILITIES.md](SYSTEM-CAPABILITIES.md).
+
 **Date:** 2026-08-19  
 **Status:** Current implementation reviewed against workflow requirements
 

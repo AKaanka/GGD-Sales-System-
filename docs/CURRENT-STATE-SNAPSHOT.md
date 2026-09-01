@@ -1,5 +1,9 @@
 # Project State Snapshot — 19 August 2026, 09:00
 
+> Historical snapshot. It is not the current build state. Use
+> [PROJECT-STATUS.md](PROJECT-STATUS.md) and
+> [SYSTEM-CAPABILITIES.md](SYSTEM-CAPABILITIES.md) for 21 August 2026.
+
 **Prepared by:** Claude Code  
 **For:** Rapid assessment of what's done, what's blocking, what's next
 

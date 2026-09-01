@@ -24,6 +24,15 @@ for path in sorted(root.rglob("*.xml")):
     ET.parse(path)
 PY
 
+if command -v node >/dev/null 2>&1; then
+  echo "Checking n8n workflow exports..."
+  node tests/workflows/test-workflow-exports.js
+  echo "Checking legacy Workflow 4 matcher regressions..."
+  node tests/workflow4/test-evaluate-reply-match.js
+else
+  echo "Node.js is unavailable; n8n workflow tests were skipped."
+fi
+
 if [[ -f .env ]]; then
   echo "A local .env exists. Confirming Git ignores it..."
   if git check-ignore --quiet .env 2>/dev/null; then

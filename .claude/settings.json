@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G01QUAL20260826)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G02DRFT20260826)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G04RPLY20260826)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G05FOLW20260826)"
+    ],
+    "deny": [
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G03SEND20260826)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n execute --id G03SEND20260826 *)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n export:credentials)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n export:credentials *)",
+      "Bash(docker exec ggd-sales-system-n8n-1 n8n update:workflow *)"
+    ]
+  }
+}

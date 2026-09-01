@@ -10,14 +10,18 @@ Run:
         --test-tags /ggd_crm --stop-after-init -u ggd_crm
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 VALID_NOTE = "Opt-in via website form 2026-03-04, record ref WEB-1183."
+VALID_DRAFT_SUBJECT = "A reviewed fictional outreach subject"
+VALID_DRAFT_BODY = "Hello, this is a reviewed fictional outreach draft for testing."
+VALID_DRAFT_VERSION = "qa-draft-v1"
 
 
 @tagged("post_install", "-at_install")
@@ -31,6 +35,10 @@ class TestGgdOutreachApproval(TransactionCase):
         base = {
             "name": "QA fixture opportunity",
             "email_from": "control-test@ggd-qa.invalid",
+            "ggd_draft_subject": VALID_DRAFT_SUBJECT,
+            "ggd_draft_body": VALID_DRAFT_BODY,
+            "ggd_draft_version": VALID_DRAFT_VERSION,
+            "ggd_draft_status": "ready",
         }
         base.update(values)
         return self.Lead.create(base)
@@ -59,8 +67,27 @@ class TestGgdOutreachApproval(TransactionCase):
         path has to be walked properly: approve, then claim, then finalise.
         """
         lead = self._approved_lead(**values)
-        self.assertTrue(lead.ggd_claim_send_key("%s-2026-08-20 09:15:00" % lead.id))
+        self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
+        self.assertEqual(
+            lead.ggd_claimed_recipient,
+            "control-test@ggd-qa.invalid",
+        )
+        self.assertEqual(lead.ggd_claimed_draft_version, lead.ggd_draft_version)
         return lead
+
+    def _finalize(self, lead, message_id=False):
+        """Record a complete fictional SMTP result for a claimed fixture."""
+        return lead.ggd_finalize_send(
+            message_id or "<qa-%s@example.invalid>" % lead.id,
+            lead.email_from,
+            lead.ggd_draft_subject,
+            "Fictional reviewed body summary.",
+        )
+
+    def _make_follow_up_due(self, lead):
+        lead.write(
+            {"ggd_send_confirmed_at": fields.Datetime.now() - timedelta(days=8)}
+        )
 
     # ------------------------------------------------------------------
     # Approval refusals
@@ -128,6 +155,9 @@ class TestGgdOutreachApproval(TransactionCase):
             lead.ggd_contact_basis_verified_at,
             "Approving must stamp the basis-verified time so evidence age is visible.",
         )
+        self.assertEqual(lead.ggd_approved_draft_version, lead.ggd_draft_version)
+        self.assertEqual(lead.ggd_approved_recipient, "control-test@ggd-qa.invalid")
+        self.assertEqual(lead.ggd_draft_status, "approved")
 
     def test_revoke_clears_all_approval_metadata(self):
         lead = self._lead(
@@ -210,12 +240,7 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertFalse(lead.ggd_outreach_approved)
 
     def test_direct_write_approval_stamps_metadata(self):
-        """Approval by any route must leave approver and timestamp behind.
-
-        The send key is derived from the approval time. A record approved
-        without one cannot be revoked, re-approved and sent again, because the
-        key would not change.
-        """
+        """Approval by any route must leave approver and timestamp behind."""
         lead = self._lead(
             ggd_contact_basis="consent",
             ggd_contact_basis_note=VALID_NOTE,
@@ -264,22 +289,40 @@ class TestGgdOutreachApproval(TransactionCase):
 
     def test_send_key_can_be_claimed_once(self):
         lead = self._approved_lead()
-        self.assertTrue(lead.ggd_claim_send_key("7-42"))
-        self.assertEqual(lead.ggd_last_send_key, "7-42")
+        key = self._key(lead)
+        self.assertTrue(lead.ggd_claim_send_key(key))
+        self.assertEqual(lead.ggd_last_send_key, key)
         self.assertTrue(lead.ggd_last_sent_at)
 
     def test_second_claim_of_same_key_is_refused(self):
         """This is the control that prevents a duplicate send."""
         lead = self._approved_lead()
-        lead.ggd_claim_send_key("7-42")
-        self.assertFalse(lead.ggd_claim_send_key("7-42"))
+        key = self._key(lead)
+        lead.ggd_claim_send_key(key)
+        self.assertFalse(lead.ggd_claim_send_key(key))
+
+    def test_arbitrary_send_key_is_refused(self):
+        lead = self._approved_lead()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_claim_send_key("retry-with-a-different-key")
+
+        self.assertFalse(lead.ggd_last_send_key)
 
     def test_a_new_draft_produces_a_claimable_key(self):
         """A genuinely new draft must still be sendable."""
         lead = self._approved_lead()
-        lead.ggd_claim_send_key("7-42")
-        self.assertTrue(lead.ggd_claim_send_key("7-43"))
-        self.assertEqual(lead.ggd_last_send_key, "7-43")
+        first_key = self._key(lead)
+        lead.ggd_claim_send_key(first_key)
+        self._finalize(lead, "<qa-first@example.invalid>")
+
+        lead.ggd_prepare_draft("Second reviewed subject", "Second reviewed body")
+        lead.action_ggd_approve_outreach()
+        second_key = self._key(lead)
+
+        self.assertNotEqual(second_key, first_key)
+        self.assertTrue(lead.ggd_claim_send_key(second_key))
+        self.assertEqual(lead.ggd_last_send_key, second_key)
 
     def test_empty_send_key_is_refused(self):
         """Checked before anything is locked, so a bare lead is enough."""
@@ -327,7 +370,7 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertIsNotNone(lead.ggd_outreach_approved_at)
 
         # Call finalize_send
-        lead.ggd_finalize_send()
+        self._finalize(lead)
 
         # Verify all fields updated
         self.assertFalse(lead.ggd_outreach_approved)
@@ -337,7 +380,7 @@ class TestGgdOutreachApproval(TransactionCase):
 
         # Verify chatter note created
         messages = lead.message_ids.filtered(
-            lambda m: "GGD outreach sent" in (m.body or "")
+            lambda m: "GGD outreach accepted by SMTP" in (m.body or "")
         )
         self.assertTrue(messages, "Chatter note not created")
 
@@ -348,14 +391,15 @@ class TestGgdOutreachApproval(TransactionCase):
         # Before finalize, approval is set
         self.assertTrue(lead.ggd_outreach_approved)
 
-        lead.ggd_finalize_send()
+        self._finalize(lead)
 
         # After finalize, approval is cleared (prevents automatic resends)
         self.assertFalse(lead.ggd_outreach_approved)
         self.assertFalse(lead.ggd_outreach_approved_by)
         self.assertFalse(lead.ggd_outreach_approved_at)
 
-        # But record can be re-approved if conditions still met (that's okay)
+        # A newly prepared draft can be approved for a later send.
+        lead.ggd_prepare_draft("Later reviewed subject", "Later reviewed body")
         lead.action_ggd_approve_outreach()
         self.assertTrue(lead.ggd_outreach_approved)
 
@@ -366,7 +410,7 @@ class TestGgdOutreachApproval(TransactionCase):
         lead = self._claimed_lead()
         self.assertFalse(lead.ggd_last_message_date)
 
-        lead.ggd_finalize_send()
+        self._finalize(lead)
 
         self.assertEqual(lead.ggd_last_message_date, fields.Date.today())
 
@@ -381,14 +425,16 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertFalse(lead.ggd_last_send_key)
 
         with self.assertRaises(ValidationError):
-            lead.ggd_finalize_send()
+            self._finalize(lead)
 
         self.assertFalse(
             lead.ggd_last_message_date,
             "A refused finalisation must not set a follow-up date.",
         )
         self.assertFalse(
-            lead.message_ids.filtered(lambda m: "GGD outreach sent" in (m.body or "")),
+            lead.message_ids.filtered(
+                lambda m: "GGD outreach accepted by SMTP" in (m.body or "")
+            ),
             "A refused finalisation must not post a sent audit note.",
         )
         self.assertTrue(
@@ -402,12 +448,23 @@ class TestGgdOutreachApproval(TransactionCase):
         lead.write({"ggd_last_sent_at": False})
 
         with self.assertRaises(ValidationError):
-            lead.ggd_finalize_send()
+            self._finalize(lead)
 
         self.assertFalse(lead.ggd_last_message_date)
         self.assertFalse(
-            lead.message_ids.filtered(lambda m: "GGD outreach sent" in (m.body or ""))
+            lead.message_ids.filtered(
+                lambda m: "GGD outreach accepted by SMTP" in (m.body or "")
+            )
         )
+
+    def test_finalize_without_complete_smtp_audit_is_refused(self):
+        lead = self._claimed_lead()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_finalize_send()
+
+        self.assertFalse(lead.ggd_send_confirmed_at)
+        self.assertTrue(lead.ggd_outreach_approved)
 
     def test_last_message_date_persists_across_writes(self):
         """ggd_last_message_date is not cleared by normal write operations."""
@@ -429,20 +486,21 @@ class TestGgdOutreachApproval(TransactionCase):
         lead = self._approved_lead()
 
         # Step 1: Claim send key
-        can_send = lead.ggd_claim_send_key("order-123-send-v1")
+        key = self._key(lead)
+        can_send = lead.ggd_claim_send_key(key)
         self.assertTrue(can_send)
-        self.assertEqual(lead.ggd_last_send_key, "order-123-send-v1")
+        self.assertEqual(lead.ggd_last_send_key, key)
         self.assertIsNotNone(lead.ggd_last_sent_at)
 
         # Step 2: Finalize (after SMTP succeeds)
-        lead.ggd_finalize_send()
+        self._finalize(lead)
         self.assertEqual(lead.ggd_last_message_date, fields.Date.today())
 
         # Step 3: Verify idempotency - re-claim same key returns False.
         # Finalizing revoked approval, so this also proves the duplicate check
         # runs before the approval check: an already-sent key must report
         # False, not "not approved".
-        can_resend = lead.ggd_claim_send_key("order-123-send-v1")
+        can_resend = lead.ggd_claim_send_key(key)
         self.assertFalse(can_resend)
 
     # ------------------------------------------------------------------
@@ -473,8 +531,8 @@ class TestGgdOutreachApproval(TransactionCase):
     # ------------------------------------------------------------------
 
     def _key(self, lead):
-        """The key shape the live workflow builds: id plus approval time."""
-        return "%s-2026-08-20 09:15:00" % lead.id
+        """The only valid key shape: opportunity ID plus approved draft version."""
+        return "%s:%s" % (lead.id, lead.ggd_approved_draft_version)
 
     # -------------------------------- committed approval is a precondition
 
@@ -753,21 +811,19 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertFalse(lead.ggd_claim_send_key(key))
 
     def test_a_later_approval_produces_a_claimable_key(self):
-        """Revoke and re-approve must still be sendable.
-
-        The key the workflow builds is opportunity id plus approval time, so a
-        fresh approval yields a fresh key. Fixed timestamps are used rather
-        than real approvals because Odoo truncates datetimes to whole seconds;
-        see the note about same-second re-approval in the review.
-        """
+        """A newly reviewed draft and approval must still be sendable."""
         lead = self._approved_lead()
-        first_approval = "%s-2026-08-20 09:15:00" % lead.id
-        second_approval = "%s-2026-08-20 11:42:00" % lead.id
+        first_key = self._key(lead)
+        self.assertTrue(lead.ggd_claim_send_key(first_key))
+        self._finalize(lead, "<qa-v1@example.invalid>")
 
-        self.assertTrue(lead.ggd_claim_send_key(first_approval))
-        self.assertFalse(lead.ggd_claim_send_key(first_approval))
-        self.assertTrue(lead.ggd_claim_send_key(second_approval))
-        self.assertEqual(lead.ggd_last_send_key, second_approval)
+        lead.ggd_prepare_draft("Version two subject", "Version two body")
+        lead.action_ggd_approve_outreach()
+        second_key = self._key(lead)
+
+        self.assertNotEqual(second_key, first_key)
+        self.assertTrue(lead.ggd_claim_send_key(second_key))
+        self.assertEqual(lead.ggd_last_send_key, second_key)
 
     def test_clearing_the_send_key_is_not_blocked(self):
         """Only a non-empty key is a claim, so manual recovery stays possible."""
@@ -810,17 +866,18 @@ class TestGgdOutreachApproval(TransactionCase):
     def test_different_leads_do_not_share_a_global_lock(self):
         """The guard is per row, not per table.
 
-        Two opportunities may legitimately carry the same key text. A fix
-        implemented as a unique index on the column would break this, so the
-        distinction is worth pinning down.
+        Each opportunity has its own deterministic key and row lock. A fix
+        implemented as a table-wide lock would serialize unrelated sends, so
+        the distinction is worth pinning down.
         """
         first = self._approved_lead()
         second = self._approved_lead()
-        key = "shared-key-text"
+        first_key = self._key(first)
+        second_key = self._key(second)
 
-        self.assertTrue(first.ggd_claim_send_key(key))
-        self.assertTrue(second.ggd_claim_send_key(key))
-        self.assertFalse(first.ggd_claim_send_key(key))
+        self.assertTrue(first.ggd_claim_send_key(first_key))
+        self.assertTrue(second.ggd_claim_send_key(second_key))
+        self.assertFalse(first.ggd_claim_send_key(first_key))
 
     def test_claim_does_not_swallow_unrelated_validation_errors(self):
         """A refusal from elsewhere must never read as "already sent".
@@ -904,3 +961,713 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertTrue(lead.ggd_outreach_approved_by)
         self.assertTrue(lead.ggd_outreach_approved_at)
         self.assertTrue(lead.ggd_contact_basis_verified_at)
+
+    # ------------------------------------------------------------------
+    # Complete workflow contract: qualification, reviewed drafts, replies,
+    # SMTP audit, bounce handling, and deduplicated follow-up activities.
+    # ------------------------------------------------------------------
+
+    def test_approval_requires_a_reviewed_versioned_draft(self):
+        lead = self._lead(
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+            ggd_draft_subject=False,
+            ggd_draft_body=False,
+            ggd_draft_version=False,
+            ggd_draft_status="empty",
+        )
+
+        with self.assertRaises(ValidationError):
+            lead.action_ggd_approve_outreach()
+
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_prepare_draft_revokes_old_approval_and_returns_new_version(self):
+        lead = self._approved_lead()
+        old_version = lead.ggd_draft_version
+
+        result = lead.ggd_prepare_draft("New reviewed subject", "New reviewed body")
+        new_version = result["draft_version"]
+
+        self.assertNotEqual(new_version, old_version)
+        self.assertEqual(lead.ggd_draft_version, new_version)
+        self.assertEqual(lead.ggd_draft_status, "ready")
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
+
+    def test_prepare_draft_returns_a_json_object_not_a_bare_string(self):
+        """Defect 13 regression guard.
+
+        n8n's HTTP Request node fails a node whose response body is a
+        top-level JSON scalar string, even when Odoo has already committed the
+        work. Workflow 2 therefore reported failed runs for drafts it had
+        successfully stored. The contract is a dict; asserting the type here
+        stops anyone restoring the bare string later without discovering why
+        it was changed.
+        """
+        lead = self._lead(ggd_draft_subject=False, ggd_draft_body=False, ggd_draft_version=False)
+
+        result = lead.ggd_prepare_draft("Reviewed subject", "Reviewed body")
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(set(result), {"draft_version"})
+        self.assertEqual(result["draft_version"], lead.ggd_draft_version)
+        self.assertTrue(result["draft_version"])
+
+    def test_direct_draft_edit_revokes_approval(self):
+        lead = self._approved_lead()
+
+        lead.write({"ggd_draft_subject": "Edited after approval"})
+
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
+        self.assertEqual(lead.ggd_draft_status, "ready")
+
+    def test_clearing_a_draft_returns_the_lead_to_empty(self):
+        """Removing a draft must not leave the record claiming to be ready.
+
+        write() forces ggd_draft_status to "ready" for any draft change, which
+        is correct for an edit. Applied to a clear it produced status "ready"
+        with no version: a lead that looks draft-ready with nothing to approve.
+        """
+        lead = self._lead()
+
+        lead.write(
+            {
+                "ggd_draft_subject": False,
+                "ggd_draft_body": False,
+                "ggd_draft_version": False,
+            }
+        )
+
+        self.assertEqual(lead.ggd_draft_status, "empty")
+        self.assertFalse(lead.ggd_draft_version)
+        self.assertFalse(lead.ggd_draft_subject)
+        self.assertFalse(lead.ggd_draft_body)
+
+    def test_clearing_a_draft_still_revokes_approval(self):
+        lead = self._approved_lead()
+
+        lead.write({"ggd_draft_subject": False, "ggd_draft_body": False})
+
+        self.assertEqual(lead.ggd_draft_status, "empty")
+        self.assertFalse(lead.ggd_draft_version)
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
+        self.assertFalse(lead.ggd_approved_recipient)
+        self.assertFalse(lead.ggd_outreach_approved_by)
+
+    def test_whitespace_only_draft_values_count_as_a_clear(self):
+        lead = self._lead()
+
+        lead.write({"ggd_draft_subject": "   ", "ggd_draft_body": "\n  \n"})
+
+        self.assertEqual(lead.ggd_draft_status, "empty")
+        self.assertFalse(lead.ggd_draft_version)
+
+    def test_emptying_only_the_subject_is_an_edit_not_a_clear(self):
+        """A partial write is an edit, because the body still holds content."""
+        lead = self._lead()
+        original_version = lead.ggd_draft_version
+
+        lead.write({"ggd_draft_subject": False})
+
+        self.assertEqual(lead.ggd_draft_status, "ready")
+        self.assertTrue(lead.ggd_draft_version)
+        self.assertNotEqual(lead.ggd_draft_version, original_version)
+        self.assertEqual(lead.ggd_draft_body, VALID_DRAFT_BODY)
+
+    def test_clearing_a_draft_on_two_leads_at_once_clears_both(self):
+        first = self._lead()
+        second = self._lead(email_from="control-test-2@ggd-qa.invalid")
+
+        (first | second).write(
+            {"ggd_draft_subject": False, "ggd_draft_body": False}
+        )
+
+        for lead in (first, second):
+            self.assertEqual(lead.ggd_draft_status, "empty")
+            self.assertFalse(lead.ggd_draft_version)
+
+    def test_claim_does_not_mark_smtp_confirmation(self):
+        lead = self._approved_lead()
+
+        lead.ggd_claim_send_key(self._key(lead))
+
+        self.assertTrue(lead.ggd_last_sent_at)
+        self.assertFalse(lead.ggd_send_confirmed_at)
+        self.assertEqual(lead.ggd_delivery_status, "claimed")
+
+    def test_finalize_send_records_complete_smtp_audit(self):
+        lead = self._claimed_lead()
+
+        self.assertTrue(
+            lead.ggd_finalize_send(
+                "<qa-message-1@example.invalid>",
+                lead.email_from,
+                lead.ggd_draft_subject,
+                "Fictional reviewed body summary.",
+            )
+        )
+
+        self.assertTrue(lead.ggd_send_confirmed_at)
+        self.assertEqual(lead.ggd_delivery_status, "accepted")
+        self.assertEqual(lead.ggd_last_message_id, "<qa-message-1@example.invalid>")
+        self.assertEqual(lead.ggd_last_sent_recipient, lead.email_from)
+        self.assertEqual(lead.ggd_last_sent_subject, VALID_DRAFT_SUBJECT)
+        self.assertEqual(lead.ggd_last_sent_draft_version, VALID_DRAFT_VERSION)
+        self.assertEqual(lead.ggd_draft_status, "sent")
+
+    def test_finalize_send_refuses_mismatched_subject(self):
+        lead = self._claimed_lead()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_finalize_send(
+                "<qa-message-2@example.invalid>",
+                lead.email_from,
+                "A subject nobody approved",
+                "Fictional body summary.",
+            )
+
+        self.assertFalse(lead.ggd_send_confirmed_at)
+
+    def test_finalize_send_is_idempotent(self):
+        lead = self._claimed_lead()
+        args = (
+            "<qa-message-3@example.invalid>",
+            lead.email_from,
+            lead.ggd_draft_subject,
+            "Fictional body summary.",
+        )
+
+        self.assertTrue(lead.ggd_finalize_send(*args))
+        message_count = len(
+            lead.message_ids.filtered(
+                lambda message: "GGD outreach accepted by SMTP" in (message.body or "")
+            )
+        )
+        self.assertFalse(lead.ggd_finalize_send(*args))
+        self.assertEqual(
+            len(
+                lead.message_ids.filtered(
+                    lambda message: "GGD outreach accepted by SMTP"
+                    in (message.body or "")
+                )
+            ),
+            message_count,
+        )
+
+    def test_second_approved_draft_can_be_finalized(self):
+        lead = self._claimed_lead()
+        first_key = lead.ggd_last_send_key
+        self._finalize(lead, "<qa-v1-final@example.invalid>")
+
+        lead.ggd_prepare_draft("Version two reviewed subject", "Version two reviewed body")
+        lead.action_ggd_approve_outreach()
+        second_key = self._key(lead)
+        self.assertNotEqual(second_key, first_key)
+        self.assertTrue(lead.ggd_claim_send_key(second_key))
+        self.assertTrue(self._finalize(lead, "<qa-v2-final@example.invalid>"))
+
+        self.assertEqual(lead.ggd_last_confirmed_send_key, second_key)
+        self.assertEqual(lead.ggd_last_message_id, "<qa-v2-final@example.invalid>")
+
+    def test_sent_draft_cannot_be_approved_again(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<qa-already-sent@example.invalid>")
+
+        with self.assertRaises(ValidationError):
+            lead.action_ggd_approve_outreach()
+
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_unresolved_claim_blocks_a_new_draft(self):
+        lead = self._claimed_lead()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_prepare_draft("Unsafe replacement", "Unsafe replacement body")
+
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertEqual(lead.ggd_delivery_status, "claimed")
+
+    def test_unresolved_claim_blocks_a_direct_draft_edit(self):
+        lead = self._claimed_lead()
+        original_subject = lead.ggd_draft_subject
+        original_version = lead.ggd_draft_version
+
+        with self.assertRaises(ValidationError):
+            lead.write({"ggd_draft_subject": "Unsafe direct edit"})
+
+        self.assertEqual(lead.ggd_draft_subject, original_subject)
+        self.assertEqual(lead.ggd_draft_version, original_version)
+        self.assertTrue(lead.ggd_outreach_approved)
+
+    def test_failed_claim_release_allows_the_approved_draft_to_be_reclaimed(self):
+        lead = self._claimed_lead()
+        key = lead.ggd_last_send_key
+        lead.ggd_record_automation_error(
+            "SMTP failed before accepting the fictional message.", True
+        )
+
+        self.assertTrue(lead.action_ggd_release_failed_send_claim())
+
+        self.assertFalse(lead.ggd_last_send_key)
+        self.assertFalse(lead.ggd_last_sent_at)
+        self.assertEqual(lead.ggd_delivery_status, "none")
+        self.assertTrue(lead.ggd_last_claim_released_at)
+        self.assertEqual(lead.ggd_last_claim_released_by, self.env.user)
+        self.assertTrue(lead.ggd_claim_send_key(key))
+
+    def test_confirmed_send_claim_cannot_be_released(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<qa-confirmed@example.invalid>")
+
+        with self.assertRaises(ValidationError):
+            lead.action_ggd_release_failed_send_claim()
+
+    def test_released_claim_cannot_be_finalized(self):
+        lead = self._claimed_lead()
+        recipient = lead.ggd_claimed_recipient
+        subject = lead.ggd_draft_subject
+        lead.action_ggd_release_failed_send_claim()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_finalize_send(
+                "<released-claim@example.invalid>",
+                recipient,
+                subject,
+                "Fictional reviewed body summary.",
+            )
+
+    def test_qualification_low_confidence_routes_to_review(self):
+        lead = self._lead()
+
+        accepted = lead.ggd_apply_qualification(
+            72,
+            "Good fictional fit with missing detail.",
+            "Lead with the documented capability gap.",
+            0.55,
+            "https://example.invalid/research",
+        )
+
+        self.assertFalse(accepted)
+        self.assertEqual(lead.ggd_qualification_state, "review")
+        self.assertTrue(lead.ggd_automation_needs_review)
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_qualification_high_confidence_becomes_ready(self):
+        lead = self._lead()
+
+        accepted = lead.ggd_apply_qualification(
+            88,
+            "Strong fictional fit with a documented source.",
+            "Use the fictional market-entry angle.",
+            0.91,
+            industry="Industrial software",
+            product_focus="Fictional planning platform",
+            recommended_buyer_roles=["Managing Director", "Operations Lead"],
+        )
+
+        self.assertTrue(accepted)
+        self.assertEqual(lead.ggd_qualification_state, "ready")
+        self.assertFalse(lead.ggd_automation_needs_review)
+        self.assertEqual(lead.ggd_industry, "Industrial software")
+        self.assertIn("Operations Lead", lead.ggd_recommended_buyer_roles)
+
+    def test_unsubscribe_reply_suppresses_and_records_response_state(self):
+        lead = self._approved_lead()
+
+        lead.ggd_record_reply(
+            "unsubscribe",
+            "The fictional contact asked to stop.",
+            "Do not contact again.",
+            0.98,
+            reply_message_id="<reply-1@example.invalid>",
+        )
+
+        self.assertTrue(lead.ggd_do_not_contact)
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertEqual(lead.ggd_reply_category, "unsubscribe")
+        self.assertTrue(lead.ggd_last_reply_received_at)
+
+    def test_low_confidence_reply_routes_to_review(self):
+        lead = self._lead()
+
+        accepted = lead.ggd_record_reply(
+            "unclear",
+            "The fictional reply could not be classified.",
+            "Review the original message manually.",
+            0.42,
+            response_draft="No automatic response should be sent.",
+        )
+
+        self.assertFalse(accepted)
+        self.assertTrue(lead.ggd_automation_needs_review)
+        self.assertEqual(lead.ggd_response_draft, "No automatic response should be sent.")
+
+    def test_reply_accepts_iso_8601_workflow_timestamps(self):
+        lead = self._lead()
+
+        lead.ggd_record_reply(
+            "interested",
+            "The fictional contact asked for more information.",
+            "Prepare a manual response.",
+            0.95,
+            received_at="2026-08-21T10:15:30Z",
+            suggested_follow_up_at="2026-08-22T12:30:00+02:00",
+        )
+
+        self.assertEqual(
+            fields.Datetime.to_string(lead.ggd_last_reply_received_at),
+            "2026-08-21 10:15:30",
+        )
+        self.assertEqual(
+            fields.Datetime.to_string(lead.ggd_suggested_follow_up_at),
+            "2026-08-22 10:30:00",
+        )
+
+    def test_bounce_without_a_matching_confirmed_send_is_refused(self):
+        lead = self._lead()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_record_bounce(
+                "<unknown@example.invalid>",
+                "No confirmed fictional outbound message exists.",
+                True,
+            )
+
+        self.assertFalse(lead.ggd_do_not_contact)
+
+    def test_qualification_cannot_clear_delivery_review(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<qa-review@example.invalid>")
+        lead.ggd_record_bounce(
+            "<qa-review@example.invalid>", "Temporary delivery problem.", False
+        )
+
+        lead.ggd_apply_qualification(
+            90,
+            "Strong fictional fit.",
+            "Use the reviewed fictional angle.",
+            0.95,
+        )
+
+        self.assertFalse(lead.ggd_qualification_needs_review)
+        self.assertTrue(lead.ggd_delivery_needs_review)
+        self.assertTrue(lead.ggd_automation_needs_review)
+
+    def test_hard_bounce_marks_delivery_and_suppresses(self):
+        lead = self._claimed_lead()
+        lead.ggd_finalize_send(
+            "<qa-message-4@example.invalid>",
+            lead.email_from,
+            lead.ggd_draft_subject,
+            "Fictional body summary.",
+        )
+
+        lead.ggd_record_bounce(
+            "<qa-message-4@example.invalid>",
+            "Mailbox does not exist.",
+            True,
+        )
+
+        self.assertEqual(lead.ggd_delivery_status, "bounced")
+        self.assertTrue(lead.ggd_do_not_contact)
+        self.assertTrue(lead.ggd_automation_needs_review)
+
+    def test_reply_candidate_match_prefers_outbound_message_id(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<qa-match@example.invalid>")
+
+        result = self.Lead.ggd_find_reply_candidates(
+            "<qa-match@example.invalid>", "different@example.invalid"
+        )
+
+        self.assertEqual(result["match_type"], "message_id")
+        self.assertEqual([candidate["id"] for candidate in result["candidates"]], [lead.id])
+
+    def test_reply_candidate_match_falls_back_to_sender(self):
+        lead = self._lead(
+            email_from="Fictional Sender <sender-fallback@ggd-qa.invalid>"
+        )
+
+        result = self.Lead.ggd_find_reply_candidates(
+            "<missing@example.invalid>", "SENDER-FALLBACK@ggd-qa.invalid"
+        )
+
+        self.assertEqual(result["match_type"], "sender")
+        self.assertEqual([candidate["id"] for candidate in result["candidates"]], [lead.id])
+
+    def test_automation_error_marks_work_for_review(self):
+        lead = self._lead()
+
+        lead.ggd_record_automation_error(
+            "Workflow 3 stopped after its send claim; check sent mail.", True
+        )
+
+        self.assertTrue(lead.ggd_workflow_needs_review)
+        self.assertTrue(lead.ggd_delivery_needs_review)
+        self.assertTrue(lead.ggd_automation_needs_review)
+
+    def test_follow_up_queue_is_deduplicated_per_confirmed_send(self):
+        lead = self._claimed_lead()
+        lead.ggd_finalize_send(
+            "<qa-message-5@example.invalid>",
+            lead.email_from,
+            lead.ggd_draft_subject,
+            "Fictional body summary.",
+        )
+        self._make_follow_up_due(lead)
+
+        self.assertTrue(lead.ggd_queue_follow_up("A fictional manual follow-up draft."))
+        activity_count = len(lead.activity_ids)
+        self.assertFalse(lead.ggd_queue_follow_up("A duplicate draft must not create work."))
+        self.assertEqual(len(lead.activity_ids), activity_count)
+        self.assertTrue(lead.ggd_last_follow_up_queued_at)
+
+    def test_follow_up_queue_refuses_a_lead_with_a_reply(self):
+        lead = self._claimed_lead()
+        lead.ggd_finalize_send(
+            "<qa-message-6@example.invalid>",
+            lead.email_from,
+            lead.ggd_draft_subject,
+            "Fictional body summary.",
+        )
+        self._make_follow_up_due(lead)
+        lead.ggd_record_reply(
+            "interested",
+            "The fictional contact replied after the send.",
+            "Schedule a fictional meeting.",
+            0.95,
+        )
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_queue_follow_up("This follow-up must not be queued.")
+
+    def test_follow_up_queue_refuses_a_recent_send(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<qa-recent@example.invalid>")
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_queue_follow_up("This follow-up is too early.")
+
+    def test_approval_requires_a_valid_recipient(self):
+        lead = self._lead(
+            email_from=False,
+            ggd_contact_basis="consent",
+            ggd_contact_basis_note=VALID_NOTE,
+        )
+
+        with self.assertRaises(ValidationError):
+            lead.action_ggd_approve_outreach()
+
+    def test_recipient_change_revokes_approval(self):
+        lead = self._approved_lead()
+
+        lead.write({"email_from": "replacement@ggd-qa.invalid"})
+
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
+        self.assertEqual(lead.ggd_draft_status, "ready")
+
+    def test_unresolved_claim_blocks_recipient_change(self):
+        lead = self._claimed_lead()
+
+        with self.assertRaises(ValidationError):
+            lead.write({"email_from": "unsafe-change@ggd-qa.invalid"})
+
+    def test_linked_contact_email_change_invalidates_claim(self):
+        partner = self.env["res.partner"].create(
+            {"name": "Fictional approved contact", "email": "approved@ggd-qa.invalid"}
+        )
+        lead = self._approved_lead(
+            partner_id=partner.id,
+            email_from="approved@ggd-qa.invalid",
+        )
+        approved_recipient = lead.ggd_approved_recipient
+
+        partner.email = "changed-by-contact@ggd-qa.invalid"
+        lead.invalidate_recordset(["email_from"])
+
+        self.assertEqual(approved_recipient, "approved@ggd-qa.invalid")
+        self.assertEqual(lead.email_from, "changed-by-contact@ggd-qa.invalid")
+        with self.assertRaises(ValidationError):
+            lead.ggd_claim_send_key(self._key(lead))
+
+    def test_revocation_during_smtp_keeps_claim_auditable(self):
+        lead = self._claimed_lead()
+        claimed_version = lead.ggd_claimed_draft_version
+        lead.action_ggd_revoke_outreach()
+
+        self.assertTrue(
+            lead.ggd_finalize_send(
+                "<revoked-in-flight@example.invalid>",
+                "control-test@ggd-qa.invalid",
+                lead.ggd_draft_subject,
+                "Fictional reviewed body summary.",
+            )
+        )
+
+        self.assertEqual(lead.ggd_last_sent_draft_version, claimed_version)
+        self.assertEqual(lead.ggd_last_sent_recipient, "control-test@ggd-qa.invalid")
+        self.assertFalse(lead.ggd_claimed_recipient)
+
+    def test_suppression_during_smtp_keeps_claim_auditable(self):
+        lead = self._claimed_lead()
+        lead.write({"ggd_do_not_contact": True})
+
+        self.assertTrue(
+            lead.ggd_finalize_send(
+                "<suppressed-in-flight@example.invalid>",
+                "control-test@ggd-qa.invalid",
+                lead.ggd_draft_subject,
+                "Fictional reviewed body summary.",
+            )
+        )
+
+        self.assertTrue(lead.ggd_do_not_contact)
+        self.assertEqual(lead.ggd_delivery_status, "accepted")
+
+    def test_archived_lead_can_match_reply_by_message_id(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<archived-match@example.invalid>")
+        lead.active = False
+
+        result = self.Lead.ggd_find_reply_candidates(
+            "<archived-match@example.invalid>", False
+        )
+
+        self.assertEqual([candidate["id"] for candidate in result["candidates"]], [lead.id])
+
+    def test_archived_lead_can_match_reply_by_sender(self):
+        lead = self._lead(email_from="archived-sender@ggd-qa.invalid")
+        lead.active = False
+
+        result = self.Lead.ggd_find_reply_candidates(
+            False, "archived-sender@ggd-qa.invalid"
+        )
+
+        self.assertEqual([candidate["id"] for candidate in result["candidates"]], [lead.id])
+
+    def test_human_can_resolve_all_automation_review_flags(self):
+        lead = self._lead()
+        lead.ggd_record_automation_error("Fictional workflow failure.", True)
+
+        self.assertTrue(lead.action_ggd_resolve_automation_review())
+
+        self.assertFalse(lead.ggd_automation_needs_review)
+        self.assertFalse(lead.ggd_workflow_needs_review)
+        self.assertFalse(lead.ggd_delivery_needs_review)
+        self.assertFalse(lead.ggd_automation_review_summary)
+
+    def test_failed_claim_release_preserves_review_until_human_resolution(self):
+        lead = self._claimed_lead()
+        lead.ggd_record_automation_error("Fictional uncertain SMTP result.", True)
+
+        lead.action_ggd_release_failed_send_claim()
+
+        self.assertTrue(lead.ggd_workflow_needs_review)
+        self.assertTrue(lead.ggd_delivery_needs_review)
+        self.assertTrue(lead.ggd_automation_needs_review)
+
+    def test_suppressed_reply_does_not_store_outbound_draft(self):
+        lead = self._lead(ggd_do_not_contact=True)
+
+        lead.ggd_record_reply(
+            "information",
+            "The fictional suppressed contact replied.",
+            "Send more information.",
+            0.95,
+            response_draft="This outbound draft must not be stored.",
+            reply_message_id="<suppressed-reply@example.invalid>",
+        )
+
+        self.assertFalse(lead.ggd_response_draft)
+        self.assertFalse(lead.ggd_suggested_follow_up_at)
+        self.assertIn("suppressed", lead.ggd_suggested_next_action)
+
+    def test_duplicate_reply_message_id_is_idempotent(self):
+        lead = self._lead()
+        first_received = "2026-08-21T10:00:00Z"
+        lead.ggd_record_reply(
+            "interested",
+            "First fictional reply.",
+            "Review the reply.",
+            0.9,
+            reply_message_id="<duplicate-reply@example.invalid>",
+            received_at=first_received,
+        )
+
+        accepted = lead.ggd_record_reply(
+            "objection",
+            "Duplicate delivery must not replace the first analysis.",
+            "Do something different.",
+            0.9,
+            reply_message_id="<duplicate-reply@example.invalid>",
+            received_at="2026-08-21T10:01:00Z",
+        )
+
+        self.assertFalse(accepted)
+        self.assertEqual(lead.ggd_reply_category, "interested")
+        self.assertEqual(lead.ggd_reply_summary, "First fictional reply.")
+
+    def test_older_reply_does_not_replace_latest_reply_state(self):
+        lead = self._lead()
+        lead.ggd_record_reply(
+            "meeting",
+            "Newest fictional reply.",
+            "Review meeting request.",
+            0.9,
+            reply_message_id="<newest-reply@example.invalid>",
+            received_at="2026-08-21T12:00:00Z",
+        )
+
+        accepted = lead.ggd_record_reply(
+            "objection",
+            "Older fictional reply.",
+            "This must not replace the latest action.",
+            0.9,
+            reply_message_id="<older-reply@example.invalid>",
+            received_at="2026-08-21T11:00:00Z",
+        )
+
+        self.assertFalse(accepted)
+        self.assertEqual(lead.ggd_reply_category, "meeting")
+        self.assertEqual(lead.ggd_last_reply_message_id, "<newest-reply@example.invalid>")
+
+    def test_unmatched_inbound_creates_one_deduplicated_review_record(self):
+        before = self.Lead.with_context(active_test=False).search_count([])
+        first_id = self.Lead.ggd_queue_unmatched_inbound(
+            "<unmatched@example.invalid>",
+            "Fictional Sender <unmatched-sender@ggd-qa.invalid>",
+            "Fictional unmatched message",
+            "No unambiguous opportunity candidate exists.",
+            "2026-08-21T13:00:00Z",
+        )
+        second_id = self.Lead.ggd_queue_unmatched_inbound(
+            "<unmatched@example.invalid>",
+            "unmatched-sender@ggd-qa.invalid",
+            "Fictional unmatched message",
+            "No unambiguous opportunity candidate exists.",
+            "2026-08-21T13:00:00Z",
+        )
+
+        review = self.Lead.browse(first_id)
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(
+            self.Lead.with_context(active_test=False).search_count([]), before + 1
+        )
+        self.assertTrue(review.ggd_reply_needs_review)
+        self.assertTrue(review.activity_ids)
+
+    def test_follow_up_queue_refuses_nonaccepted_delivery(self):
+        lead = self._claimed_lead()
+        self._finalize(lead, "<bounced-follow-up@example.invalid>")
+        self._make_follow_up_due(lead)
+        lead.ggd_record_bounce(
+            "<bounced-follow-up@example.invalid>", "Fictional hard bounce.", True
+        )
+        lead.action_ggd_resolve_automation_review()
+
+        with self.assertRaises(ValidationError):
+            lead.ggd_queue_follow_up("This bounce must never receive a follow-up.")

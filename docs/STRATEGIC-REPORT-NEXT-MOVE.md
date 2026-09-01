@@ -1,5 +1,8 @@
 # Strategic Report: Next Best Move — 19 August 2026
 
+> Historical incident report. The described live workflow is not the tracked
+> 21 August workflow set. Use [PROJECT-STATUS.md](PROJECT-STATUS.md).
+
 **Current Time:** After B1 partial execution  
 **Status:** Critical defect found and fixed, B1 needs retest, 3 issues blocking completion  
 **Prepared by:** Claude Code analysis of all project files

@@ -1,0 +1,140 @@
+{
+  "name": "GGD-02 Draft and approval queue",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "minutes", "minutesInterval": 30}]}},
+      "id": "45e541fd-81d6-4204-a175-e38f39c65d85",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-850, -100]
+    },
+    {
+      "parameters": {},
+      "id": "6c69fb02-c2a4-40d8-8dbc-c54d81e41267",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-850, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/search_read",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { domain: [['active','=',true],['ggd_qualification_state','=','ready'],['ggd_automation_needs_review','=',false],['ggd_do_not_contact','=',false],['ggd_outreach_approved','=',false],['ggd_draft_status','=','empty'],['email_from','!=',false]], fields: ['id','name','partner_name','email_from','lang_id','ggd_industry','ggd_product_focus','ggd_fit_summary','ggd_personalization_angle','ggd_recommended_buyer_roles'], limit: 5, order: 'write_date asc, id asc' } }}",
+        "options": {}
+      },
+      "id": "11e12ddb-586c-4375-998e-cc4079efc81b",
+      "name": "Select qualified leads without drafts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-610, -20],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {"jsCode": "const incoming = $input.all().map(item => item.json);\nlet rows = incoming;\nif (incoming.length === 1) { const first = incoming[0]; rows = Array.isArray(first) ? first : (Array.isArray(first.body) ? first.body : (first?.id ? [first] : [])); }\nreturn rows.map(row => ({ json: row }));"},
+      "id": "8182797b-e9f8-494d-b4a1-ef670931e7cd",
+      "name": "One draft candidate per item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-370, -20]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write one short, professional business-development email draft for human review. Use only the stored qualification below. Do not invent names, claims, proof, or contact facts. Do not include a legal approval decision. Return subject, plain-text body, and language as structured data.\n\nOpportunity: {{ JSON.stringify($json) }}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "9d630cbc-3522-49e1-8348-0af55ef141ef",
+      "name": "Draft one reviewable email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [-120, -20]
+    },
+    {
+      "parameters": {"model": {"__rl": true, "value": "claude-sonnet-5", "mode": "list", "cachedResultName": "Claude Sonnet 5"}, "options": {}},
+      "id": "838e3842-fda5-4d23-b711-a2c5631baa9b",
+      "name": "Anthropic drafting model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [-160, 220],
+      "credentials": {"anthropicApi": {"id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL", "name": "Anthropic account"}}
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"subject\": \"A concise business subject\",\n  \"body\": \"Hello,\\n\\nA short evidence-based draft for human review.\\n\\nBest regards\",\n  \"language\": \"en\"\n}",
+        "autoFix": false
+      },
+      "id": "e9cc0c55-9df0-4cce-ab67-166b84811a58",
+      "name": "Draft JSON schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [60, 220]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let draft = $json.output ?? $json.response ?? $json.text ?? $json;\nif (typeof draft === 'string') { const match = draft.match(/\\{[\\s\\S]*\\}/); if (!match) throw new Error('Draft output was not JSON.'); draft = JSON.parse(match[0]); }\nconst lead = $('One draft candidate per item').item.json;\nconst subject = String(draft.subject || '').trim();\nconst body = String(draft.body || '').trim();\nif (!subject || subject.length > 120 || body.length < 40 || body.length > 2500) throw new Error(`Draft for opportunity ${lead.id} failed length validation.`);\nreturn { json: { id: lead.id, subject, body, language: String(draft.language || '').trim() } };"
+      },
+      "id": "10255bd4-3049-46f8-9f79-5088f00b0f67",
+      "name": "Validate reviewable draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, -20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_prepare_draft",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], subject: $json.subject, body: $json.body } }}",
+        "options": {}
+      },
+      "id": "696cd549-bbf2-487a-b5bb-3b0fd45e7e4d",
+      "name": "Store immutable draft for human approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [410, -20],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {
+        "content": "## Human gate\nThis workflow stores one versioned subject/body in Odoo and stops. A human reviews that exact draft and uses **Approve Outreach** in Odoo. The LLM never sets approval and this workflow never sends email.",
+        "height": 220,
+        "width": 420
+      },
+      "id": "222a9da3-aaed-405e-905c-c1b4cd663351",
+      "name": "Approval rule",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [390, -330]
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {"main": [[{"node": "Select qualified leads without drafts", "type": "main", "index": 0}]]},
+    "Manual test trigger": {"main": [[{"node": "Select qualified leads without drafts", "type": "main", "index": 0}]]},
+    "Select qualified leads without drafts": {"main": [[{"node": "One draft candidate per item", "type": "main", "index": 0}]]},
+    "One draft candidate per item": {"main": [[{"node": "Draft one reviewable email", "type": "main", "index": 0}]]},
+    "Anthropic drafting model": {"ai_languageModel": [[{"node": "Draft one reviewable email", "type": "ai_languageModel", "index": 0}]]},
+    "Draft JSON schema": {"ai_outputParser": [[{"node": "Draft one reviewable email", "type": "ai_outputParser", "index": 0}]]},
+    "Draft one reviewable email": {"main": [[{"node": "Validate reviewable draft", "type": "main", "index": 0}]]},
+    "Validate reviewable draft": {"main": [[{"node": "Store immutable draft for human approval", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "78e45e76-3c50-4fd8-9cd4-11285ac49c4e"
+}

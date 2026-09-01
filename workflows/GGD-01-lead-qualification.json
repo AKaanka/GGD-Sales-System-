@@ -1,0 +1,152 @@
+{
+  "name": "GGD-01 Lead qualification",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "hours", "hoursInterval": 1}]}},
+      "id": "c82a8d85-38f0-4414-8338-b47a6f5f5858",
+      "name": "Hourly qualification poll",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-1020, -100]
+    },
+    {
+      "parameters": {},
+      "id": "a586ae0b-cc37-4b52-b9ec-b4ccfaed26ac",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1020, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/search_read",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { domain: [['active','=',true],['ggd_qualification_state','=','pending'],['ggd_automation_needs_review','=',false],'|',['ggd_source_url','!=',false],['website','!=',false]], fields: ['id','name','partner_name','ggd_source_url','website','email_from','description'], limit: 5, order: 'create_date asc, id asc' } }}",
+        "options": {}
+      },
+      "id": "0aaa82a2-6cc5-4a48-a1a0-027931cd89a6",
+      "name": "Select unqualified opportunities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-780, -20],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    },
+    {
+      "parameters": {"jsCode": "const incoming = $input.all().map(item => item.json);\nlet rows = incoming;\nif (incoming.length === 1) { const first = incoming[0]; rows = Array.isArray(first) ? first : (Array.isArray(first.body) ? first.body : (first?.id ? [first] : [])); }\nfunction requirePublicHttpUrl(value, leadId) {\n  // The Code node runs in a bare vm context that has no WHATWG URL global, so\n  // the URL is parsed with a regex. Do not reintroduce the WHATWG URL\n  // constructor: it raises ReferenceError here, and a catch-all around it\n  // reports every URL as invalid.\n  const raw = String(value || '').trim();\n  const parts = raw.match(/^([A-Za-z][A-Za-z0-9+.-]*):\\/\\/([^/?#]*)([/?#][\\s\\S]*)?$/);\n  if (!parts) throw new Error(`Opportunity ${leadId} has an invalid public source URL.`);\n  const scheme = parts[1].toLowerCase();\n  if (scheme !== 'http' && scheme !== 'https') throw new Error(`Opportunity ${leadId} source URL must use HTTP or HTTPS.`);\n  const authority = parts[2];\n  // Everything before the last @ is userinfo; the real host follows it.\n  const hostPort = authority.slice(authority.lastIndexOf('@') + 1);\n  let host = hostPort;\n  if (host.startsWith('[')) {\n    const close = host.indexOf(']');\n    if (close === -1) throw new Error(`Opportunity ${leadId} has an invalid public source URL.`);\n    host = host.slice(0, close + 1);\n  } else {\n    host = host.split(':')[0];\n  }\n  host = host.toLowerCase().replace(/\\.$/, '');\n  const ipv4 = host.match(/^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/);\n  let blockedIpv4 = false;\n  if (ipv4) {\n    const octets = ipv4.slice(1).map(Number);\n    const [a, b] = octets;\n    blockedIpv4 = octets.some(octet => octet > 255) || a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;\n  }\n  const compactIpv6 = host.replace(/^\\[|\\]$/g, '');\n  const blockedIpv6 = compactIpv6 === '::' || compactIpv6 === '::1' || /^(fc|fd|fe[89ab])/i.test(compactIpv6);\n  // A single-label host cannot be a public name: it is a container or intranet\n  // name such as odoo, n8n, postgres or localhost.\n  const singleLabel = !ipv4 && !host.startsWith('[') && !host.includes('.');\n  const blockedName = !host || singleLabel || host.endsWith('.local');\n  if (blockedName || blockedIpv4 || blockedIpv6) throw new Error(`Opportunity ${leadId} source URL is not a public host.`);\n  return `${scheme}://${hostPort}${parts[3] || ''}`;\n}\nreturn rows.map(row => ({ json: { ...row, approved_source_url: requirePublicHttpUrl(row.ggd_source_url || row.website, row.id) } }));"},
+      "id": "b569d8a4-85d6-4eab-a8d9-365ab8820ae9",
+      "name": "One qualification candidate per item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-540, -20]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.approved_source_url }}",
+        "options": {"response": {"response": {"responseFormat": "text"}}, "timeout": 15000}
+      },
+      "id": "ece63cab-cb12-4bb4-9a54-42c0793cd97a",
+      "name": "Fetch approved public company page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-300, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const lead = $('One qualification candidate per item').item.json;\nconst raw = $json.data ?? $json.body ?? $json;\nconst sourceText = (typeof raw === 'string' ? raw : JSON.stringify(raw)).replace(/<script[\\s\\S]*?<\\/script>/gi, ' ').replace(/<style[\\s\\S]*?<\\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').slice(0, 12000);\nconst sourceUrl = String(lead.ggd_source_url || lead.website || '').trim();\nif (sourceText.length < 80 || !sourceUrl) throw new Error(`Opportunity ${lead.id} has no usable approved public source content.`);\nreturn { json: { lead, source_text: sourceText, source_url: sourceUrl } };"
+      },
+      "id": "443e62c7-7e84-4772-bb8b-c33195489c04",
+      "name": "Minimize public source content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-60, -20]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Qualify this fictionalized CRM opportunity only from the supplied public company-page text. Do not invent contacts or facts. Every factual conclusion must be supported by the source URL.\n\nOpportunity: {{ JSON.stringify($json.lead) }}\nSource URL: {{ $json.source_url }}\nPublic source text: {{ $json.source_text }}\n\nReturn the requested structured object. fit_score must be 0-100 and confidence 0-1.",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "3e55e6c9-b155-4249-bf5e-f3726403669c",
+      "name": "Generate sourced qualification",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [190, -20]
+    },
+    {
+      "parameters": {"model": {"__rl": true, "value": "claude-sonnet-5", "mode": "list", "cachedResultName": "Claude Sonnet 5"}, "options": {}},
+      "id": "ed60a748-66bf-4086-899e-9f816b58ef66",
+      "name": "Anthropic qualification model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [160, 220],
+      "credentials": {"anthropicApi": {"id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL", "name": "Anthropic account"}}
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"industry\": \"Industrial software\",\n  \"product_focus\": \"Planning platform\",\n  \"fit_score\": 80,\n  \"fit_summary\": \"Evidence-backed fit summary\",\n  \"personalization_angle\": \"Evidence-backed angle\",\n  \"recommended_buyer_roles\": [\"Managing Director\"],\n  \"confidence\": 0.9,\n  \"sources\": [\"https://example.invalid\"]\n}",
+        "autoFix": false
+      },
+      "id": "0ce2cfb6-8814-4282-ad8f-7de26f8b9504",
+      "name": "Qualification JSON schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [390, 220]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let analysis = $json.output ?? $json.response ?? $json.text ?? $json;\nif (typeof analysis === 'string') { const match = analysis.match(/\\{[\\s\\S]*\\}/); if (!match) throw new Error('Qualification output was not JSON.'); analysis = JSON.parse(match[0]); }\nconst source = $('Minimize public source content').item.json;\nif (!Number.isInteger(analysis.fit_score) || analysis.fit_score < 0 || analysis.fit_score > 100) throw new Error('Invalid qualification fit_score.');\nif (typeof analysis.confidence !== 'number' || analysis.confidence < 0 || analysis.confidence > 1) throw new Error('Invalid qualification confidence.');\nif (!analysis.fit_summary || !analysis.personalization_angle || !Array.isArray(analysis.sources) || analysis.sources.length === 0 || !analysis.sources.every(url => /^https?:\\/\\//i.test(String(url))) || !analysis.sources.includes(source.source_url)) throw new Error('Qualification is missing the supplied source URL or required sourced fields.');\nreturn { json: { id: source.lead.id, source_url: source.source_url, analysis } };"
+      },
+      "id": "f7da5be6-9b7f-4e2e-809f-e78c0ced865d",
+      "name": "Validate qualification result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, -20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/json/2/crm.lead/ggd_apply_qualification",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Odoo-Database", "value": "ggd"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ids: [$json.id], fit_score: $json.analysis.fit_score, summary: $json.analysis.fit_summary, personalization_angle: $json.analysis.personalization_angle, confidence: $json.analysis.confidence, source_url: $json.source_url, industry: $json.analysis.industry, product_focus: $json.analysis.product_focus, recommended_buyer_roles: $json.analysis.recommended_buyer_roles } }}",
+        "options": {}
+      },
+      "id": "3d28951f-4d95-40c1-8612-b0a0d1227893",
+      "name": "Record qualification in Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [720, -20],
+      "credentials": {"httpHeaderAuth": {"id": "REPLACE_WITH_ODOO_JSON2_CREDENTIAL", "name": "Odoo JSON-2 bearer token"}}
+    }
+  ],
+  "connections": {
+    "Hourly qualification poll": {"main": [[{"node": "Select unqualified opportunities", "type": "main", "index": 0}]]},
+    "Manual test trigger": {"main": [[{"node": "Select unqualified opportunities", "type": "main", "index": 0}]]},
+    "Select unqualified opportunities": {"main": [[{"node": "One qualification candidate per item", "type": "main", "index": 0}]]},
+    "One qualification candidate per item": {"main": [[{"node": "Fetch approved public company page", "type": "main", "index": 0}]]},
+    "Fetch approved public company page": {"main": [[{"node": "Minimize public source content", "type": "main", "index": 0}]]},
+    "Minimize public source content": {"main": [[{"node": "Generate sourced qualification", "type": "main", "index": 0}]]},
+    "Anthropic qualification model": {"ai_languageModel": [[{"node": "Generate sourced qualification", "type": "ai_languageModel", "index": 0}]]},
+    "Qualification JSON schema": {"ai_outputParser": [[{"node": "Generate sourced qualification", "type": "ai_outputParser", "index": 0}]]},
+    "Generate sourced qualification": {"main": [[{"node": "Validate qualification result", "type": "main", "index": 0}]]},
+    "Validate qualification result": {"main": [[{"node": "Record qualification in Odoo", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Berlin"},
+  "versionId": "8c0281a1-7bc0-4f19-b4b5-a7f06a10b8d0"
+}

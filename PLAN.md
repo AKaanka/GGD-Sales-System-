@@ -90,17 +90,35 @@
 | Automatic GitHub validation | Built |
 | Zoho credentials | Requires Kaan's local setup |
 | LLM credentials/provider selection | Requires Kaan's choice |
-| Live n8n workflows | Built interactively after credentials and Odoo database exist |
+| Reproducible n8n workflow imports | Built, imported, and accepted for Workflows 1–5 plus shared error handling (Gates 3–4, 1 Sep) |
 | Public/VPS deployment | Deliberately deferred |
 
 ## Current implementation status
 
-The local interactive setup progressed through the CRM controls and the five
-planned automation areas on 16 August 2026. Major fictional/manual paths have
-been tested, a backup was created, static validation passed, and the local
-services reported healthy. The workflows are not considered production-ready
-until the remaining failure-path, restore, permission, and lawful-contact checks
-are complete.
+Addon version `19.0.1.8.0` is installed and confirmed on the live Odoo. All
+five automation areas plus the shared error handler are imported, credential-
+bound, and have run against the live stack. As of 1 September, Gates 0–4 are
+closed:
+
+- Gate 3 (non-send functional flow) — all nine steps, including step 8, where
+  a genuinely scheduled failure was caught, sanitized and recorded by the
+  shared error handler.
+- Gate 4 (one controlled send) — Workflow 3 sent the exact approved draft to a
+  Kaan-owned address, and Kaan confirmed receipt. Message-ID audit,
+  deterministic send key, approval consumption and duplicate blocking all
+  verified.
+
+- Gate 5 (recovery and final acceptance) — the 108 addon tests pass, a fresh
+  backup verifies against its checksums, and that backup was restored into an
+  isolated stack whose volume separation was proven before any write. The
+  restored copy matched live on every counted value, rendered correctly, and
+  its credentials still decrypted.
+
+All five gates are therefore passed.
+
+Separately and regardless of gates: real outreach stays blocked until the
+lawful-contact procedure has been reviewed by a German lawyer. Every send so
+far has been to `.invalid` fixtures or to Kaan's own address.
 
 See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
 remaining checklist, and current time estimate.
