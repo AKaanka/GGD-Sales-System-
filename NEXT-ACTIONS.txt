@@ -363,6 +363,54 @@ FIXTURE STATE TO BE AWARE OF
     GGD-03 is the only sender and it requires a fresh human approval.
 
 ================================================================================
+                       GOING LIVE - THE ORDERED PATH
+================================================================================
+
+  All five gates are passed. What stands between here and real outreach is
+  not testing, it is these steps, in this order.
+
+  1. LOAD REAL LEADS                                    ./scripts/import-leads.py
+       Fill in scripts/leads-template.csv, then:
+         ./scripts/import-leads.py my-leads.csv           (dry run, validates)
+         ./scripts/import-leads.py my-leads.csv --commit  (creates them)
+       It refuses rows the addon would reject later: an unlawful contact
+       basis, a thin evidence note, a private or unreachable source URL, a
+       reserved test domain, a duplicate address. Created leads land at
+       qualification_state = pending, which is what GGD-01 picks up.
+
+  2. PUBLISH THE NON-SENDING LOOP
+       GGD-01 (hourly), GGD-02 (every 30 min), GGD-05 (weekdays 08:30).
+       None of these can send. They research, draft, and queue drafts for
+       human approval. Watch one full cycle before going further.
+
+  3. PUBLISH GGD-04 - separate decision
+       Its trigger is IMAP against the real mailbox, so publishing it starts
+       reading live mail. Nothing else in the system does that.
+
+  4. BEFORE THE FIRST REAL SEND
+       a. SPF, DKIM and DMARC on germanygrowthdesk.com. Cold email from a
+          domain without these lands in spam and burns the domain. Not yet
+          verified - check the DNS panel.
+       b. An off-computer backup. Everything is on one laptop at ~90% disk.
+       c. A warm-up ramp. GGD-03 polls every 15 minutes with a limit of 10,
+          so up to ~40 mails/hour from a domain that has sent almost nothing.
+          Start with single-digit daily volume and raise it slowly.
+       d. A daily habit of reading the review queue: leads with
+          ggd_automation_needs_review, ggd_delivery_needs_review or
+          ggd_reply_needs_review set. The system deliberately stops and asks
+          rather than guessing, which only works if someone looks.
+
+  5. THE ALLOWLIST - the actual switch
+       GGD-03 still contains "Gate 4 recipient allowlist (temporary)", an IF
+       node hard-restricting every send to kaan@germanygrowthdesk.com. Until
+       it changes, nothing can reach a real prospect. Its value is hash-pinned
+       in tests/workflows/confirmed-bindings.json, so changing it makes
+       compare-live-exports.js fail loudly on purpose. Change it, re-pin the
+       hash, then publish GGD-03.
+
+  Do 1-4 first. Step 5 last, deliberately, on a day with time to watch it.
+
+================================================================================
                         OUTSTANDING BEFORE GO-LIVE
 ================================================================================
 
