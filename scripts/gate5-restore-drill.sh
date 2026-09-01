@@ -24,19 +24,34 @@ LIVE_VOLUMES="ggd_odoo_db_data ggd_odoo_data ggd_n8n_db_data ggd_n8n_data"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$project_dir/backups/gate5-restore-drill-${ts}.log"
 
+fail() { echo "ABORT: $*" >&2; exit 1; }
+
+# Argument parsing is deliberately strict. Interactive zsh does NOT treat '#'
+# as a comment, so a pasted "script.sh --confirm  # note" arrives here as real
+# arguments. Anything that is not --confirm and not an existing directory is a
+# mistake, and this stops rather than guessing.
 CONFIRM=0
 BK_ARG=""
+skip_rest=0
 for a in "$@"; do
+  [ "$skip_rest" = 1 ] && continue
   case "$a" in
     --confirm) CONFIRM=1 ;;
-    *) BK_ARG="$a" ;;
+    \#*) skip_rest=1 ;;                       # a pasted trailing comment: ignore it and the rest
+    -*) fail "unknown option '$a' (only --confirm is accepted)" ;;
+    *)  if [ -d "$a" ]; then BK_ARG="$a"
+        else fail "'$a' is not a directory. Pass a backup directory, or nothing to use the newest."; fi ;;
   esac
 done
 
-fail() { echo "ABORT: $*" >&2; exit 1; }
-
-if [ -n "$BK_ARG" ]; then BK="$(cd "$BK_ARG" && pwd)"; else
-  BK="$project_dir/backups/$(ls -t backups | grep -E '^[0-9]{8}T[0-9]{6}Z$' | head -1)"; fi
+if [ -n "$BK_ARG" ]; then
+  BK="$(cd "$BK_ARG" && pwd)"
+else
+  newest="$(ls -t backups 2>/dev/null | grep -E '^[0-9]{8}T[0-9]{6}Z$' | head -1)"
+  [ -n "$newest" ] || fail "no backup directory found under backups/"
+  BK="$project_dir/backups/$newest"
+fi
+[ -d "$BK" ] || fail "backup directory does not exist: $BK"
 
 dc() { docker compose -f compose.yaml -f compose.restore.yaml -p "$PROJ" --env-file "$TEST_DIR/.env" "$@"; }
 
