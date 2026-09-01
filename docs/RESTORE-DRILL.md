@@ -23,6 +23,34 @@ match the system, all three verified against the live repo on 1 September:
    the target database does not exist in a fresh stack and `psql` has nothing
    to restore into.
 
+## Fastest path: run the script
+
+```bash
+cd "/Users/kaan/Desktop/GGD -Sales-System " && ./scripts/gate5-restore-drill.sh
+```
+
+`scripts/gate5-restore-drill.sh` performs Phases 1-4 below against the newest
+backup, verifies the checksums before trusting it, aborts if the containers it
+is about to act on do not belong to the `ggd-restore-test` project, and writes
+`backups/gate5-restore-drill-<timestamp>.log`. It stops before teardown and
+prints the teardown command rather than running it. The manual phases below
+remain the reference, and the two browser checks at the end still need a human.
+
+## A restored copy shares real credentials
+
+The restored stack decrypts the same Zoho SMTP/IMAP, Anthropic and Odoo
+credentials as live, because it uses the same `N8N_ENCRYPTION_KEY`. Anything
+that activates in there acts for real.
+
+Checked against the 1 September backup: nothing in it can self-start. The only
+two active workflows are `GGD-00` and the legacy `GGD 99`, both error-trigger
+handlers with no send node, and error triggers only fire when another workflow
+in the same instance fails. The legacy `GGD 04` carries a published version id
+but its `active` flag is false and its only trigger is manual. So the practical
+risk here is low — but the script still forces every restored workflow inactive
+before starting n8n, because "low" depends on a fact about today's backup that
+a future backup could quietly change.
+
 ## Safety rules
 
 - The drill runs in its **own Compose project**, in `~/ggd-restore-test`. Never
