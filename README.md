@@ -162,6 +162,8 @@ Backups are written under `backups/`. Copy them to encrypted storage outside thi
 - Research, classification, drafting, and record keeping may be automated.
 - The first outbound version must require `Outreach approved` in Odoo.
 - `Do not contact` must stop every send and follow-up path.
+- Only members of the "Outreach approver" group can approve or clear `Do not contact`; the automation user is never one of them.
+- The system parameter `ggd_crm.daily_send_cap` limits claims per trailing 24 hours, server-side.
 - Begin with emails to your own test addresses.
 - A human approval is the authorisation record for one draft to one recipient; it does not vouch for the quality of the list the address came from. See [docs/COMPLIANCE-SCOPE.md](docs/COMPLIANCE-SCOPE.md).
 

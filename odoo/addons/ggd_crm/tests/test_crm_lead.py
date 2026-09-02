@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from odoo import fields
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
@@ -110,22 +110,25 @@ class TestGgdOutreachApproval(TransactionCase):
             lead.action_ggd_approve_outreach()
         self.assertFalse(lead.ggd_outreach_approved)
 
-    def test_approve_refused_on_no_email_bases(self):
-        """referral, other and trade-fair-without-opt-in are not consent.
+    def test_every_contact_basis_is_approvable_with_evidence(self):
+        """No basis is blocked from email any more; the note is the gate.
 
-        These values record where a contact came from, not permission to
-        email it (LAWFUL-CONTACT-PROCEDURE.md section 3, kept as a business
-        rule per COMPLIANCE-SCOPE.md).
+        Until 2 September 2026 referral, other and trade-fair-without-opt-in
+        were refused at approval, a rule derived from German law. The product
+        is operated outside the EU (COMPLIANCE-SCOPE.md), so the basis is
+        provenance only. What still holds: no basis at all, or a thin note,
+        is refused - those tests are elsewhere in this class.
         """
-        for basis in self.Lead.GGD_NO_EMAIL_BASES:
+        selection = self.Lead._fields["ggd_contact_basis"].selection
+        for basis, _label in selection:
             with self.subTest(basis=basis):
                 lead = self._lead(
                     ggd_contact_basis=basis,
                     ggd_contact_basis_note=VALID_NOTE,
                 )
-                with self.assertRaises(ValidationError):
-                    lead.action_ggd_approve_outreach()
-                self.assertFalse(lead.ggd_outreach_approved)
+                lead.action_ggd_approve_outreach()
+                self.assertTrue(lead.ggd_outreach_approved)
+                self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
 
     def test_approve_refused_when_note_missing_or_thin(self):
         for note in (False, "", "   ", "ok"):
@@ -200,7 +203,7 @@ class TestGgdOutreachApproval(TransactionCase):
     def test_direct_write_cannot_bypass_the_gate(self):
         """A gate enforced only in the UI button is not a gate."""
         lead = self._lead(
-            ggd_contact_basis="referral",
+            ggd_contact_basis=False,
             ggd_contact_basis_note=VALID_NOTE,
         )
         with self.assertRaises(ValidationError):
@@ -214,11 +217,11 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertFalse(lead.ggd_outreach_approved)
 
     def test_create_cannot_bypass_the_gate(self):
-        """A record must not come into existence already approved on a basis
-        that could never have been approved afterwards."""
+        """A record must not come into existence already approved without a
+        basis, when it could never have been approved afterwards."""
         with self.assertRaises(ValidationError):
             self._lead(
-                ggd_contact_basis="other",
+                ggd_contact_basis=False,
                 ggd_contact_basis_note=VALID_NOTE,
                 ggd_outreach_approved=True,
             )
@@ -636,25 +639,23 @@ class TestGgdOutreachApproval(TransactionCase):
 
                 self.assertFalse(lead.ggd_last_send_key)
 
-    def test_disallowed_contact_basis_is_rejected(self):
-        """A basis downgraded after approval must stop the send.
+    def test_contact_basis_cleared_after_approval_is_rejected(self):
+        """A basis removed after approval must stop the send.
 
-        Approval happened on consent; the basis is then changed to one that is
-        never accepted for a first automated email. The approval flag is still
-        true, so only a fresh read of the basis catches this.
+        Approval happened on consent; the basis is then cleared. The approval
+        flag is still true, so only a fresh read of the basis under the claim
+        lock catches this.
         """
-        for basis in self.Lead.GGD_NO_EMAIL_BASES:
-            with self.subTest(basis=basis):
-                lead = self._approved_lead()
-                lead.write({"ggd_contact_basis": basis})
-                self.assertTrue(lead.ggd_outreach_approved)
+        lead = self._approved_lead()
+        lead.write({"ggd_contact_basis": False})
+        self.assertTrue(lead.ggd_outreach_approved)
 
-                with self.assertRaises(ValidationError):
-                    lead.ggd_claim_send_key(self._key(lead))
-                with self.assertRaises(ValidationError):
-                    lead.write({"ggd_last_send_key": self._key(lead)})
+        with self.assertRaises(ValidationError):
+            lead.ggd_claim_send_key(self._key(lead))
+        with self.assertRaises(ValidationError):
+            lead.write({"ggd_last_send_key": self._key(lead)})
 
-                self.assertFalse(lead.ggd_last_send_key)
+        self.assertFalse(lead.ggd_last_send_key)
 
     def test_missing_contact_basis_is_rejected(self):
         lead = self._approved_lead()
@@ -676,15 +677,16 @@ class TestGgdOutreachApproval(TransactionCase):
         """Reasons cross the RPC boundary into n8n logs; row contents must not."""
         lead = self._approved_lead(
             ggd_contact_basis_note="Opt-in ref SECRET-EVIDENCE-1183 on file.",
+            email_from="secret-recipient@ggd-qa.invalid",
         )
-        lead.write({"ggd_contact_basis": "referral"})
+        lead.write({"ggd_contact_basis": False})
 
         with self.assertRaises(ValidationError) as caught:
             lead.write({"ggd_last_send_key": self._key(lead)})
 
         message = str(caught.exception)
         self.assertNotIn("SECRET-EVIDENCE-1183", message)
-        self.assertNotIn("referral", message)
+        self.assertNotIn("secret-recipient", message)
 
     # ------------------------------------------- suppression always wins
 
@@ -1731,3 +1733,212 @@ class TestGgdOutreachApproval(TransactionCase):
 
         with self.assertRaises(ValidationError):
             lead.ggd_queue_follow_up("This bounce must never receive a follow-up.")
+
+
+@tagged("post_install", "-at_install")
+class TestGgdApproverGroup(TransactionCase):
+    """Only the approver group may approve outreach or clear Do not contact.
+
+    The rest of this module runs as the superuser, which is exempt from the
+    check the way it is exempt from every access rule. These tests act as
+    two ordinary internal users: a salesperson with full CRM rights and the
+    same profile plus the approver group. The first is the shape of the
+    automation user n8n runs as.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+        Users = cls.env["res.users"].with_context(no_reset_password=True)
+        crm_groups = [
+            cls.env.ref("base.group_user").id,
+            cls.env.ref("sales_team.group_sale_salesman_all_leads").id,
+        ]
+        cls.salesperson = Users.create(
+            {
+                "name": "GGD automation-shaped user",
+                "login": "ggd-automation-shaped@ggd-qa.invalid",
+                "group_ids": [(6, 0, crm_groups)],
+            }
+        )
+        cls.approver = Users.create(
+            {
+                "name": "GGD approver",
+                "login": "ggd-approver@ggd-qa.invalid",
+                "group_ids": [
+                    (6, 0, crm_groups + [cls.env.ref(cls.Lead.GGD_APPROVER_GROUP).id])
+                ],
+            }
+        )
+
+    def _lead(self, **values):
+        base = {
+            "name": "QA approver fixture",
+            "email_from": "approver-test@ggd-qa.invalid",
+            "ggd_draft_subject": VALID_DRAFT_SUBJECT,
+            "ggd_draft_body": VALID_DRAFT_BODY,
+            "ggd_draft_version": VALID_DRAFT_VERSION,
+            "ggd_draft_status": "ready",
+            "ggd_contact_basis": "consent",
+            "ggd_contact_basis_note": VALID_NOTE,
+        }
+        base.update(values)
+        return self.Lead.create(base)
+
+    def test_admin_is_an_approver_after_install(self):
+        """The upgrade must not lock the owner out of the approve button."""
+        self.assertTrue(
+            self.env.ref("base.user_admin").has_group(self.Lead.GGD_APPROVER_GROUP)
+        )
+
+    def test_salesperson_cannot_approve_by_button(self):
+        lead = self._lead().with_user(self.salesperson)
+        with self.assertRaises(AccessError):
+            lead.action_ggd_approve_outreach()
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_salesperson_cannot_approve_by_write(self):
+        """The automation user's route is a plain write; it must fail too."""
+        lead = self._lead().with_user(self.salesperson)
+        with self.assertRaises(AccessError):
+            lead.write({"ggd_outreach_approved": True})
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_salesperson_cannot_create_an_approved_lead(self):
+        with self.assertRaises(AccessError):
+            self.Lead.with_user(self.salesperson).create(
+                {
+                    "name": "Born approved",
+                    "email_from": "born-approved@ggd-qa.invalid",
+                    "ggd_draft_subject": VALID_DRAFT_SUBJECT,
+                    "ggd_draft_body": VALID_DRAFT_BODY,
+                    "ggd_contact_basis": "consent",
+                    "ggd_contact_basis_note": VALID_NOTE,
+                    "ggd_outreach_approved": True,
+                }
+            )
+
+    def test_salesperson_can_suppress_but_not_unsuppress(self):
+        """Unsubscribe handling stays open; re-opening a person does not."""
+        lead = self._lead().with_user(self.salesperson)
+        lead.write({"ggd_do_not_contact": True})
+        self.assertTrue(lead.ggd_do_not_contact)
+        with self.assertRaises(AccessError):
+            lead.write({"ggd_do_not_contact": False})
+        self.assertTrue(lead.ggd_do_not_contact)
+
+    def test_salesperson_may_still_write_other_fields(self):
+        """The check must not bleed into ordinary CRM edits."""
+        lead = self._lead().with_user(self.salesperson)
+        lead.write({"ggd_fit_score": 77, "ggd_industry": "Packaging"})
+        self.assertEqual(lead.ggd_fit_score, 77)
+
+    def test_approver_can_approve_and_unsuppress(self):
+        lead = self._lead().with_user(self.approver)
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertEqual(lead.ggd_outreach_approved_by, self.approver)
+        lead.write({"ggd_do_not_contact": True})
+        self.assertFalse(lead.ggd_outreach_approved)
+        lead.write({"ggd_do_not_contact": False})
+        self.assertFalse(lead.ggd_do_not_contact)
+
+    def test_approve_button_is_hidden_from_non_approvers(self):
+        """The form's Approve button carries the group, so the UI matches."""
+        view = self.env.ref("ggd_crm.crm_lead_view_form_ggd")
+        self.assertIn(
+            'groups="ggd_crm.group_ggd_outreach_approver"',
+            view.arch_db,
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestGgdDailySendCap(TransactionCase):
+    """The claim refuses once the trailing-24-hour claim count reaches the cap."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+        cls.Params = cls.env["ir.config_parameter"].sudo()
+
+    def _set_cap(self, value):
+        self.Params.set_param(self.Lead.GGD_DAILY_SEND_CAP_PARAM, value)
+
+    def _approved_lead(self, n):
+        lead = self.Lead.create(
+            {
+                "name": "QA cap fixture %s" % n,
+                "email_from": "cap-%s@ggd-qa.invalid" % n,
+                "ggd_draft_subject": VALID_DRAFT_SUBJECT,
+                "ggd_draft_body": VALID_DRAFT_BODY,
+                "ggd_draft_version": "cap-draft-%s" % n,
+                "ggd_draft_status": "ready",
+                "ggd_contact_basis": "consent",
+                "ggd_contact_basis_note": VALID_NOTE,
+            }
+        )
+        lead.action_ggd_approve_outreach()
+        return lead
+
+    @staticmethod
+    def _key(lead):
+        return "%s:%s" % (lead.id, lead.ggd_approved_draft_version)
+
+    def test_parameter_is_installed_with_a_default(self):
+        self.assertEqual(
+            int(self.Params.get_param(self.Lead.GGD_DAILY_SEND_CAP_PARAM)),
+            self.Lead.GGD_DAILY_SEND_CAP_DEFAULT,
+        )
+
+    def test_cap_refuses_the_claim_that_would_exceed_it(self):
+        self._set_cap("2")
+        first, second, third = (self._approved_lead(i) for i in range(3))
+        self.assertTrue(first.ggd_claim_send_key(self._key(first)))
+        self.assertTrue(second.ggd_claim_send_key(self._key(second)))
+        with self.assertRaisesRegex(ValidationError, "daily send cap"):
+            third.ggd_claim_send_key(self._key(third))
+        self.assertFalse(third.ggd_last_send_key)
+        self.assertTrue(third.ggd_outreach_approved)
+
+    def test_cap_of_zero_stops_all_sending(self):
+        self._set_cap("0")
+        lead = self._approved_lead(0)
+        with self.assertRaisesRegex(ValidationError, "daily send cap"):
+            lead.ggd_claim_send_key(self._key(lead))
+
+    def test_missing_parameter_falls_back_to_the_default(self):
+        """set_param('') deletes the parameter; that is 'unset', not 'bad'."""
+        self._set_cap("")
+        self.assertFalse(self.Params.get_param(self.Lead.GGD_DAILY_SEND_CAP_PARAM))
+        self.assertEqual(self.Lead._ggd_daily_send_cap(), self.Lead.GGD_DAILY_SEND_CAP_DEFAULT)
+
+    def test_unreadable_cap_fails_closed(self):
+        lead = self._approved_lead(0)
+        for bad in ("twenty", "-1", "1.5"):
+            with self.subTest(value=bad):
+                self._set_cap(bad)
+                with self.assertRaises(ValidationError):
+                    lead.ggd_claim_send_key(self._key(lead))
+                self.assertFalse(lead.ggd_last_send_key)
+
+    def test_claims_older_than_24_hours_do_not_count(self):
+        self._set_cap("1")
+        old, new = self._approved_lead(1), self._approved_lead(2)
+        self.assertTrue(old.ggd_claim_send_key(self._key(old)))
+        old.flush_recordset(["ggd_last_sent_at"])
+        self.env.cr.execute(
+            "UPDATE crm_lead SET ggd_last_sent_at = %s WHERE id = %s",
+            (datetime.now() - timedelta(hours=25), old.id),
+        )
+        old.invalidate_recordset(["ggd_last_sent_at"])
+        self.assertTrue(new.ggd_claim_send_key(self._key(new)))
+
+    def test_duplicate_claim_of_the_same_key_is_still_false_not_capped(self):
+        """Idempotency must win over the cap: a repeat run reports 'already
+        sent', it does not get a cap error that n8n would treat as 'blocked'."""
+        self._set_cap("1")
+        lead = self._approved_lead(1)
+        self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
+        self.assertFalse(lead.ggd_claim_send_key(self._key(lead)))

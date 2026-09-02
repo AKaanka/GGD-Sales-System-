@@ -12,6 +12,7 @@
                     string="Approve Outreach"
                     class="oe_highlight"
                     invisible="ggd_outreach_approved or ggd_do_not_contact"
+                    groups="ggd_crm.group_ggd_outreach_approver"
                 />
                 <button
                     name="action_ggd_revoke_outreach"

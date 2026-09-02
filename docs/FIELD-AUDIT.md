@@ -54,7 +54,7 @@
 | --- | --- | --- |
 | `ggd_fit_score` | 0-100 | ✅ `@api.constrains` |
 | `ggd_ai_confidence` | 0.00-1.00 | ✅ `@api.constrains` |
-| Approval gate | Cannot approve on NO_EMAIL_BASES | ✅ `_ggd_check_approval_allowed()` |
+| Approval gate | ~~Cannot approve on NO_EMAIL_BASES~~ — block removed 2 Sep 2026 (COMPLIANCE-SCOPE.md); approval needs a basis, a note and the approver group | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Cannot approve when `do_not_contact=True` | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Cannot approve without basis note | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Note must be ≥20 chars | ✅ `GGD_CONTACT_BASIS_NOTE_MIN_LENGTH=20` |
