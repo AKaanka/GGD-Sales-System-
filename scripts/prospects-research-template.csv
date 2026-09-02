@@ -1,0 +1,2 @@
+company_name,contact_email,source_url,industry,notes
+REPLACE ME - Ornek Makina San. ve Tic. A.S.,,https://www.example-company.invalid/en/production,Machinery,"Delete this row. Research-only: contact_email and contact_basis must stay EMPTY. Import with --research-only; GGD-01 scores them and nothing can ever be approved for send."

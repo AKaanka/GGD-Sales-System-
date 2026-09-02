@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The GGD review desk.
+
+        Every safety property of this system ends in the same place: the
+        workflow stops and asks a human. That only works if the human can find
+        what is waiting. Before this view the daily habit was "build a filter by
+        hand in the CRM", which is exactly the kind of step that gets skipped on
+        a busy day - and a skipped review means an unresolved send claim or an
+        unread objection sits there silently.
+    -->
+
+    <record id="crm_lead_view_search_ggd" model="ir.ui.view">
+        <field name="name">crm.lead.search.ggd.review</field>
+        <field name="model">crm.lead</field>
+        <field name="arch" type="xml">
+            <search string="GGD review desk">
+                <field name="name"/>
+                <field name="partner_name"/>
+                <field name="email_from"/>
+                <field name="ggd_industry"/>
+
+                <!-- Anything the automation refused to decide on its own. -->
+                <filter name="ggd_needs_review" string="Needs review"
+                        domain="['|','|','|','|',
+                                 ('ggd_automation_needs_review','=',True),
+                                 ('ggd_qualification_needs_review','=',True),
+                                 ('ggd_reply_needs_review','=',True),
+                                 ('ggd_delivery_needs_review','=',True),
+                                 ('ggd_workflow_needs_review','=',True)]"/>
+
+                <!-- A send that claimed a key and never confirmed. Read Zoho
+                     Sent before touching it; never retry blind. -->
+                <filter name="ggd_unresolved_claim" string="Unresolved send claim"
+                        domain="[('ggd_delivery_status','=','claimed')]"/>
+
+                <filter name="ggd_awaiting_approval" string="Draft awaiting approval"
+                        domain="[('ggd_draft_status','=','ready'),
+                                 ('ggd_outreach_approved','=',False),
+                                 ('ggd_do_not_contact','=',False)]"/>
+
+                <filter name="ggd_approved_unsent" string="Approved, not yet sent"
+                        domain="[('ggd_outreach_approved','=',True),
+                                 ('ggd_draft_status','!=','sent')]"/>
+
+                <separator/>
+
+                <filter name="ggd_awaiting_reply" string="Sent, no reply yet"
+                        domain="[('ggd_delivery_status','=','accepted'),
+                                 ('ggd_last_reply_received_at','=',False)]"/>
+
+                <filter name="ggd_replied" string="Reply received"
+                        domain="[('ggd_last_reply_received_at','!=',False)]"/>
+
+                <!-- Qualified, but scored below the floor GGD-02 drafts above.
+                     These are not failures and not forgotten - they are waiting
+                     for a human to decide they are worth a manual draft. -->
+                <filter name="ggd_below_draft_floor" string="Qualified below the draft floor"
+                        domain="[('ggd_qualification_state','=','ready'),
+                                 ('ggd_draft_status','=','empty'),
+                                 ('ggd_fit_score','&lt;',60)]"/>
+
+                <separator/>
+
+                <filter name="ggd_do_not_contact" string="Do not contact"
+                        domain="[('ggd_do_not_contact','=',True)]"/>
+                <filter name="ggd_no_contact_basis" string="No contact basis recorded"
+                        domain="[('ggd_contact_basis','=',False)]"/>
+
+                <separator/>
+
+                <!-- Group-by filters sit directly under <search>. Odoo 19's
+                     RelaxNG for search views does NOT accept expand= (or
+                     string=) on <group>, and a filter carrying a group_by
+                     context is placed in the Group By menu on its own, so the
+                     legacy "Group by" group wrapper is both invalid and
+                     unnecessary here. See base/rng/common.rng. -->
+                <filter name="ggd_group_qualification" string="Qualification state"
+                        context="{'group_by': 'ggd_qualification_state'}"/>
+                <filter name="ggd_group_draft" string="Draft status"
+                        context="{'group_by': 'ggd_draft_status'}"/>
+                <filter name="ggd_group_delivery" string="Delivery status"
+                        context="{'group_by': 'ggd_delivery_status'}"/>
+                <filter name="ggd_group_reply" string="Reply category"
+                        context="{'group_by': 'ggd_reply_category'}"/>
+                <filter name="ggd_group_basis" string="Contact basis"
+                        context="{'group_by': 'ggd_contact_basis'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="crm_lead_view_list_ggd" model="ir.ui.view">
+        <field name="name">crm.lead.list.ggd.review</field>
+        <field name="model">crm.lead</field>
+        <field name="arch" type="xml">
+            <list string="GGD review desk" create="false">
+                <field name="name"/>
+                <field name="partner_name" optional="show"/>
+                <field name="email_from" optional="show"/>
+                <field name="ggd_fit_score" optional="show"/>
+                <field name="ggd_qualification_state" optional="show"/>
+                <field name="ggd_draft_status" optional="show"/>
+                <field name="ggd_outreach_approved" optional="show"/>
+                <field name="ggd_delivery_status" optional="show"/>
+                <field name="ggd_reply_category" optional="show"/>
+                <field name="ggd_contact_basis" optional="hide"/>
+                <field name="ggd_do_not_contact" optional="hide"/>
+                <field name="ggd_last_sent_at" optional="hide"/>
+                <field name="ggd_last_reply_received_at" optional="hide"/>
+                <field name="ggd_automation_review_summary" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_ggd_review_desk" model="ir.actions.act_window">
+        <field name="name">GGD review desk</field>
+        <field name="res_model">crm.lead</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="crm_lead_view_search_ggd"/>
+        <field name="context">{'search_default_ggd_needs_review': 1,
+                               'search_default_ggd_unresolved_claim': 1,
+                               'search_default_ggd_awaiting_approval': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing is waiting for you.</p>
+            <p>This desk opens on the three things only a human can settle: records the
+               automation refused to decide, sends whose outcome is unknown, and drafts
+               waiting for approval. Clear a filter to see the rest of the pipeline.</p>
+        </field>
+    </record>
+
+    <record id="action_ggd_review_desk_list_view" model="ir.actions.act_window.view">
+        <field name="sequence" eval="1"/>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="crm_lead_view_list_ggd"/>
+        <field name="act_window_id" ref="action_ggd_review_desk"/>
+    </record>
+
+    <menuitem id="menu_ggd_review_desk"
+              name="GGD review desk"
+              parent="crm.crm_menu_root"
+              action="action_ggd_review_desk"
+              sequence="15"/>
+
+</odoo>

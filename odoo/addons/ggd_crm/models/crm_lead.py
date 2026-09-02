@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -164,6 +165,22 @@ class CrmLead(models.Model):
         readonly=True,
         copy=False,
         index=True,
+    )
+    # Deliberately NOT part of GGD_DRAFT_FIELDS. That tuple defines the
+    # content a human approves and whose change revokes an approval. The
+    # language is a record of what the drafting model chose, used by the
+    # follow-up workflow so a German first email is not followed up in
+    # English. Editing it must not invalidate an approval, and it carries no
+    # part of the message a recipient reads.
+    ggd_draft_language = fields.Char(
+        string="Draft language",
+        readonly=True,
+        copy=False,
+        help=(
+            "ISO code of the language the draft was written in, as reported by "
+            "the drafting workflow. Informational: the approval gate does not "
+            "depend on it."
+        ),
     )
     ggd_approved_draft_version = fields.Char(
         string="Approved draft version",
@@ -404,6 +421,24 @@ class CrmLead(models.Model):
             if not 0 <= lead.ggd_ai_confidence <= 1:
                 raise ValidationError(_("AI confidence must be between 0.00 and 1.00."))
 
+    @api.model
+    def _ggd_normalise_language(self, language):
+        """Return a clean ISO language tag, or False.
+
+        Never raises. This is metadata attached to a draft that has already
+        been written; refusing the whole draft because a model returned
+        "Deutsch" instead of "de" would trade a useful record for a failed
+        workflow run - the same bad trade defect 13 made. An unrecognised
+        value is dropped and the draft is stored regardless.
+        """
+        tag = (language or "").strip()
+        if not tag:
+            return False
+        if not re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?", tag):
+            return False
+        parts = tag.split("-")
+        return parts[0].lower() if len(parts) == 1 else f"{parts[0].lower()}-{parts[1].upper()}"
+
     def _ggd_check_draft_ready(self, subject, body, version):
         """Require the exact reviewed draft before outreach can be approved."""
         if not (subject or "").strip():
@@ -497,7 +532,7 @@ class CrmLead(models.Model):
             ),
         }
 
-    def ggd_prepare_draft(self, subject, body):
+    def ggd_prepare_draft(self, subject, body, language=None):
         """Store one reviewable outbound draft and return its immutable version.
 
         Workflow 2 calls this method and then stops. Changing a draft always
@@ -539,6 +574,7 @@ class CrmLead(models.Model):
                 "ggd_draft_subject": subject,
                 "ggd_draft_body": body,
                 "ggd_draft_version": version,
+                "ggd_draft_language": self._ggd_normalise_language(language),
                 "ggd_draft_status": "ready",
                 "ggd_outreach_approved": False,
                 "ggd_approved_draft_version": False,

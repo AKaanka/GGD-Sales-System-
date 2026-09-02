@@ -368,5 +368,67 @@ run('Workflow 1 source-URL guard behaves correctly inside a bare vm sandbox', ()
   }
 });
 
+
+// The prompts are the product. Three things in them are load-bearing and have
+// each been wrong at some point: test-era wording that told the model the data
+// was fictional, the sender profile that stops the model inventing an identity,
+// and the opt-out line that GGD-04 relies on to hear "stop" at all.
+run('No LLM prompt still tells the model the data is fictional', () => {
+  for (const file of required) {
+    const workflow = load(file);
+    for (const node of workflow.nodes) {
+      const blob = JSON.stringify(node.parameters || {});
+      check(!/fictional/i.test(blob),
+        `${file} node "${node.name}" still carries test-era "fictional" wording`);
+    }
+  }
+});
+
+run('Drafting prompts carry the sender profile and the opt-out instruction', () => {
+  const drafting = [
+    ['GGD-02-draft-approval-queue.json', 'Draft one reviewable email'],
+    ['GGD-05-daily-follow-up.json', 'Draft manual follow-up'],
+  ];
+  for (const [file, nodeName] of drafting) {
+    const text = nodeByName(load(file), nodeName).parameters.text || '';
+    check(text.includes('== SENDER PROFILE'),
+      `${file} "${nodeName}" lost the sender profile block; drafts would invent an identity`);
+    check(text.includes('== END SENDER PROFILE'),
+      `${file} "${nodeName}" has an unterminated sender profile block`);
+    check(/reply "stop"/i.test(text),
+      `${file} "${nodeName}" no longer instructs the opt-out line GGD-04 listens for`);
+  }
+});
+
+
+// Drafting is the expensive step - a human reads every draft it produces. A
+// floor on fit_score is what stops a weak lead costing the same review minute
+// as a strong one. Without it GGD-02 drafts for everything that qualified.
+run('GGD-02 only drafts for leads above a fit-score floor', () => {
+  const body = nodeByName(load('GGD-02-draft-approval-queue.json'),
+    'Select qualified leads without drafts').parameters.jsonBody || '';
+  const floor = body.match(/\['ggd_fit_score','>=',(\d+)\]/);
+  check(floor, 'GGD-02 lost its ggd_fit_score floor; every qualified lead would be drafted');
+  const value = Number(floor[1]);
+  check(value >= 1 && value <= 100, `fit-score floor ${value} is outside 0-100`);
+});
+
+// The profile is duplicated in two prompts because it is prompt text, not
+// configuration. Duplication is only safe while the copies stay identical:
+// a half-updated profile means the follow-up signs off as someone else.
+run('GGD-02 and GGD-05 carry the same sender profile block', () => {
+  const grab = (file, nodeName) => {
+    const text = nodeByName(load(file), nodeName).parameters.text || '';
+    const start = text.indexOf('== SENDER PROFILE');
+    const end = text.indexOf('== END SENDER PROFILE');
+    check(start !== -1 && end > start, `${file} "${nodeName}" has no complete profile block`);
+    return text.slice(start, end);
+  };
+  const draft = grab('GGD-02-draft-approval-queue.json', 'Draft one reviewable email');
+  const followUp = grab('GGD-05-daily-follow-up.json', 'Draft manual follow-up');
+  check(draft === followUp,
+    'the sender profile in GGD-02 and GGD-05 have drifted apart; drafts and follow-ups would not agree on who is writing');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

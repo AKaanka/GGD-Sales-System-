@@ -1014,6 +1014,65 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertEqual(result["draft_version"], lead.ggd_draft_version)
         self.assertTrue(result["draft_version"])
 
+    def test_prepare_draft_records_the_language_it_was_written_in(self):
+        """Workflow 5 must follow up in the language of the first email.
+
+        Before this field the follow-up prompt had to guess from a body
+        summary, which is how a German first contact acquires an English
+        follow-up.
+        """
+        lead = self._lead(ggd_draft_subject=False, ggd_draft_body=False, ggd_draft_version=False)
+
+        lead.ggd_prepare_draft("Betreff", "Guten Tag, dies ist ein Entwurf.", language="de")
+
+        self.assertEqual(lead.ggd_draft_language, "de")
+
+    def test_prepare_draft_normalises_and_drops_unusable_language_tags(self):
+        for supplied, expected in (
+            ("DE", "de"),
+            ("pt-br", "pt-BR"),
+            (" en ", "en"),
+            ("Deutsch", False),
+            ("", False),
+            (None, False),
+        ):
+            with self.subTest(language=supplied):
+                lead = self._lead(
+                    ggd_draft_subject=False, ggd_draft_body=False, ggd_draft_version=False
+                )
+                lead.ggd_prepare_draft("Reviewed subject", "Reviewed body", language=supplied)
+                self.assertEqual(lead.ggd_draft_language, expected)
+
+    def test_prepare_draft_stores_the_draft_even_when_the_language_is_junk(self):
+        """A bad language tag must never cost us a draft a human could review.
+
+        Same trade as defect 13: failing the whole call over metadata makes the
+        workflow report a failure for work worth keeping, and a retry mints a
+        second version.
+        """
+        lead = self._lead(ggd_draft_subject=False, ggd_draft_body=False, ggd_draft_version=False)
+
+        result = lead.ggd_prepare_draft("Reviewed subject", "Reviewed body", language="not a tag")
+
+        self.assertTrue(result["draft_version"])
+        self.assertEqual(lead.ggd_draft_status, "ready")
+        self.assertEqual(lead.ggd_draft_body, "Reviewed body")
+        self.assertFalse(lead.ggd_draft_language)
+
+    def test_editing_the_draft_language_does_not_revoke_an_approval(self):
+        """The language is a record, not part of the approved content.
+
+        ggd_draft_language is deliberately outside GGD_DRAFT_FIELDS. If it ever
+        moves inside, this test fails and whoever moved it has to explain why
+        correcting a language code should invalidate a human's approval.
+        """
+        lead = self._approved_lead()
+
+        lead.write({"ggd_draft_language": "de"})
+
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertEqual(lead.ggd_approved_draft_version, lead.ggd_draft_version)
+
     def test_direct_draft_edit_revokes_approval(self):
         lead = self._approved_lead()
 

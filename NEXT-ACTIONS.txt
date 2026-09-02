@@ -369,6 +369,11 @@ FIXTURE STATE TO BE AWARE OF
   All five gates are passed. What stands between here and real outreach is
   not testing, it is these steps, in this order.
 
+  EXPANDED 1 September into GO-LIVE-PLAN.md at the repo root: the same five
+  steps with go/no-go checks, the contact-basis triage for bd-relationships.csv,
+  the SPF/DKIM/DMARC blocker, and the allowlist change. Read that file to
+  execute; this section stays as the summary.
+
   1. LOAD REAL LEADS                                    ./scripts/import-leads.py
        Fill in scripts/leads-template.csv, then:
          ./scripts/import-leads.py my-leads.csv           (dry run, validates)

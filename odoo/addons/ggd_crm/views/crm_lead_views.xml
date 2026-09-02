@@ -60,6 +60,7 @@
                         <group>
                             <field name="ggd_draft_status" readonly="1"/>
                             <field name="ggd_draft_version" readonly="1"/>
+                            <field name="ggd_draft_language" readonly="1"/>
                             <field name="ggd_approved_draft_version" readonly="1"/>
                             <field name="ggd_approved_recipient" readonly="1"/>
                         </group>
