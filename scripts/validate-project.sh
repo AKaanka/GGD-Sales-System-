@@ -24,6 +24,9 @@ for path in sorted(root.rglob("*.xml")):
     ET.parse(path)
 PY
 
+echo "Running script unit tests..."
+python3 -m unittest discover -s tests/scripts
+
 if command -v node >/dev/null 2>&1; then
   echo "Checking n8n workflow exports..."
   node tests/workflows/test-workflow-exports.js

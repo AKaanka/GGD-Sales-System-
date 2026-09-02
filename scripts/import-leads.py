@@ -195,8 +195,26 @@ def main():
         print(f"\nDry run only{mode} - nothing created. Re-run with --commit to create these leads.")
         return 0
 
-    payload = json.dumps(good)
-    program = "ROWS = " + payload + "\n" + r'''
+    program = build_shell_program(good)
+    cmd = ["docker", "compose", "exec", "-T", "odoo", "/bin/bash", "-lc",
+           'exec odoo shell --config=/tmp/ggd-odoo.conf -d "$ODOO_DB_NAME" --no-http']
+    proc = subprocess.run(cmd, input=program, text=True,
+                          cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return proc.returncode
+
+
+def build_shell_program(rows):
+    """Return the Python program piped into `odoo shell` to create ROWS.
+
+    The rows are carried as a JSON string literal and decoded inside the
+    program. Splicing json.dumps() output straight into Python source does
+    not work: JSON spells booleans `true`/`false` and null `null`, and the
+    research_only flag is a boolean, so the program died with NameError
+    before a single lead was created. repr() of the JSON text is always a
+    valid Python string literal, whatever the rows contain.
+    """
+    payload = json.dumps(rows)
+    return "import json\nROWS = json.loads(" + repr(payload) + ")\n" + r'''
 Lead = env["crm.lead"]
 created, skipped = [], []
 for r in ROWS:
@@ -232,11 +250,6 @@ for i, e in created:
 for i, e in skipped:
     print("  skipped id=%s %s" % (i, e))
 '''
-    cmd = ["docker", "compose", "exec", "-T", "odoo", "/bin/bash", "-lc",
-           'exec odoo shell --config=/tmp/ggd-odoo.conf -d "$ODOO_DB_NAME" --no-http']
-    proc = subprocess.run(cmd, input=program, text=True,
-                          cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return proc.returncode
 
 
 if __name__ == "__main__":
