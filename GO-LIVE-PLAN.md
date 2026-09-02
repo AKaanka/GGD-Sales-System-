@@ -12,6 +12,11 @@ replaces it.
 If this file and NEXT-ACTIONS.txt disagree about *what has been proven*,
 NEXT-ACTIONS.txt is right — it is the evidence log. This file is the forward plan.
 
+Compliance scope: the product is operated outside the EU, and nothing in this
+plan is gated on GDPR, UWG §7 or a lawyer. The contact-basis rules below are
+operational (provenance, opt-outs, sender reputation); see
+[docs/COMPLIANCE-SCOPE.md](docs/COMPLIANCE-SCOPE.md).
+
 ---
 
 ## 0. Where things actually stand
@@ -20,7 +25,7 @@ Verified from the repo and the live site today, not assumed:
 
 | Thing | State |
 | --- | --- |
-| Addon `ggd_crm` | 19.0.1.9.0 written and statically checked. **Never run against Odoo** — 112 tests expected, unproven |
+| Addon `ggd_crm` | 19.0.1.9.0 **proven on a fresh Odoo 19 stack on 2 Sep: 112 tests, 0 failed, 0 errors** (Can's machine). The live stack on Kaan's laptop still runs 1.8.0 until `docker compose restart odoo` + upgrade |
 | Gates 1-5 | All passed 1 Sep, including the uncertain-send drill (Gate 4 item 6) |
 | Workflows 00-05 | GGD-01, GGD-02 and GGD-05 have changed since the last export and need re-importing into n8n |
 | Sender profile | **Filled 2 Sep** from germanygrowthdesk.com, identical block in GGD-02 and GGD-05. 30/30 static tests pass |

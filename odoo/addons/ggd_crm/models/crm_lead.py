@@ -12,11 +12,13 @@ from odoo.tools import email_normalize
 class CrmLead(models.Model):
     _inherit = "crm.lead"
 
-    # Contact bases that are NOT, by themselves, a lawful basis for a first
-    # marketing email under UWG s 7 Abs. 2 Nr. 2. See
-    # docs/LAWFUL-CONTACT-PROCEDURE.md section 4. A record on one of these
-    # bases can still be called or approached by other means; it cannot be
-    # approved for automated email outreach.
+    # Contact bases that record where a contact came from but are not, by
+    # themselves, accepted as a basis for a first automated email. The list was
+    # originally derived from German law (UWG s 7); since 2 September 2026 the
+    # product is operated outside the EU and the block is a business rule
+    # only - see docs/COMPLIANCE-SCOPE.md, "Open decision". A record on one of
+    # these bases can still be called or approached by other means; it cannot
+    # be approved for automated email outreach until that decision changes.
     GGD_NO_EMAIL_BASES = (
         "trade_fair_no_optin",
         "referral",
@@ -30,7 +32,7 @@ class CrmLead(models.Model):
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH = 20
 
     # Every column the outbound claim guard must re-read under its row lock.
-    # The workflow decides whether a send is lawful from a snapshot taken
+    # The workflow decides whether a send is allowed from a snapshot taken
     # several RPCs before the claim; anything in that snapshot can be changed
     # by a human in between, so all of it is read again while the row is
     # locked. Fixed module-level names, never caller input - they are
@@ -103,20 +105,21 @@ class CrmLead(models.Model):
             ("consent", "Prior express consent — opt-in on file"),
             (
                 "existing_customer",
-                "Existing customer — all four UWG §7(3) conditions met",
+                "Existing customer — address obtained during a sale",
             ),
             ("inbound", "Inbound enquiry — reply stays within its scope"),
             ("trade_fair", "Trade fair — opt-in recorded at the stand"),
             ("trade_fair_no_optin", "Trade fair — no opt-in (do not email)"),
             ("referral", "Referral / introduction (do not email)"),
-            ("other", "Other — requires legal review (do not email)"),
+            ("other", "Other — unknown provenance (do not email)"),
         ],
         string="Contact basis",
         help=(
             "The label states the effect on email outreach. Bases marked "
             "'do not email' cannot be approved for automated outreach; use "
             "telephone, a warm introduction, or post instead. Operational "
-            "record only — it does not replace legal review."
+            "record of where the address came from; see "
+            "docs/COMPLIANCE-SCOPE.md."
         ),
     )
     ggd_contact_basis_note = fields.Text(
@@ -811,8 +814,8 @@ class CrmLead(models.Model):
             ).get(contact_basis, contact_basis)
             raise ValidationError(
                 _(
-                    "Contact basis '%(label)s' is not a lawful basis for a first "
-                    "marketing email under UWG §7. Outreach cannot be approved. "
+                    "Contact basis '%(label)s' is not accepted for a first "
+                    "automated email. Outreach cannot be approved. "
                     "Use a telephone call, a warm introduction, or post instead — "
                     "or record the opt-in evidence and change the basis.",
                     label=label,
@@ -886,14 +889,14 @@ class CrmLead(models.Model):
         SQL rather than an ORM read. An ORM read is answered from this
         transaction's cache and cannot see a change another n8n execution, or a
         human in Odoo, committed a moment ago - which is precisely the case
-        that produces a duplicate or an unlawful send. SELECT ... FOR UPDATE
+        that produces a duplicate or an unauthorised send. SELECT ... FOR UPDATE
         takes a row lock and, under PostgreSQL's READ COMMITTED default,
         re-reads the latest committed version of the row once any competing
         transaction has released it.
 
         Every column in GGD_CLAIM_STATE_COLUMNS is read in that single locked
         statement, not just the send key. The approval, suppression and
-        lawful-basis state is therefore read at the same instant as the key and
+        contact-basis state is therefore read at the same instant as the key and
         under the same lock, which closes the window between the workflow's
         earlier snapshot and the claim.
 
@@ -952,7 +955,7 @@ class CrmLead(models.Model):
             blockers.append(_("the contact basis is missing"))
         elif basis in self.GGD_NO_EMAIL_BASES:
             blockers.append(
-                _("the contact basis is not a lawful basis for a first marketing email")
+                _("the contact basis is not accepted for a first automated email")
             )
         note = (state.get("ggd_contact_basis_note") or "").strip()
         if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
@@ -1018,7 +1021,7 @@ class CrmLead(models.Model):
 
         Raises ValidationError if the stored record is not currently safe to
         send: approval missing or incomplete, Do not contact set, or the
-        lawful-basis evidence absent or insufficient. False and a raise mean
+        contact-basis evidence absent or insufficient. False and a raise mean
         different things and callers depend on the difference - False is
         "already sent", a raise is "must not send" - so the two are never
         collapsed.

@@ -21,7 +21,10 @@ not a software developer, so work in small, understandable stages.
 - Never send an email or activate an n8n workflow that can send email without an
   explicit instruction from Kaan for that test.
 - Use only Kaan's own test addresses until he explicitly approves a production
-  recipient and confirms the lawful contact basis.
+  recipient and the lead carries a recorded contact basis.
+- The product is operated outside the EU. Do not add, keep, or scope work
+  because of GDPR, UWG §7, or a lawyer's review; see
+  `docs/COMPLIANCE-SCOPE.md`. The outbound gate stays for operational reasons.
 - Preserve the outbound gate: `ggd_outreach_approved == true`,
   `ggd_do_not_contact == false`, and a non-empty contact basis.
 - Do not make Odoo or n8n publicly accessible during the local phase.

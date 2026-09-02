@@ -1,5 +1,10 @@
 # Critical Path to Completion — 19 August 2026
 
+> **Compliance note (2 September 2026):** every "legal review", "lawyer",
+> GDPR or UWG item in this document is out of scope. The product is operated
+> outside the EU; see [COMPLIANCE-SCOPE.md](COMPLIANCE-SCOPE.md). The rest of
+> the document is kept as written, as a record of the plan at the time.
+
 > Historical roadmap retained for audit context. Its percentages and next
 > actions are superseded by [PROJECT-STATUS.md](PROJECT-STATUS.md).
 

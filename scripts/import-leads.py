@@ -10,7 +10,7 @@ email: a directory, a trade list, search results. It creates leads with a
 source URL and no address, so GGD-01 researches and scores them and the
 approval path can never fire - a lead with no email_from and no contact
 basis cannot be approved for outreach. Use it to turn a raw list into a
-prioritised pipeline, then decide contact route and lawful basis per company.
+prioritised pipeline, then decide contact route and contact basis per company.
 
 Dry run is the default on purpose. Nothing is written until --commit.
 
@@ -23,7 +23,8 @@ later, so a row that passes this check cannot get stuck downstream:
   * contact_basis must not be one of GGD_NO_EMAIL_BASES
     (trade_fair_no_optin, referral, other). The addon refuses to approve
     those for email outreach - see crm_lead.py and
-    docs/LAWFUL-CONTACT-PROCEDURE.md section 4.
+    docs/LAWFUL-CONTACT-PROCEDURE.md section 4 (a business rule since
+    2 September 2026, see docs/COMPLIANCE-SCOPE.md).
   * contact_basis_note must be at least 20 characters and carry real
     evidence: a date, a source, a reference. The floor is the addon's
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH.
@@ -100,7 +101,7 @@ def check_row(i, row, seen_emails):
     basis = row["contact_basis"].strip().lower()
     if basis in NO_EMAIL_BASES:
         errs.append(
-            f"contact_basis '{basis}' is not a lawful basis for a first marketing email. "
+            f"contact_basis '{basis}' is not accepted for a first automated email. "
             "The addon will refuse to approve it. Call them instead, or record a real opt-in.")
     elif basis not in SENDABLE_BASES:
         errs.append(f"contact_basis '{basis}' unknown; use one of: {', '.join(sorted(SENDABLE_BASES))}")

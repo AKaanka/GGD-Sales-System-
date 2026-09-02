@@ -1,7 +1,8 @@
 """Control tests for the GGD outreach approval gate.
 
 These cover the non-negotiable rules in PLAN.md and the contact-basis
-enforcement described in docs/LAWFUL-CONTACT-PROCEDURE.md section 8. The point
+enforcement described in docs/LAWFUL-CONTACT-PROCEDURE.md section 8 (kept on
+operational grounds, see docs/COMPLIANCE-SCOPE.md). The point
 of the suite is that the gate is verified rather than assumed: it must hold
 through the approval button, through a direct write, and through create.
 
@@ -46,7 +47,7 @@ class TestGgdOutreachApproval(TransactionCase):
     def _approved_lead(self, **values):
         """A fixture whose approval is committed, so a send key can be claimed.
 
-        The claim guard re-reads approval, suppression and lawful-basis state
+        The claim guard re-reads approval, suppression and contact-basis state
         from the stored row, so a bare lead can no longer claim a key. Going
         through the approval button is what stamps approver, approval time and
         basis-verified time, which the guard also requires.
@@ -112,9 +113,9 @@ class TestGgdOutreachApproval(TransactionCase):
     def test_approve_refused_on_no_email_bases(self):
         """referral, other and trade-fair-without-opt-in are not consent.
 
-        This is the material finding in LAWFUL-CONTACT-PROCEDURE.md section 3:
-        these values record where a contact came from, not permission to email
-        it.
+        These values record where a contact came from, not permission to
+        email it (LAWFUL-CONTACT-PROCEDURE.md section 3, kept as a business
+        rule per COMPLIANCE-SCOPE.md).
         """
         for basis in self.Lead.GGD_NO_EMAIL_BASES:
             with self.subTest(basis=basis):
@@ -511,7 +512,7 @@ class TestGgdOutreachApproval(TransactionCase):
     # tests therefore exercise the plain write() path as well as the method,
     # because the plain path is the one that has to fail closed in production.
     #
-    # The workflow decides whether a send is lawful from a snapshot taken
+    # The workflow decides whether a send is allowed from a snapshot taken
     # several RPCs before the claim. Everything in that snapshot is re-read
     # under the claim's row lock, so the tests below drive the two states
     # apart on purpose: approve, then change the record, then claim.
@@ -639,7 +640,7 @@ class TestGgdOutreachApproval(TransactionCase):
         """A basis downgraded after approval must stop the send.
 
         Approval happened on consent; the basis is then changed to one that is
-        never lawful for a first marketing email. The approval flag is still
+        never accepted for a first automated email. The approval flag is still
         true, so only a fresh read of the basis catches this.
         """
         for basis in self.Lead.GGD_NO_EMAIL_BASES:

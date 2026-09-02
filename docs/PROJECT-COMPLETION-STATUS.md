@@ -1,5 +1,10 @@
 # Project Completion Status — 19 August 2026
 
+> **Compliance note (2 September 2026):** every "legal review", "lawyer",
+> GDPR or UWG item in this document is out of scope. The product is operated
+> outside the EU; see [COMPLIANCE-SCOPE.md](COMPLIANCE-SCOPE.md). The rest of
+> the document is kept as written, as a record of the plan at the time.
+
 > Historical completion estimate. Do not use its field, version, test-count,
 > or workflow claims as current. See [PROJECT-STATUS.md](PROJECT-STATUS.md).
 

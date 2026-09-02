@@ -1,5 +1,14 @@
 # Lawful Contact Procedure and Production Recipient Checklist
 
+> **Superseded on 2 September 2026 — read [COMPLIANCE-SCOPE.md](COMPLIANCE-SCOPE.md) first.**
+> The product will be operated outside the EU. Sections 2 (legal framework),
+> 3 (the UWG finding) and every GDPR item in the checklists **no longer
+> apply**, and no lawyer review is planned. The document is kept because it
+> defines what each `ggd_contact_basis` value was meant to record and because
+> its recipient checklist doubles as a list-quality checklist. The addon's
+> enforcement described in section 8 is unchanged, for the operational reasons
+> given in COMPLIANCE-SCOPE.md.
+
 Status: **draft for review**. Owner: Kaan Kadıoğlu, Germany Growth Desk.
 Created 16 August 2026. This document addresses item 8 of
 [PROJECT-STATUS.md](PROJECT-STATUS.md), but that item remains open until a

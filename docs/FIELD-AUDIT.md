@@ -93,7 +93,7 @@
 2. Should we add an audit log for who revoked approvals and when?
    - **Answer:** Not required for Phase 1. The message_post() call to chatter provides basic audit.
 
-3. Are there any fields missing for compliance tracking (GDPR, opt-out tracking)?
+3. Are there any fields missing for opt-out tracking? (GDPR is out of scope since 2 September 2026, see `COMPLIANCE-SCOPE.md`.)
    - **Answer:** `do_not_contact` covers opt-out. Other compliance fields are out of scope for Phase 1.
 
 ## Action Items

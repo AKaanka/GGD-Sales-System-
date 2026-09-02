@@ -17,7 +17,7 @@
 4. LLM output is treated as a recommendation and stored with a confidence score.
 5. Credentials stay in `.env` or the relevant application's encrypted credential store.
 6. Local services bind only to `127.0.0.1`; public access is not enabled in phase one.
-7. Real customer use requires an external backup and a reviewed lawful outreach process.
+7. Real customer use requires an external backup. Contact-basis and do-not-contact rules are operational controls (provenance, opt-outs, sender reputation), not legal ones; see `docs/COMPLIANCE-SCOPE.md`.
 
 ## Delivery phases
 
@@ -116,11 +116,12 @@ closed:
 
 All five gates are therefore passed.
 
-On lawful contact: Kaan decided on 1 September 2026 that a German lawyer's
-review of the procedure is not required before outreach. The addon's own
-control is unchanged — a lead cannot be approved for outreach without a
-recorded contact basis and a substantive note. Every send so far has been to
-`.invalid` fixtures or to Kaan's own address.
+On compliance: the product will be operated outside the EU, and neither GDPR
+nor UWG §7 constrains the design (decision of 2 September 2026,
+`docs/COMPLIANCE-SCOPE.md`). The addon's own control is unchanged — a lead
+cannot be approved for outreach without a recorded contact basis and a
+substantive note — because it is how provenance and opt-outs are kept. Every
+send so far has been to `.invalid` fixtures or to Kaan's own address.
 
 See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the verified work,
 remaining checklist, and current time estimate.

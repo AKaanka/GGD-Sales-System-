@@ -93,11 +93,11 @@ print("The same serialization applied to this addon's ERROR messages:")
 print("(these travel through Dispatcher.handle_error -> make_json_response too)")
 
 samples = {
-    "UWG s7 refusal (contains non-ASCII)": (
-        "Contact basis 'Referral / introduction (do not email)' is not a lawful "
-        "basis for a first marketing email under UWG §7. Outreach cannot be "
-        "approved. Use a telephone call, a warm introduction, or post instead — "
-        "or record the opt-in evidence and change the basis."
+    "contact-basis refusal (contains non-ASCII)": (
+        "Contact basis 'Referral / introduction (do not email)' is not accepted "
+        "for a first automated email. Outreach cannot be approved. Use a "
+        "telephone call, a warm introduction, or post instead — or record the "
+        "opt-in evidence and change the basis."
     ),
     "plain ASCII refusal": (
         "A valid recipient email address is required before approval."

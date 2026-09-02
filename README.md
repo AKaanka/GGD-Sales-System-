@@ -18,12 +18,14 @@ fuller narrative and the time estimate.
 As of 1 September, **all five gates are passed**, including the isolated
 restore drill in [docs/RESTORE-DRILL.md](docs/RESTORE-DRILL.md).
 
-The [lawful-contact procedure](docs/LAWFUL-CONTACT-PROCEDURE.md) describes how
-a first email is kept defensible. It has not been through legal review; Kaan
-decided on 1 September 2026 that such a review is not required before outreach.
-The technical control is unchanged either way — every lead must carry a
-`ggd_contact_basis` and a substantive note before outreach can be approved.
-Every message sent so far has gone to a fictional `.invalid` fixture or to
+**Compliance scope:** the product will be operated outside the EU, and
+development is not constrained by GDPR or the German UWG §7 rule on marketing
+email. [docs/COMPLIANCE-SCOPE.md](docs/COMPLIANCE-SCOPE.md) records that
+decision (2 September 2026), lists what is out of scope, and explains why the
+outbound gate stays anyway: every lead still needs a recorded contact basis and
+a substantive note before outreach can be approved, because that is how list
+provenance, opt-outs and sender reputation are kept, not because a law asks for
+it. Every message sent so far has gone to a fictional `.invalid` fixture or to
 Kaan's own address.
 
 ## Beginner route with Codex and GitHub
@@ -161,7 +163,7 @@ Backups are written under `backups/`. Copy them to encrypted storage outside thi
 - The first outbound version must require `Outreach approved` in Odoo.
 - `Do not contact` must stop every send and follow-up path.
 - Begin with emails to your own test addresses.
-- A human approval does not itself make an otherwise impermissible marketing email lawful.
+- A human approval is the authorisation record for one draft to one recipient; it does not vouch for the quality of the list the address came from. See [docs/COMPLIANCE-SCOPE.md](docs/COMPLIANCE-SCOPE.md).
 
 ## Moving to a VPS later
 
