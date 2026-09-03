@@ -41,9 +41,18 @@ operational grounds alone:
 
 The contact-basis vocabulary (`consent`, `existing_customer`, `inbound`,
 `trade_fair`, `trade_fair_no_optin`, `referral`, `other`) is kept as a
-**provenance record**. Which of those values may be approved for email is a
-business rule set by the operator, no longer a legal one. See "Open
-decision" below.
+**provenance record**. Since 2 September 2026 **every value may be approved
+for email** once the note carries checkable evidence; the three values that
+used to be blocked (`referral`, `trade_fair_no_optin`, `other`) were blocked
+only because of UWG §7. The basis is provenance, the note is the evidence,
+the approver is the decision.
+
+Two controls were added the same day, both operational:
+
+| Control | What it does |
+| --- | --- |
+| **Outreach approver group** (`ggd_crm.group_ggd_outreach_approver`) | Only its members may approve outreach or clear *Do not contact*. Setting *Do not contact* stays open to everyone, so the reply workflow can still act on an unsubscribe. The administrator is a member after upgrade; **the n8n service user must never be**. Enforced in `write()`/`create()`, not only on the button. |
+| **Daily send cap** (system parameter `ggd_crm.daily_send_cap`, default 20) | `ggd_claim_send_key` refuses once that many claims exist in the trailing 24 hours, across all leads, under an advisory lock so concurrent claims cannot slip past it. `0` stops all sending; an unreadable value fails closed. This is the server-side ceiling on what an accidentally published send workflow can do to a cold domain. |
 
 ## Data hygiene rules that remain
 
@@ -72,13 +81,9 @@ list-quality checklist.
 Living documents (`README.md`, `PLAN.md`, `AGENTS.md`, `GO-LIVE-PLAN.md`,
 `docs/PROJECT-STATUS.md`) have been updated to point here.
 
-## Open decision
+## Decided the same day
 
-Whether `referral`, `trade_fair_no_optin`, and `other` should remain
-**blocked from email approval** in the addon. The block was derived from UWG
-§7 Abs. 2 Nr. 2 and has no other justification. Removing it is a one-line
-change to `GGD_NO_EMAIL_BASES` plus its tests, and would let a referral be
-emailed with a recorded note. Keeping it forces those contacts to phone or
-LinkedIn first. This is a product call for Kaan and Can; until it is made the
-addon keeps the block, because loosening an outbound gate silently is worse
-than leaving a stricter rule in place for a few days.
+Whether `referral`, `trade_fair_no_optin`, and `other` should remain blocked
+from email approval was left open in the morning and **decided by Can in the
+afternoon: the block is removed** (addon 19.0.1.11.0). The values stay as
+provenance; approval needs the evidence note and an approver, nothing else.

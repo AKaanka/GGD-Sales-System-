@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Outreach approver.
+
+        Approving outreach and clearing "Do not contact" are the two writes
+        that authorise an email to a real person. Until this group existed,
+        any identity with write access to crm.lead could perform both,
+        including the API-key user n8n runs as. "The LLM never approves" was
+        a property of the workflow JSON, not of Odoo authorisation. The addon
+        now refuses both writes unless the acting user is in this group (the
+        superuser is exempt, as it is from every Odoo access rule).
+
+        Membership is data: the administrator is added here so an upgrade
+        does not lock the owner out. The n8n service user must NOT be added.
+    -->
+    <record id="res_groups_privilege_ggd" model="res.groups.privilege">
+        <field name="name">Germany Growth Desk</field>
+        <field name="sequence">50</field>
+        <field name="category_id" ref="base.module_category_sales"/>
+    </record>
+
+    <record id="group_ggd_outreach_approver" model="res.groups">
+        <field name="name">Outreach approver</field>
+        <field name="sequence">10</field>
+        <field name="privilege_id" ref="res_groups_privilege_ggd"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">May approve outreach for a lead and may clear the Do not contact flag. The n8n service user must never be in this group.</field>
+        <field name="user_ids" eval="[(4, ref('base.user_admin'))]"/>
+    </record>
+</odoo>

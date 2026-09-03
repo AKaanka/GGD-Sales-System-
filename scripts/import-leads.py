@@ -20,11 +20,9 @@ later, so a row that passes this check cannot get stuck downstream:
   * ggd_source_url must be a public http(s) URL - Workflow 1's
     requirePublicHttpUrl guard rejects private hosts and non-HTTP schemes,
     and the fetch fails on domains that do not resolve.
-  * contact_basis must not be one of GGD_NO_EMAIL_BASES
-    (trade_fair_no_optin, referral, other). The addon refuses to approve
-    those for email outreach - see crm_lead.py and
-    docs/LAWFUL-CONTACT-PROCEDURE.md section 4 (a business rule since
-    2 September 2026, see docs/COMPLIANCE-SCOPE.md).
+  * contact_basis must be one of the addon's selection values. Any of them
+    can be approved for email once the note carries evidence; the basis is
+    provenance, the note is the evidence (docs/COMPLIANCE-SCOPE.md).
   * contact_basis_note must be at least 20 characters and carry real
     evidence: a date, a source, a reference. The floor is the addon's
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH.
@@ -35,8 +33,8 @@ email or approves anything.
 """
 import csv, json, os, re, subprocess, sys
 
-SENDABLE_BASES = {"consent", "existing_customer", "inbound", "trade_fair"}
-NO_EMAIL_BASES = {"trade_fair_no_optin", "referral", "other"}
+SENDABLE_BASES = {"consent", "existing_customer", "inbound", "trade_fair",
+                  "trade_fair_no_optin", "referral", "other"}
 NOTE_MIN = 20
 REQUIRED = ["company_name", "contact_email", "source_url", "contact_basis", "contact_basis_note"]
 OPTIONAL = ["industry", "notes"]
@@ -99,11 +97,7 @@ def check_row(i, row, seen_emails):
         errs.append(u)
 
     basis = row["contact_basis"].strip().lower()
-    if basis in NO_EMAIL_BASES:
-        errs.append(
-            f"contact_basis '{basis}' is not accepted for a first automated email. "
-            "The addon will refuse to approve it. Call them instead, or record a real opt-in.")
-    elif basis not in SENDABLE_BASES:
+    if basis not in SENDABLE_BASES:
         errs.append(f"contact_basis '{basis}' unknown; use one of: {', '.join(sorted(SENDABLE_BASES))}")
 
     note = row["contact_basis_note"].strip()

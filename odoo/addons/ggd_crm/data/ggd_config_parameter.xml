@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Daily send cap. The maximum number of outbound send claims the addon
+        allows across all leads in any trailing 24-hour window. Enforced in
+        ggd_claim_send_key(), i.e. server-side and before SMTP, so an
+        accidental publish of the send workflow cannot drain a cold domain.
+
+        0 stops all sending. Change it in Settings > Technical > System
+        Parameters; noupdate keeps an operator's value across upgrades.
+    -->
+    <data noupdate="1">
+        <record id="config_parameter_daily_send_cap" model="ir.config_parameter">
+            <field name="key">ggd_crm.daily_send_cap</field>
+            <field name="value">20</field>
+        </record>
+    </data>
+</odoo>
