@@ -72,6 +72,13 @@ After local testing, create a separate Odoo user for n8n rather than using the a
 Recommended principles:
 
 - grant CRM access only;
+- **do not add it to the "Outreach approver" group.** Since addon
+  19.0.1.11.0 only members of that group can approve outreach or clear
+  `Do not contact`; the addon refuses the write for everyone else. Keeping
+  the automation user out of it is what makes "the LLM never approves" a
+  property of Odoo, not of the workflow JSON. The administrator is added to
+  the group by the addon; add other human approvers in Settings > Users,
+  under the "Germany Growth Desk" heading;
 - do not grant Settings or user-management access;
 - use a unique password/API credential;
 - disable the account immediately if the automation is retired;
@@ -83,8 +90,10 @@ Create a fictional company and move it through the pipeline. Verify:
 
 1. fit score rejects values below 0 or above 100;
 2. AI confidence rejects values below 0 or above 1;
-3. approval fails when contact basis is blank;
-4. approval fails when `Do not contact` is selected;
+3. approval fails when contact basis is blank, and when the basis note is
+   under 20 characters;
+4. approval fails when `Do not contact` is selected, and a user outside the
+   "Outreach approver" group cannot approve at all;
 5. selecting `Do not contact` revokes an existing approval;
 6. approval and revocation appear in the chatter.
 

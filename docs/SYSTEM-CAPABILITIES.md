@@ -165,7 +165,7 @@ Not yet verified on the current build:
 - live SMTP send behavior — no email has been sent by the current workflow
   set, and Workflow 3 remains off;
 - controlled end-to-end send/reply/bounce recovery;
-- backup restore drill and lawful-contact review.
+- backup restore drill. (Lawful-contact review is out of scope since 2 September 2026, see `COMPLIANCE-SCOPE.md`.)
 
 See [PROJECT-STATUS.md](PROJECT-STATUS.md) and
 [the workflow import guide](../workflows/README.md) for the remaining steps.

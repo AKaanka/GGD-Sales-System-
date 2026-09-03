@@ -18,7 +18,7 @@ The immediate goal is a **working local GGD sales system for controlled use**:
 - a backup and isolated restore are proven without deleting the live volumes.
 
 This is the finish line for the local functional product. Real-prospect use is
-a later go-live decision and still requires lawful-contact review. Public/VPS
+a later go-live decision (compliance scope: `COMPLIANCE-SCOPE.md`). Public/VPS
 deployment is deliberately outside this finish line.
 
 ## Current verified baseline

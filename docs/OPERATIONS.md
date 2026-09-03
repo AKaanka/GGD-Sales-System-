@@ -155,6 +155,18 @@ Before activating any workflow, in this order:
 
 Step 2 is the one that matters. Step 1 on its own has already been wrong once.
 
+## Send volume
+
+- The system parameter `ggd_crm.daily_send_cap` (Settings > Technical >
+  System Parameters) is the maximum number of send-key claims across all
+  leads in any trailing 24 hours. The addon installs it at `20`; an upgrade
+  never overwrites a value you set. `0` stops every send; a value that is not
+  a whole number stops every send until corrected. Start low on a new domain
+  and raise it as reputation builds.
+- When the cap is reached, each further claim in a GGD-03 run fails with a
+  ValidationError that names the cap, the error handler records it, and
+  nothing is sent. That is expected, not a defect.
+
 ## Local security
 
 - Both web ports bind to `127.0.0.1` only.

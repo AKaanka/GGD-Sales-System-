@@ -12,6 +12,11 @@ replaces it.
 If this file and NEXT-ACTIONS.txt disagree about *what has been proven*,
 NEXT-ACTIONS.txt is right — it is the evidence log. This file is the forward plan.
 
+Compliance scope: the product is operated outside the EU, and nothing in this
+plan is gated on GDPR, UWG §7 or a lawyer. The contact-basis rules below are
+operational (provenance, opt-outs, sender reputation); see
+[docs/COMPLIANCE-SCOPE.md](docs/COMPLIANCE-SCOPE.md).
+
 ---
 
 ## 0. Where things actually stand
@@ -20,7 +25,7 @@ Verified from the repo and the live site today, not assumed:
 
 | Thing | State |
 | --- | --- |
-| Addon `ggd_crm` | 19.0.1.9.0 written and statically checked. **Never run against Odoo** — 112 tests expected, unproven |
+| Addon `ggd_crm` | 19.0.1.9.0 **proven on a fresh Odoo 19 stack on 2 Sep: 112 tests, 0 failed, 0 errors** (Can's machine). The live stack on Kaan's laptop still runs 1.8.0 until `docker compose restart odoo` + upgrade |
 | Gates 1-5 | All passed 1 Sep, including the uncertain-send drill (Gate 4 item 6) |
 | Workflows 00-05 | GGD-01, GGD-02 and GGD-05 have changed since the last export and need re-importing into n8n |
 | Sender profile | **Filled 2 Sep** from germanygrowthdesk.com, identical block in GGD-02 and GGD-05. 30/30 static tests pass |
@@ -109,11 +114,12 @@ shortlist without contacting anyone. **Do this first, on a large list — it is 
 cheapest step in the whole plan.**
 
 **Route B — a sendable row.** Columns per `scripts/leads-template.csv`. The
-importer accepts exactly four values in `contact_basis`: `consent`,
-`existing_customer`, `inbound`, `trade_fair`. Anything else imports but can never
-be approved — the addon refuses at the approval button, long before SMTP. That is
-a mechanical property of the build, not a judgement call: a row without one of
-those four values will sit in the CRM forever.
+importer accepts any of the addon's seven `contact_basis` values (`consent`,
+`existing_customer`, `inbound`, `trade_fair`, `trade_fair_no_optin`, `referral`,
+`other`) and a note of at least 20 characters with real evidence. Since 2 Sep
+no basis is blocked from approval (see `docs/COMPLIANCE-SCOPE.md`); what still
+blocks is a missing basis, a thin note, *Do not contact*, or an approver who is
+not in the approver group.
 
 The natural source of `trade_fair` rows is your own service line. Trade fair
 representation is on the website's own service list; a fair where you collect
@@ -334,7 +340,11 @@ git add tests/workflows/confirmed-bindings.json && git commit -m "Re-pin GGD-03 
 limit of 10 — up to 40 mails/hour from a domain that has sent almost nothing.
 For the first week, leave it unpublished and fire it with **Manual test
 trigger** after each approval. That makes you the rate limiter, which is
-exactly right during warm-up.
+exactly right during warm-up. Since addon 19.0.1.11.0 there is also a
+server-side ceiling: the system parameter `ggd_crm.daily_send_cap` (default
+20 claims per trailing 24 hours) is enforced inside `ggd_claim_send_key`, so
+an accidental publish cannot drain the domain. Set it to `5` for the first
+week and raise it as the domain warms.
 
 **7.3 Send one.** Pick the single strongest row from group 1 of step 2 —
 best-documented basis, real company inbox, someone who asked you for something.

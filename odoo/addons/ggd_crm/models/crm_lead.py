@@ -5,23 +5,30 @@ from uuid import uuid4
 from markupsafe import Markup, escape
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tools import email_normalize
 
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
 
-    # Contact bases that are NOT, by themselves, a lawful basis for a first
-    # marketing email under UWG s 7 Abs. 2 Nr. 2. See
-    # docs/LAWFUL-CONTACT-PROCEDURE.md section 4. A record on one of these
-    # bases can still be called or approached by other means; it cannot be
-    # approved for automated email outreach.
-    GGD_NO_EMAIL_BASES = (
-        "trade_fair_no_optin",
-        "referral",
-        "other",
-    )
+    # Every contact basis may be approved for email, provided the evidence
+    # note below is present. Until 2 September 2026 three bases
+    # (trade_fair_no_optin, referral, other) were blocked from email approval;
+    # that block came from German law and was removed when the product's
+    # market moved outside the EU - see docs/COMPLIANCE-SCOPE.md. The basis
+    # is provenance, the note is the evidence, the approver is the decision.
+
+    # The system parameter that holds the daily send cap, and the value used
+    # when the parameter is missing. The cap counts send-key claims across all
+    # leads in the trailing 24 hours and is enforced in ggd_claim_send_key(),
+    # before SMTP. It is the server-side ceiling on how much damage an
+    # accidentally published send workflow can do to a cold domain.
+    GGD_DAILY_SEND_CAP_PARAM = "ggd_crm.daily_send_cap"
+    GGD_DAILY_SEND_CAP_DEFAULT = 20
+
+    # Group that may approve outreach and clear Do not contact.
+    GGD_APPROVER_GROUP = "ggd_crm.group_ggd_outreach_approver"
 
     # Minimum length for the contact-basis note. The note must carry actual
     # evidence - a date, a source, a document reference - not a restatement of
@@ -30,7 +37,7 @@ class CrmLead(models.Model):
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH = 20
 
     # Every column the outbound claim guard must re-read under its row lock.
-    # The workflow decides whether a send is lawful from a snapshot taken
+    # The workflow decides whether a send is allowed from a snapshot taken
     # several RPCs before the claim; anything in that snapshot can be changed
     # by a human in between, so all of it is read again while the row is
     # locked. Fixed module-level names, never caller input - they are
@@ -103,20 +110,20 @@ class CrmLead(models.Model):
             ("consent", "Prior express consent — opt-in on file"),
             (
                 "existing_customer",
-                "Existing customer — all four UWG §7(3) conditions met",
+                "Existing customer — address obtained during a sale",
             ),
             ("inbound", "Inbound enquiry — reply stays within its scope"),
             ("trade_fair", "Trade fair — opt-in recorded at the stand"),
-            ("trade_fair_no_optin", "Trade fair — no opt-in (do not email)"),
-            ("referral", "Referral / introduction (do not email)"),
-            ("other", "Other — requires legal review (do not email)"),
+            ("trade_fair_no_optin", "Trade fair — card or conversation, no opt-in"),
+            ("referral", "Referral / introduction"),
+            ("other", "Other — see the note"),
         ],
         string="Contact basis",
         help=(
-            "The label states the effect on email outreach. Bases marked "
-            "'do not email' cannot be approved for automated outreach; use "
-            "telephone, a warm introduction, or post instead. Operational "
-            "record only — it does not replace legal review."
+            "Where this address came from. Any basis can be approved for "
+            "outreach once the note below carries checkable evidence; the "
+            "basis is provenance, the note is the evidence, and the approver "
+            "is the decision. See docs/COMPLIANCE-SCOPE.md."
         ),
     )
     ggd_contact_basis_note = fields.Text(
@@ -789,6 +796,31 @@ class CrmLead(models.Model):
             )
         return True
 
+    def _ggd_check_approver(self, action):
+        """Raise AccessError unless the acting user may authorise outreach.
+
+        Approving outreach and clearing Do not contact are the two writes
+        that turn a record into something the send workflow will email. Both
+        require membership of the approver group. The check is on the write
+        path, not on the field, because the automation user must still READ
+        these fields: every workflow's search_read filters on them.
+
+        The superuser is exempt, as it is from every Odoo access rule; the
+        automation user is an ordinary internal user and is not. That is
+        the whole point: n8n's API key can qualify, draft, claim, finalise and
+        suppress, but it cannot approve and it cannot un-suppress.
+        """
+        if self.env.su or self.env.user.has_group(self.GGD_APPROVER_GROUP):
+            return
+        raise AccessError(
+            _(
+                "Only a member of the 'Outreach approver' group may %(action)s. "
+                "Ask an administrator to add you to that group in Settings > "
+                "Users. The automation user must never be in it.",
+                action=action,
+            )
+        )
+
     def _ggd_check_approval_allowed(self, do_not_contact, contact_basis, basis_note):
         """Raise if this combination may not be approved for email outreach.
 
@@ -797,6 +829,7 @@ class CrmLead(models.Model):
         enforced only in a UI button is not a gate. Takes plain values rather
         than reading self, so it can also run before a record exists.
         """
+        self._ggd_check_approver(_("approve outreach"))
         if do_not_contact:
             raise ValidationError(
                 _("This opportunity is marked Do not contact and cannot be approved.")
@@ -804,19 +837,6 @@ class CrmLead(models.Model):
         if not contact_basis:
             raise ValidationError(
                 _("Record and review the contact basis before approving outreach.")
-            )
-        if contact_basis in self.GGD_NO_EMAIL_BASES:
-            label = dict(
-                self._fields["ggd_contact_basis"].selection
-            ).get(contact_basis, contact_basis)
-            raise ValidationError(
-                _(
-                    "Contact basis '%(label)s' is not a lawful basis for a first "
-                    "marketing email under UWG §7. Outreach cannot be approved. "
-                    "Use a telephone call, a warm introduction, or post instead — "
-                    "or record the opt-in evidence and change the basis.",
-                    label=label,
-                )
             )
         note = (basis_note or "").strip()
         if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
@@ -886,14 +906,14 @@ class CrmLead(models.Model):
         SQL rather than an ORM read. An ORM read is answered from this
         transaction's cache and cannot see a change another n8n execution, or a
         human in Odoo, committed a moment ago - which is precisely the case
-        that produces a duplicate or an unlawful send. SELECT ... FOR UPDATE
+        that produces a duplicate or an unauthorised send. SELECT ... FOR UPDATE
         takes a row lock and, under PostgreSQL's READ COMMITTED default,
         re-reads the latest committed version of the row once any competing
         transaction has released it.
 
         Every column in GGD_CLAIM_STATE_COLUMNS is read in that single locked
         statement, not just the send key. The approval, suppression and
-        lawful-basis state is therefore read at the same instant as the key and
+        contact-basis state is therefore read at the same instant as the key and
         under the same lock, which closes the window between the workflow's
         earlier snapshot and the claim.
 
@@ -950,10 +970,6 @@ class CrmLead(models.Model):
         basis = state.get("ggd_contact_basis")
         if not basis:
             blockers.append(_("the contact basis is missing"))
-        elif basis in self.GGD_NO_EMAIL_BASES:
-            blockers.append(
-                _("the contact basis is not a lawful basis for a first marketing email")
-            )
         note = (state.get("ggd_contact_basis_note") or "").strip()
         if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
             blockers.append(_("the contact-basis note is missing or too short"))
@@ -1018,7 +1034,7 @@ class CrmLead(models.Model):
 
         Raises ValidationError if the stored record is not currently safe to
         send: approval missing or incomplete, Do not contact set, or the
-        lawful-basis evidence absent or insufficient. False and a raise mean
+        contact-basis evidence absent or insufficient. False and a raise mean
         different things and callers depend on the difference - False is
         "already sent", a raise is "must not send" - so the two are never
         collapsed.
@@ -1046,11 +1062,82 @@ class CrmLead(models.Model):
         if blockers:
             self._ggd_raise_claim_blocked(blockers)
         self._ggd_check_send_key_matches_approved_draft(self.id, state, send_key)
+        now = fields.Datetime.now()
+        self._ggd_check_daily_send_cap(now)
         self.write({
             "ggd_last_send_key": send_key,
-            "ggd_last_sent_at": fields.Datetime.now(),
+            "ggd_last_sent_at": now,
         })
         return True
+
+    def _ggd_daily_send_cap(self):
+        """The configured cap as a non-negative int, or raise.
+
+        A parameter that cannot be read as an integer, or is negative, stops
+        sending rather than falling back to the default. A typo in the one
+        value that limits outbound volume must fail closed.
+        """
+        raw = (
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param(self.GGD_DAILY_SEND_CAP_PARAM)
+        )
+        if raw is False or raw is None:
+            return self.GGD_DAILY_SEND_CAP_DEFAULT
+        try:
+            cap = int(str(raw).strip())
+        except ValueError:
+            cap = -1
+        if cap < 0:
+            raise ValidationError(
+                _(
+                    "The system parameter %(param)s is set to %(value)r, which "
+                    "is not a whole number of zero or more. Sending is stopped "
+                    "until it is corrected. No message was sent.",
+                    param=self.GGD_DAILY_SEND_CAP_PARAM,
+                    value=raw,
+                )
+            )
+        return cap
+
+    def _ggd_check_daily_send_cap(self, now):
+        """Refuse the claim if it would exceed the trailing-24-hour cap.
+
+        Counts claims, not confirmed sends: a claim is the moment the addon
+        commits to an SMTP call, and an uncertain or failed send still cost
+        the domain a connection. Released claims clear ggd_last_sent_at and
+        so drop out of the count, which is right - releasing is a human
+        saying "this one never went".
+
+        The row lock taken earlier covers only this lead. Two workflow
+        executions claiming two different leads at the same instant would
+        each count the other as absent and both pass a cap of n with n-1
+        already used. A transaction-scoped advisory lock on a fixed key
+        serialises the count-and-claim across leads; it is released at
+        commit, after the ORM write below has been flushed, so the next
+        claimant sees this one.
+        """
+        cap = self._ggd_daily_send_cap()
+        self.env.cr.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (self.GGD_DAILY_SEND_CAP_PARAM,))
+        self.flush_model(["ggd_last_sent_at"])
+        self.env.cr.execute(
+            "SELECT count(*) FROM crm_lead WHERE ggd_last_sent_at >= %s",
+            (now - timedelta(hours=24),),
+        )
+        used = self.env.cr.fetchone()[0]
+        if used >= cap:
+            raise ValidationError(
+                _(
+                    "The daily send cap has been reached: %(used)s send(s) "
+                    "were claimed in the last 24 hours and the cap "
+                    "(%(param)s) is %(cap)s. No message was sent. Raise the "
+                    "cap in Settings > Technical > System Parameters if this "
+                    "is intended, or wait.",
+                    used=used,
+                    param=self.GGD_DAILY_SEND_CAP_PARAM,
+                    cap=cap,
+                )
+            )
 
     def ggd_finalize_send(
         self,
@@ -1547,6 +1634,12 @@ class CrmLead(models.Model):
             field_name in values for field_name in self.GGD_APPROVAL_INPUT_FIELDS
         )
         draft_changed = any(field_name in values for field_name in self.GGD_DRAFT_FIELDS)
+        if "ggd_do_not_contact" in values and not values["ggd_do_not_contact"]:
+            # Setting the flag is open to everyone, including the reply
+            # workflow that acts on an unsubscribe. Clearing it re-opens a
+            # person to outreach and is an approver's decision.
+            if any(lead.ggd_do_not_contact for lead in self):
+                self._ggd_check_approver(_("clear Do not contact"))
         if approval_input_changed:
             for lead in self:
                 lead._ggd_check_no_unresolved_send_claim(

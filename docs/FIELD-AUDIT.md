@@ -54,7 +54,7 @@
 | --- | --- | --- |
 | `ggd_fit_score` | 0-100 | ✅ `@api.constrains` |
 | `ggd_ai_confidence` | 0.00-1.00 | ✅ `@api.constrains` |
-| Approval gate | Cannot approve on NO_EMAIL_BASES | ✅ `_ggd_check_approval_allowed()` |
+| Approval gate | ~~Cannot approve on NO_EMAIL_BASES~~ — block removed 2 Sep 2026 (COMPLIANCE-SCOPE.md); approval needs a basis, a note and the approver group | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Cannot approve when `do_not_contact=True` | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Cannot approve without basis note | ✅ `_ggd_check_approval_allowed()` |
 | Approval gate | Note must be ≥20 chars | ✅ `GGD_CONTACT_BASIS_NOTE_MIN_LENGTH=20` |
@@ -93,7 +93,7 @@
 2. Should we add an audit log for who revoked approvals and when?
    - **Answer:** Not required for Phase 1. The message_post() call to chatter provides basic audit.
 
-3. Are there any fields missing for compliance tracking (GDPR, opt-out tracking)?
+3. Are there any fields missing for opt-out tracking? (GDPR is out of scope since 2 September 2026, see `COMPLIANCE-SCOPE.md`.)
    - **Answer:** `do_not_contact` covers opt-out. Other compliance fields are out of scope for Phase 1.
 
 ## Action Items
