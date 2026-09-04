@@ -48,6 +48,55 @@ The `.env` is intentionally not copied into the backup. Save its values separate
 
 At least one backup must live outside the computer running the stack.
 
+### Encryption and the off-device copy
+
+`scripts/backup.sh` encrypts every artifact with [age](https://age-encryption.org)
+and copies the result off the machine. It refuses to run without both, because
+an unencrypted dump of the whole CRM on the host that also serves it is the
+defect this replaced (finding S6), and a copy that lives only on that host is
+not a backup.
+
+Two values in `.env`:
+
+| Variable | What it is |
+| --- | --- |
+| `BACKUP_AGE_RECIPIENT` | the **public** half of an age key pair. Not secret. |
+| `BACKUP_OFFSITE_DIR` | an external disk or synced folder the copy is written to. |
+
+Create the pair once, on a machine you trust:
+
+```bash
+age-keygen -o ggd-backup.key
+```
+
+That file is the **private key**. Put it in the password manager and delete the
+local copy — it must not live on this laptop, or the encryption protects
+nothing against the case it exists for. The file's first line is a comment
+carrying the public key; that string goes in `BACKUP_AGE_RECIPIENT`.
+
+The machine therefore writes backups it cannot read. A stolen laptop gives up
+nothing, and only the key in the password manager can restore.
+
+The checksums cover the ciphertext, so any copy can be verified anywhere
+without the private key. `backup.sh` verifies the off-device copy *where it
+landed* rather than the original, since a copy nobody checked at the
+destination is a copy nobody has tested.
+
+### Restoring
+
+```bash
+./scripts/decrypt-backup.sh <backup-dir> <identity-file> [output-dir]
+```
+
+It verifies the checksums *before* the key is used, decrypts, and writes fresh
+checksums over the plaintext so `gate5-restore-drill.sh` works on the result
+unchanged. Bring the private key in from the password manager for the restore
+and delete both it and the decrypted directory afterwards — that directory is
+a readable copy of the entire CRM, which is precisely what the encryption
+exists to prevent.
+
+If a backup fails checksum verification, do not decrypt it. Fetch another copy.
+
 ## Updates
 
 Never update Odoo and n8n blindly.

@@ -44,6 +44,27 @@ cd "/Users/kaan/Desktop/GGD -Sales-System "
 ./scripts/gate5-restore-drill.sh --confirm      # only after you have read the proof
 ```
 
+### Restoring from the encrypted off-device copy
+
+Since finding S6, backups are encrypted with `age` and copied off the laptop,
+so the drill's input is a directory of `*.age` files that must be decrypted
+first. Bring the private key in from the password manager, and drill against
+the **off-device copy** rather than the local one — restoring from the copy on
+the production host proves only that the host can read its own disk.
+
+```bash
+./scripts/decrypt-backup.sh /Volumes/GGD-Backup/ggd/<timestamp> ~/ggd-backup.key
+# prints the directory it decrypted into
+./scripts/gate5-restore-drill.sh "<that directory>"            # proof only
+./scripts/gate5-restore-drill.sh --confirm "<that directory>"  # the restore
+rm -rf "<that directory>" ~/ggd-backup.key                     # afterwards
+```
+
+`decrypt-backup.sh` verifies the checksums before the key is used at all, so a
+corrupted copy is caught without ever being decrypted. If verification fails,
+do not decrypt it — fetch another copy. The decrypted directory is a readable
+copy of the whole CRM: delete it, and the key file, when the drill is done.
+
 The proof looks like this — every mount must be a `ggd_restore_*` volume:
 
 ```
@@ -233,3 +254,41 @@ Gate 5 passes when Phases 1–4 are green. Record in `NEXT-ACTIONS.txt` and
 `docs/PROJECT-STATUS.md`: the backup timestamp used, checksum result, the six
 verification values actually observed, and confirmation that the live volumes
 were never touched.
+
+### Runs
+
+| Date | Backup | Source | Result |
+| --- | --- | --- | --- |
+| 1 Sep 2026 | `20260901T...` | local, unencrypted | passed (Gate 5) |
+| 4 Sep 2026 | `20260904T182932Z` | **encrypted, off-device copy** | passed |
+
+The 4 September run is the one that closes finding S6. The backup was
+encrypted with `age`, copied to a second location, verified by checksum *at
+the destination*, decrypted there with the private key, and restored into
+isolated `ggd_restore_*` volumes. It is the first drill to exercise the path
+that would actually be used if this laptop were lost.
+
+Restored against live at the time of the backup:
+
+| Check | Restored | Live | |
+| --- | --- | --- | --- |
+| `crm_lead` rows | 66 | 66 | match |
+| of those active | 48 | 48 | match |
+| n8n workflows | 18 | 18 | match |
+| n8n credentials | 5 | 5 | match |
+| n8n users | 1 | 1 | match |
+
+All four live volumes were present after teardown and all four
+`ggd_restore_*` volumes were removed.
+
+Two things about this run are worth knowing rather than assuming:
+
+- It was performed with a **throwaway key pair**, generated to exercise the
+  mechanism and destroyed immediately after, along with the decrypted copy and
+  the backup made under it. **No backup currently on disk is readable**, because
+  the real key pair has not been created yet — that step is Kaan's, and until it
+  is done the go/no-go in `GO-LIVE-PLAN.md` section 1.2 is not met.
+- The script's printed expectations (`[expect: 41 total, of which 25 active]`)
+  are hard-coded from 1 September and are now stale. The counts above were
+  checked against the live database directly. A drill whose expectations drift
+  cannot distinguish "the data grew" from "the restore was partial".

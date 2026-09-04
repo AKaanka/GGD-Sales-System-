@@ -51,8 +51,15 @@ it did not prove it exists anywhere else.
 ```bash
 ./scripts/backup.sh
 ```
-Then copy `backups/<newest>/` to an external disk or encrypted cloud folder.
-**Go/no-go:** a verified backup exists on a second physical device. Do not
+Since finding S6 this is one step, not two. `backup.sh` encrypts every artifact
+with `age` and writes the copy to `BACKUP_OFFSITE_DIR`, verifying the checksums
+at the destination. It refuses to run without both settings, so a backup that
+exists only on this laptop can no longer happen by accident — and refuses if
+the external disk is not mounted, which is the right answer rather than a
+quiet local-only copy. See `docs/OPERATIONS.md`.
+
+**Go/no-go:** a verified backup exists on a second physical device, and the
+restore drill has passed *from that copy* (`docs/RESTORE-DRILL.md`). Do not
 start real outreach until this is true — the first real reply is data you
 cannot recreate.
 
