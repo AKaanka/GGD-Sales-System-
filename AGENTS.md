@@ -25,14 +25,26 @@ not a software developer, so work in small, understandable stages.
 - The product is operated outside the EU. Do not add, keep, or scope work
   because of GDPR, UWG §7, or a lawyer's review; see
   `docs/COMPLIANCE-SCOPE.md`. The outbound gate stays for operational reasons.
-- Preserve the outbound gate: `ggd_outreach_approved == true`,
-  `ggd_do_not_contact == false`, and a non-empty contact basis.
+- Preserve the outbound gate. Approval needs a user in
+  `ggd_crm.group_ggd_outreach_approver` and `ggd_do_not_contact == false`;
+  a send additionally needs an approved draft version, a recipient, and a
+  claimed send key. A contact basis is recorded but no longer required
+  (Kaan's decision, 4 September 2026, pull requests #46 and #47).
 - Do not make Odoo or n8n publicly accessible during the local phase.
 - Do not run `docker compose down -v`, delete named volumes, delete backups, or
   perform another destructive operation without explaining the exact impact and
   receiving explicit confirmation.
 - Do not change the pinned Odoo major version or database major versions during
   routine maintenance.
+
+## Branches
+
+- Only two branches exist: `test` and `main`. Do not create others that outlive
+  a pull request.
+- Development lands on `test`. Every pull request targets `test`, never `main`.
+- `main` is what Kaan runs day to day. It moves only by fast-forwarding from
+  `test` when a version is wanted live; nothing is committed to `main` directly.
+- Delete a feature branch as soon as its pull request is merged.
 
 ## Architecture boundaries
 

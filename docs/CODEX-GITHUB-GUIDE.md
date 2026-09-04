@@ -142,8 +142,8 @@ Do not commit until I confirm.
 After reviewing the result, tell Codex:
 
 ```text
-Commit the reviewed changes with a clear message and push the main branch to
-GitHub. Do not include .env, backups, credentials, or customer data.
+Commit the reviewed changes with a clear message and push the test branch to
+GitHub. Development lands on test; main is fast-forwarded from it later. Do not include .env, backups, credentials, or customer data.
 ```
 
 You can also commit and push with GitHub Desktop. The **Changes** tab is the
