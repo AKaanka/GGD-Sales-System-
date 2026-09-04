@@ -1,0 +1,31 @@
+// Base styling for the dark-mode systray button, in the always-loaded backend
+// bundle rather than the dark one.
+//
+// The markup is a bare <button>, copied from Odoo's own systray items so the
+// icon sits and hovers like the clock and chat beside it. A bare button takes
+// the browser's default chrome, which rendered as a white box on the navbar -
+// visible in light mode too, so the reset cannot live in the dark stylesheet.
+.o_ggd_dark_toggle {
+    display: flex;
+    align-items: center;
+
+    > button {
+        background: transparent;
+        border: 0;
+        padding: 0 .55rem;
+        line-height: 1;
+        color: inherit;      // take the navbar's own text colour
+        opacity: .9;
+
+        &:hover, &:focus {
+            opacity: 1;
+            background: rgba(255, 255, 255, .1);
+            border-radius: 4px;
+        }
+
+        &:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, .5);
+            outline-offset: -2px;
+        }
+    }
+}
