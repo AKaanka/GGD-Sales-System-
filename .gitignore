@@ -12,3 +12,9 @@ __pycache__/
 *.pyc
 
 .claude/settings.local.json
+
+# age key material. The private key must never be in the tree, and never
+# committed if it briefly is. age-keygen writes here by default if you run it
+# from the repo root, which is easy to do by accident.
+*.key
+ggd-backup.key
