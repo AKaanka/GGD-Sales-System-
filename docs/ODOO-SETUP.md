@@ -67,22 +67,104 @@ The approval button refuses approval when the contact basis is missing or the op
 
 ## Automation service user
 
-After local testing, create a separate Odoo user for n8n rather than using the administrator account.
+n8n authenticates to Odoo with an API key. The JSON-2 endpoint
+(`/json/2/crm.lead/<method>`) exposes every public method on the model, so the
+access rights of the user that key belongs to are the only thing standing
+between a compromised n8n and a compromised CRM. If the key belongs to the
+administrator, the `Outreach approver` group protects nothing: a Settings user
+can add itself to the group, and the superuser is exempt from every access rule
+in Odoo.
 
-Recommended principles:
+So the key must belong to a dedicated internal user with CRM access and nothing
+else. Kaan does every step that touches a key value; no agent ever sees one.
 
-- grant CRM access only;
-- **do not add it to the "Outreach approver" group.** Since addon
-  19.0.1.11.0 only members of that group can approve outreach or clear
-  `Do not contact`; the addon refuses the write for everyone else. Keeping
-  the automation user out of it is what makes "the LLM never approves" a
-  property of Odoo, not of the workflow JSON. The administrator is added to
-  the group by the addon; add other human approvers in Settings > Users,
-  under the "Germany Growth Desk" heading;
-- do not grant Settings or user-management access;
-- use a unique password/API credential;
-- disable the account immediately if the automation is retired;
-- review the chatter/audit trail for automated updates.
+### Create the user
+
+Settings > Users & Companies > Users > New:
+
+- **Name** `GGD Automation (n8n)`, **login** `n8n@ggd.local`. The address needs
+  no mailbox; the account never sends mail itself.
+- **Access Rights**: Sales = `User: All Documents`. The workflows `search_read`
+  leads they do not own, so `User: Own Documents Only` is not enough.
+- Leave every other application blank. In particular: no `Administration`
+  (Settings), no `Sales: Administrator`.
+- Under the `Germany Growth Desk` heading, leave `Outreach approver`
+  **unticked**. Since addon 19.0.1.11.0 only members of that group can approve
+  outreach or clear `Do not contact`; the addon refuses the write for everyone
+  else. Keeping the automation user out of the group is what makes "the LLM
+  never approves" a property of Odoo, not of the workflow JSON.
+- Set a long unique password on the account (Kaan needs it once, to log in as
+  that user and issue the key).
+
+Human approvers are added to `Outreach approver` in the same place. The
+administrator is put in the group by the addon so an upgrade cannot lock the
+owner out.
+
+### Issue its key and hand it to n8n
+
+1. Log in as `n8n@ggd.local`.
+2. Preferences > Account Security > New API Key. Name it `n8n-YYYY-MM` and
+   pick the **longest duration Odoo offers this account**.
+
+   Odoo only shows the *Persistent key* (never expires) option to users with
+   Settings rights, which the automation user deliberately does not have. So
+   this key will always carry an expiry date - on 4 September 2026 the offered
+   maximum produced `2026-12-03`. This matters: Odoo's `@api.autovacuum`
+   DELETES a key whose `expiration_date` has passed, so the key stops
+   authenticating and then disappears. That is exactly how Workflow 2 died on
+   27 August, with `401 Unauthorized: Invalid apikey` on its first node.
+
+   Write the expiry date in the calendar with a reminder two weeks before, and
+   check it with `./scripts/check-odoo-api-keys.sh`, which prints the expiry of
+   every key. An expiring automation key is not a defect to design around; it
+   is a date to keep.
+3. Copy the value once - triple-click to select the whole key rather than
+   dragging across it; a half-selected key produces the same `Invalid apikey`
+   401 as no key at all, which cost an afternoon on 4 September. Paste it into
+   the n8n `Header Auth account` credential as `Bearer <key>`, one space after
+   `Bearer`. It is never written to a file in this repository, a workflow
+   export, a log, or a chat message.
+
+### Verify before revoking anything
+
+With the new credential in place, run all six workflows and confirm at least:
+
+- **GGD-01** writes a research result onto a lead;
+- **GGD-03** claims a send key;
+- **GGD-04** sets `Do not contact` from an unsubscribe reply;
+- **GGD-00**, **GGD-02** and **GGD-05** complete without a 401 or an
+  access-rights error.
+
+Then confirm the boundary actually holds: as the automation user, try to
+approve a lead. It must fail. If it succeeds, the user is in `Outreach
+approver` or has Settings rights, and the fix is not done.
+
+### Revoke the old key
+
+Only once the six workflows are green: open the previous key owner's
+Preferences > Account Security and delete the old key. Any key still owned by
+the administrator is deleted too - a key that exists is a key that can be used.
+
+### Check and rotate
+
+Two read-only scripts report on keys without ever reading a key value, so their
+output is safe to paste into a ticket:
+
+```bash
+./scripts/check-odoo-api-keys.sh          # id, name, owner login, scope, expiry
+./scripts/check-odoo-automation-user.sh   # owner login, groups, PASS/FAIL per key
+```
+
+Rotate the key before its expiry date - which, per the note above, the
+automation user's key always has - and immediately if it may have been
+exposed - a shared screenshot, a pasted log, a laptop handed on, a departing
+contractor. Rotation is the same sequence: issue a new key on the same user,
+swap the n8n credential, verify the six workflows, delete the old key, re-run
+both scripts.
+
+Disable the account the moment the automation is retired, and review the lead
+chatter periodically: every automated write is attributed to this user, so the
+audit trail names it.
 
 ## First test record
 
