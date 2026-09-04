@@ -15,13 +15,16 @@
 // properties on :root to redefine at runtime. Checked in the browser before
 // writing this.
 
-$ggd-bg:          #1c1f26;   // app background, behind everything
-$ggd-surface:     #262a36;   // sheets, cards, panels. Odoo's own offline
-                             // page uses this exact value for dark.
-$ggd-surface-alt: #2f3441;   // rows, hovers, inputs
-$ggd-border:      #3b4150;
-$ggd-text:        #e6e8ee;
-$ggd-text-muted:  #a2a8b8;
+$ggd-navbar:      #16181e;   // top bar. Light mode leaves this purple, which
+                             // is the loudest thing on a dark screen.
+$ggd-bg:          #1e2128;   // app background, behind everything
+$ggd-surface:     #262a33;   // sheets, panels, control panel
+$ggd-card:        #2b303a;   // kanban cards, list rows - one step lifted so
+                             // cards read as objects rather than patches
+$ggd-surface-alt: #333944;   // hovers, inputs
+$ggd-border:      #383e4a;
+$ggd-text:        #e4e6eb;
+$ggd-text-muted:  #9aa1b0;
 
 // ---------------------------------------------------------------- surfaces
 body,
@@ -119,4 +122,145 @@ input::placeholder, textarea::placeholder, .o_searchview_input::placeholder {
 // --------------------------------------------------------------- separators
 hr, .o_horizontal_separator, .table > :not(caption) > * > * {
     border-color: $ggd-border !important;
+}
+
+
+// ---------------------------------------------------- navbar and kanban
+// Added after seeing the first pass next to Odoo Enterprise's dark theme.
+// The purple bar was the single biggest difference: on a dark screen it
+// reads as a stripe of daylight across the top.
+.o_main_navbar {
+    background-color: $ggd-navbar !important;
+    border-bottom: 1px solid $ggd-border !important;
+
+    .o_menu_brand,
+    .o_nav_entry,
+    .dropdown-toggle,
+    .o_menu_systray .dropdown-toggle,
+    > a, > button {
+        color: $ggd-text !important;
+    }
+
+    .o_nav_entry:hover,
+    .dropdown-toggle:hover,
+    .o-dropdown--menu-toggle:hover {
+        background-color: $ggd-surface-alt !important;
+    }
+}
+
+// The systray sits on the navbar, so its children inherit the old purple.
+.o_menu_systray,
+.o_menu_systray .o-dropdown,
+.o_menu_systray .o-dropdown-item,
+.o_user_menu {
+    background-color: transparent !important;
+    color: $ggd-text !important;
+}
+
+// Kanban: cards lifted off the column, columns lifted off the page, so the
+// board has three depths instead of one flat sheet.
+.o_kanban_renderer {
+    background-color: $ggd-bg !important;
+}
+
+.o_kanban_group {
+    background-color: transparent !important;
+}
+
+.o_kanban_header,
+.o_column_title,
+.o_kanban_header_title {
+    color: $ggd-text !important;
+}
+
+.o_kanban_record {
+    background-color: $ggd-card !important;
+    border: 1px solid $ggd-border !important;
+    border-radius: 6px;
+    color: $ggd-text !important;
+
+    &:hover {
+        background-color: $ggd-surface-alt !important;
+        border-color: lighten($ggd-border, 8%) !important;
+    }
+}
+
+// Column counters and progress bars read as noise at full contrast.
+.o_kanban_counter, .o_kanban_counter_progress, .o_column_progress {
+    color: $ggd-text-muted !important;
+}
+
+// Control panel and search sit directly under the navbar; keeping them on
+// the surface colour separates the chrome from the content below.
+.o_control_panel, .o_cp_searchview, .o_searchview {
+    background-color: $ggd-surface !important;
+    border-color: $ggd-border !important;
+}
+
+// -------------------------------------------------- second pass, from Kaan
+// Comparing the first dark pass against Odoo Enterprise's, three things
+// still gave it away.
+
+// 1. Menu entries kept the old purple. Light mode paints them with the
+//    navbar colour, so darkening the bar alone left them as bright blocks.
+//    Everything inside the bar goes transparent and inherits; only real
+//    dropdown panels get a surface of their own.
+.o_main_navbar {
+    .o_nav_entry,
+    .o-dropdown,
+    .o-dropdown-item,
+    .o_menu_sections,
+    .o_menu_sections > *,
+    .dropdown-toggle,
+    .o_menu_brand {
+        background-color: transparent !important;
+    }
+
+    .dropdown-menu, .o-dropdown--menu {
+        background-color: $ggd-surface !important;
+        border: 1px solid $ggd-border !important;
+
+        .dropdown-item, .o-dropdown-item {
+            color: $ggd-text !important;
+
+            &:hover, &:focus {
+                background-color: $ggd-surface-alt !important;
+            }
+        }
+    }
+}
+
+// 2. A white block sat at the right of the search bar - the dropdown toggle,
+//    which light mode leaves on the default control background.
+.o_cp_searchview .dropdown-toggle,
+.o_searchview_dropdown_toggler,
+.o_control_panel .btn-light,
+.o_control_panel .dropdown-toggle {
+    background-color: $ggd-surface-alt !important;
+    color: $ggd-text !important;
+    border-color: $ggd-border !important;
+}
+
+// 3. Cards ran together into one column-shaped block. A gap and a real
+//    border make them read as separate objects, which is most of what makes
+//    the reference look tidier than the first pass.
+.o_kanban_renderer .o_kanban_record {
+    margin-bottom: 6px !important;
+    box-shadow: none !important;
+}
+
+.o_kanban_group .o_kanban_header {
+    background-color: transparent !important;
+    border-bottom: 1px solid $ggd-border !important;
+}
+
+// The view-type switcher on the right of the control panel.
+.o_cp_switch_buttons .btn, .o_switch_view {
+    background-color: transparent !important;
+    color: $ggd-text-muted !important;
+
+    &.active, &:hover {
+        background-color: $ggd-surface-alt !important;
+        color: $ggd-text !important;
+    }
 }
