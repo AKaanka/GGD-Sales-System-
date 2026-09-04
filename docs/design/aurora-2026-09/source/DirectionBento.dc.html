@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+* { box-sizing: border-box; }
+body { margin:0; width:1440px; height:900px; overflow:hidden; background:#fbf7f2; color:#221d18;
+  font-family:"Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size:13px; line-height:1.45; -webkit-font-smoothing:antialiased; }
+a { color:#2b6aa8; } a:hover { color:#221d18; }
+.nav { margin:16px 24px 0; height:58px; background:#fff; border-radius:999px; box-shadow:0 1px 2px rgba(60,40,20,.05), 0 10px 30px rgba(60,40,20,.07); display:flex; align-items:center; padding:0 10px 0 22px; gap:4px; }
+.nav .brand { font-weight:800; font-size:15px; margin-right:16px; display:flex; align-items:center; gap:10px; }
+.nav .brand i { width:28px; height:28px; border-radius:50%; background:#221d18; display:block; }
+.nav .it { padding:9px 14px; border-radius:999px; color:#7a7068; font-weight:600; }
+.nav .it.on { background:#221d18; color:#fff; }
+.nav .r { margin-left:auto; display:flex; align-items:center; gap:4px; }
+.ico { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; color:#7a7068; }
+.ico:hover { background:#f3ede6; color:#221d18; }
+.av { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#fbd38d,#f6a5a5); display:grid; place-items:center; font-weight:800; font-size:12px; margin-left:6px; }
+.head { display:flex; align-items:center; gap:16px; padding:26px 30px 16px; }
+.head h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-.03em; }
+.head .sub { color:#7a7068; font-weight:600; }
+.search { margin-left:auto; width:360px; height:46px; border-radius:999px; background:#fff; box-shadow:inset 0 0 0 1px #ece5dc; display:flex; align-items:center; gap:10px; padding:0 18px; color:#7a7068; font-weight:500; }
+.btn { height:46px; padding:0 20px; border-radius:999px; display:inline-flex; align-items:center; gap:8px; font-weight:700; background:#fff; box-shadow:inset 0 0 0 1px #ece5dc; }
+.btn.primary { background:#221d18; color:#fff; box-shadow:none; }
+.stats { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; padding:0 30px 16px; }
+.stat { background:#fff; border-radius:20px; padding:14px 18px; display:flex; align-items:center; gap:14px; box-shadow:0 1px 2px rgba(60,40,20,.04), 0 6px 20px rgba(60,40,20,.05); }
+.stat .n { font-size:26px; font-weight:800; letter-spacing:-.03em; }
+.stat .l { color:#7a7068; font-weight:600; font-size:12px; }
+.stat .ring { width:42px; height:42px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:12px; }
+.board { display:flex; gap:14px; padding:0 30px; align-items:flex-start; }
+.col { flex:1; border-radius:24px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+.colh { display:flex; align-items:center; gap:8px; padding:2px 6px 6px; font-weight:800; font-size:14px; }
+.colh .cnt { width:24px; height:24px; border-radius:50%; background:#fff; display:grid; place-items:center; font-size:11px; }
+.card { background:#fff; border-radius:16px; padding:14px 15px; display:flex; flex-direction:column; gap:8px; box-shadow:0 1px 2px rgba(60,40,20,.05); }
+.card.hot { box-shadow:0 0 0 2px #221d18, 0 10px 24px rgba(60,40,20,.10); }
+.card .t { font-weight:700; font-size:14px; letter-spacing:-.01em; }
+.card .m { color:#7a7068; font-size:12px; font-weight:500; }
+.card .s { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pill { height:24px; padding:0 10px; border-radius:999px; display:inline-flex; align-items:center; font-weight:700; font-size:11px; }
+.pill.ok { background:#e3efe2; color:#2f7a4a; } .pill.wait { background:#fbefd0; color:#9a6a05; } .pill.review { background:#ebe6fa; color:#5b46c9; } .pill.stop { background:#fde0e0; color:#c0392b; } .pill.dim { background:#f3ede6; color:#7a7068; }
+.fit { margin-left:auto; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:11px; }
+.fit > div { width:24px; height:24px; border-radius:50%; background:#fff; display:grid; place-items:center; }
+</style>
+</helmet>
+
+<div class="nav"><span class="brand"><i></i>Growth Desk</span><span class="it on">Pipeline</span><span class="it">Review desk</span><span class="it">Leads</span><span class="it">Reporting</span>
+  <div class="r"><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg></span><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg></span><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"></path></svg></span><span class="av">KK</span></div></div>
+<div class="head"><div><h1>Good afternoon, Kaan</h1><div class="sub">4 things wait on you today</div></div>
+  <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>Search opportunities…</div><span class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>List</span><span class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>New</span></div>
+<div class="stats">
+  <div class="stat"><span class="ring" style="background:conic-gradient(#221d18 0 15%, #f3ede6 15% 100%)"><span style="background:#fff;width:32px;height:32px;border-radius:50%;display:grid;place-items:center">3</span></span><div><div class="n">3 <span style="font-size:14px;color:#7a7068">/ 20</span></div><div class="l">Sendable today</div></div></div>
+  <div class="stat"><div class="n" style="color:#5b46c9">2</div><div class="l">Needs review</div></div>
+  <div class="stat"><div class="n" style="color:#c0392b">1</div><div class="l">Unresolved send claim</div></div>
+  <div class="stat"><div class="n" style="color:#b8532e">2</div><div class="l">Replies to read</div></div>
+</div>
+<div class="board"><div class="col" style="background:#ebe6fa"><div class="colh" style="color:#5b46c9">Target identified<span class="cnt">3</span></div><div class="card"><div class="t">Nordfeld Metallbau GmbH</div><div class="m">Hannover · Panel fences</div><div class="s"><span class="pill dim">Not qualified</span></div></div><div class="card"><div class="t">Halvers Industrietore KG</div><div class="m">Bremen · Gates</div><div class="s"><span class="pill dim">Not qualified</span></div></div><div class="card"><div class="t">Tannhäuser Bauelemente</div><div class="m">Erfurt · Balustrades</div><div class="s"><span class="pill review">Needs review</span></div></div></div><div class="col" style="background:#fbefd0"><div class="colh" style="color:#9a6a05">Qualified<span class="cnt">3</span></div><div class="card"><div class="t">Weserland Stahlhandel</div><div class="m">Minden · Steel trading</div><div class="s"><span class="pill wait">Draft ready</span><span class="fit" style="background:conic-gradient(#9a6a05 0 74%, #eee6dc 74% 100%)"><div>74</div></span></div></div><div class="card"><div class="t">Kessler &amp; Roth GaLaBau</div><div class="m">Kassel · Landscaping</div><div class="s"><span class="pill dim">Below floor</span><span class="fit" style="background:conic-gradient(#9a6a05 0 61%, #eee6dc 61% 100%)"><div>61</div></span></div></div><div class="card hot"><div class="t">Brückner Zaunsysteme</div><div class="m">Ulm · Panel fences</div><div class="s"><span class="pill wait">Awaiting approval</span><span class="fit" style="background:conic-gradient(#9a6a05 0 83%, #eee6dc 83% 100%)"><div>83</div></span></div></div></div><div class="col" style="background:#e3efe2"><div class="colh" style="color:#2f7a4a">Approved<span class="cnt">2</span></div><div class="card"><div class="t">Steinhagen Gitterwerk</div><div class="m">Bielefeld · Mesh panels</div><div class="s"><span class="pill ok">Approved</span><span class="pill dim">v3</span><span class="fit" style="background:conic-gradient(#2f7a4a 0 79%, #eee6dc 79% 100%)"><div>79</div></span></div></div><div class="card"><div class="t">Ahrens Tor &amp; Zaun</div><div class="m">Oldenburg · Gates</div><div class="s"><span class="pill ok">Approved</span><span class="pill stop">Claim open</span><span class="fit" style="background:conic-gradient(#2f7a4a 0 71%, #eee6dc 71% 100%)"><div>71</div></span></div></div></div><div class="col" style="background:#e2eef8"><div class="colh" style="color:#2b6aa8">Sent<span class="cnt">3</span></div><div class="card"><div class="t">Lüttich Metall GmbH</div><div class="m">Aachen · Railings</div><div class="s"><span class="pill ok">Sent 2 Sep</span><span class="fit" style="background:conic-gradient(#2b6aa8 0 77%, #eee6dc 77% 100%)"><div>77</div></span></div></div><div class="card"><div class="t">Möllenkamp Bauzaun</div><div class="m">Münster · Site fencing</div><div class="s"><span class="pill ok">Sent 1 Sep</span><span class="fit" style="background:conic-gradient(#2b6aa8 0 68%, #eee6dc 68% 100%)"><div>68</div></span></div></div><div class="card"><div class="t">Ravensberg Drahtwerk</div><div class="m">Herford · Wire mesh</div><div class="s"><span class="pill ok">Sent 29 Aug</span><span class="fit" style="background:conic-gradient(#2b6aa8 0 80%, #eee6dc 80% 100%)"><div>80</div></span></div></div></div><div class="col" style="background:#fbe6dc"><div class="colh" style="color:#b8532e">Replied<span class="cnt">2</span></div><div class="card"><div class="t">Hollmann Stahlbau</div><div class="m">Osnabrück · Steel</div><div class="s"><span class="pill review">Objection</span><span class="fit" style="background:conic-gradient(#b8532e 0 85%, #eee6dc 85% 100%)"><div>85</div></span></div></div><div class="card"><div class="t">Dörpfeld Zäune</div><div class="m">Detmold · Panel fences</div><div class="s"><span class="pill ok">Interested</span><span class="fit" style="background:conic-gradient(#b8532e 0 76%, #eee6dc 76% 100%)"><div>76</div></span></div></div></div></div>
+
+</x-dc>
+</body>
+</html>

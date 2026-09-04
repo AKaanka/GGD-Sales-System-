@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+* { box-sizing: border-box; }
+body { margin: 0; width: 1440px; height: 900px; overflow: hidden; color-scheme: dark;
+  font-family: Manrope, "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 13px; line-height: 1.45;
+  color: #e9edf4; background: #0d1017;
+  background-image:
+    radial-gradient(900px 620px at -6% -10%, rgba(66, 214, 198, 0.16), transparent 60%),
+    radial-gradient(1000px 700px at 108% 108%, rgba(148, 118, 255, 0.15), transparent 62%),
+    radial-gradient(600px 400px at 60% 40%, rgba(79,214,200,0.05), transparent 70%);
+  -webkit-font-smoothing: antialiased; }
+a { color: #4fd6c8; text-decoration: none; } a:hover { color: #a08cff; }
+.mono { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 11.5px; letter-spacing: 0; }
+.glass { background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.10); border-radius: 18px;
+  backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%); }
+.nav { height: 54px; margin: 12px 18px 0; padding: 0 10px 0 16px; border-radius: 16px;
+  background: rgba(16,19,28,0.62); border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 10px 32px rgba(0,0,0,0.38);
+  backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+  display: flex; align-items: center; gap: 6px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: 18px; font-weight: 800; letter-spacing: .02em; font-size: 14px; }
+.brand .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #4fd6c8, #a08cff); display: grid; place-items: center; }
+.navitem { padding: 8px 12px; border-radius: 10px; color: #9aa4b8; font-weight: 600; font-size: 13px; }
+.navitem.on { color: #e9edf4; background: rgba(255,255,255,0.085); border: 1px solid rgba(255,255,255,0.10); }
+.navright { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.icobtn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #9aa4b8; }
+.icobtn:hover { background: rgba(255,255,255,0.085); color: #e9edf4; }
+.avatar { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #a08cff, #4fd6c8); display: grid; place-items: center; font-weight: 800; font-size: 11px; color: #0b1512; margin-left: 4px; }
+.cp { display: flex; align-items: center; gap: 14px; padding: 22px 26px 14px; }
+.cp h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+.cp .crumb { color: #6b7488; font-weight: 600; }
+.search { margin-left: auto; width: 380px; height: 40px; border-radius: 12px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); color: #6b7488; }
+.search .chip { margin-left: 0; }
+.seg { display: flex; padding: 3px; border-radius: 12px; background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.10); }
+.seg > div { width: 34px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: #6b7488; }
+.seg > div.on { background: rgba(255,255,255,0.085); color: #e9edf4; border: 1px solid rgba(255,255,255,0.10); }
+.btn { height: 38px; padding: 0 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.055); color: #e9edf4; }
+.btn.primary { background: #4fd6c8; color: #0b1512; border-color: transparent; box-shadow: 0 6px 18px rgba(79,214,200,0.28); }
+.btn.danger { color: #f27b8e; }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 12px; border-radius: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.055); color: #9aa4b8; white-space: nowrap; }
+.chip.on { color: #e9edf4; border-color: rgba(79,214,200,0.45); background: rgba(79,214,200,0.12); }
+.chip .n { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.085); color: #e9edf4; }
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
+.pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
+.pill.ok { color: #4fd6c8; background: rgba(79,214,200,0.13); }
+.pill.wait { color: #f0b45c; background: rgba(240,180,92,0.14); }
+.pill.review { color: #a08cff; background: rgba(160,140,255,0.15); }
+.pill.stop { color: #f27b8e; background: rgba(242,123,142,0.14); }
+.pill.dim { color: #9aa4b8; background: rgba(255,255,255,0.085); }
+.score { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: #e9edf4; }
+.score .bar { width: 46px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.085); overflow: hidden; }
+.score .bar > div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #a08cff, #4fd6c8); }
+.muted { color: #9aa4b8; } .faint { color: #6b7488; }
+.hair { border-top: 1px solid rgba(255,255,255,0.10); }
+.label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7488; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field .v { font-size: 13px; font-weight: 500; }
+.input { height: 36px; border-radius: 10px; padding: 0 12px; display: flex; align-items: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); font-weight: 500; }
+.input.area { height: auto; padding: 10px 12px; align-items: flex-start; line-height: 1.5; }
+.tab { padding: 10px 2px; font-weight: 700; color: #6b7488; border-bottom: 2px solid transparent; }
+.tab.on { color: #e9edf4; border-bottom-color: #4fd6c8; }
+.card { background: rgba(255,255,255,0.085); border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; }
+.card.hot { border-color: rgba(79,214,200,0.5); box-shadow: 0 0 0 3px rgba(79,214,200,0.10), 0 10px 26px rgba(0,0,0,0.18); }
+.card .t { font-weight: 700; font-size: 13.5px; letter-spacing: -.01em; }
+.col { display: flex; flex-direction: column; gap: 10px; padding: 12px; width: 268px; flex: none; }
+.colhead { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; }
+.colhead .t { font-weight: 800; font-size: 13px; }
+.colhead .cnt { font-size: 11px; font-weight: 700; color: #9aa4b8; padding: 2px 7px; border-radius: 999px; background: rgba(255,255,255,0.085); }
+.prog { height: 3px; border-radius: 999px; background: rgba(255,255,255,0.085); margin: 0 4px 4px; overflow: hidden; display: flex; }
+.prog > div { height: 100%; }
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7488; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10); vertical-align: middle; }
+tr.sel td { background: rgba(79,214,200,0.06); }
+.ring { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 18px;
+  background: conic-gradient(#4fd6c8 0 var(--p), rgba(255,255,255,0.085) var(--p) 100%); }
+.ring > div { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: #0d1017; }
+.step { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: #6b7488; }
+.step.done { color: #9aa4b8; } .step.on { color: #e9edf4; }
+.step i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.16); display: block; }
+.step.done i { background: #4fd6c8; } .step.on i { background: #4fd6c8; box-shadow: 0 0 0 4px rgba(79,214,200,0.2); }
+.step .ln { width: 34px; height: 1px; background: rgba(255,255,255,0.16); }
+.msg { display: flex; gap: 10px; }
+.msg .av { width: 28px; height: 28px; border-radius: 8px; flex: none; display: grid; place-items: center; font-weight: 800; font-size: 10px; }
+</style>
+</helmet>
+
+<div class="nav">
+  <div class="brand"><div class="mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0b1512" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l6-8 4 6 6-9"></path><path d="M4 20h16"></path></svg></div><span>Growth Desk</span></div>
+  <div class="navitem on">Pipeline</div><div class="navitem">Review desk</div><div class="navitem">Leads</div><div class="navitem">Reporting</div>
+  <div class="navright">
+    <div class="icobtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg></div>
+    <div class="icobtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg></div>
+    <div class="icobtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></div>
+    <div class="avatar">KK</div>
+  </div>
+</div>
+<div class="cp" style="padding-bottom:12px">
+  <div><div class="crumb">Pipeline / Qualified</div><h1>Brückner Zaunsysteme</h1></div>
+  <div style="display:flex;gap:8px;margin-left:auto">
+    <span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>Fetch mail</span>
+    <span class="btn danger">Revoke approval</span>
+    <span class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg>Approve outreach</span>
+  </div>
+</div>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;padding:0 26px">
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="glass" style="padding:16px 18px;display:flex;align-items:center;gap:22px">
+      <div class="ring" style="--p:83%"><div>83</div></div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="pill wait"><i></i>Draft v3 ready</span>
+          <span class="pill dim"><i></i>Not yet approved</span>
+          <span class="pill dim">Basis · trade fair</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px"><span class="step done"><i></i>Target identified</span><span class="ln"></span><span class="step done"><i></i>Qualified</span><span class="ln"></span><span class="step on"><i></i>Approved</span><span class="ln"></span><span class="step "><i></i>Sent</span><span class="ln"></span><span class="step "><i></i>Replied</span></div>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:2px">
+        <span class="label">Send key</span><span class="mono muted">ggd-1146-v3-9f2c</span>
+        <span class="faint" style="font-size:12px">no claim open</span>
+      </div>
+    </div>
+    <div class="glass" style="padding:0 18px 18px">
+      <div style="display:flex;gap:22px" class="hair">
+        <span class="tab">Internal notes</span><span class="tab">Extra info</span><span class="tab on">GGD intelligence</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px">
+        <div class="card" style="gap:12px">
+          <span class="label">Qualification</span>
+          <div class="field"><span class="label">Industry</span><span class="v">Panel fences · manufacturing</span></div>
+          <div class="field"><span class="label">Source</span><span class="v mono">brueckner-zaun.example</span></div>
+          <div class="field"><span class="label">Product focus</span><span class="v">Double-wire mesh panels, gates</span></div>
+          <div class="field"><span class="label">Fit summary</span><span class="v">Mid-size manufacturer selling through regional dealers; no export desk listed. Fit rests on the DACH-to-EU expansion angle.</span></div>
+          <div class="field"><span class="label">Buyer roles</span><span class="v">Geschäftsführung, Vertriebsleitung</span></div>
+        </div>
+        <div class="card" style="gap:12px">
+          <span class="label">Reviewed outreach draft</span>
+          <div class="input">Ihr Zaunprogramm für Händler in Benelux</div>
+          <div class="input area muted" style="min-height:118px">Guten Tag Herr Brückner,<br><br>auf der Messe in Nürnberg fiel uns Ihr Doppelstabmatten-Programm auf. Wir vermitteln deutsche Hersteller an geprüfte Händler in Benelux und Skandinavien …</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="pill ok"><i></i>Ready</span><span class="pill dim">v3 · de</span>
+            <span class="faint" style="margin-left:auto;font-size:12px">Approved recipient: —</span>
+          </div>
+        </div>
+        <div class="card" style="gap:12px">
+          <span class="label">Outreach control</span>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+            <div class="field"><span class="label">Contact basis</span><span class="v">Trade fair, no opt-in</span></div>
+            <div class="field"><span class="label">Do not contact</span><span class="v">No</span></div>
+            <div class="field"><span class="label">Approved by</span><span class="v faint">—</span></div>
+            <div class="field"><span class="label">Approved at</span><span class="v faint">—</span></div>
+          </div>
+          <div class="field"><span class="label">Basis note</span><span class="v">Business card collected at the stand, 2 Sep. Asked to receive dealer information.</span></div>
+        </div>
+        <div class="card" style="gap:12px">
+          <span class="label">Reply analysis</span>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+            <div class="field"><span class="label">Category</span><span class="v faint">—</span></div>
+            <div class="field"><span class="label">AI confidence</span><span class="v faint">—</span></div>
+            <div class="field"><span class="label">Last analyzed</span><span class="v faint">—</span></div>
+            <div class="field"><span class="label">Delivery status</span><span class="v">Not sent</span></div>
+          </div>
+          <div class="field"><span class="label">Suggested next action</span><span class="v faint">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="glass" style="padding:16px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-weight:800">Chatter</span>
+      <span class="chip" style="margin-left:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>Send message</span>
+      <span class="chip">Log note</span>
+    </div>
+    <div class="msg"><div class="av" style="background:rgba(160,140,255,0.2);color:#a08cff">AI</div>
+      <div><div style="font-weight:700">GGD-02 <span class="faint" style="font-weight:500">· today 09:14</span></div>
+      <div class="muted">Draft v3 written. Angle: Nürnberg trade fair, dealer expansion.</div></div></div>
+    <div class="msg"><div class="av" style="background:rgba(79,214,200,0.18);color:#4fd6c8">KK</div>
+      <div><div style="font-weight:700">Kaan <span class="faint" style="font-weight:500">· yesterday</span></div>
+      <div class="muted">Business card from the stand. Send after the fair week.</div></div></div>
+    <div class="msg"><div class="av" style="background:rgba(240,180,92,0.18);color:#f0b45c"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg></div>
+      <div><div style="font-weight:700">Automation <span class="faint" style="font-weight:500">· 2 Sep</span></div>
+      <div class="muted">Qualified with fit 83 by GGD-01.</div></div></div>
+    <div class="hair"></div>
+    <span class="label">Activities</span>
+    <div class="card" style="gap:4px"><div style="font-weight:700">Follow up if no reply</div><div class="faint" style="font-size:12px">Due in 6 days · Kaan</div></div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,134 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Aurora"
+    },
+    {
+      "id": "page-2",
+      "name": "Tone alternates"
+    },
+    {
+      "id": "page-3",
+      "name": "Other directions"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Pipeline · dark",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "ReviewDesk.dc.html",
+      "title": "Review desk · dark",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "LeadForm.dc.html",
+      "title": "Opportunity · dark",
+      "x": 0,
+      "y": 1040,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "PipelineLight.dc.html",
+      "title": "Pipeline · light",
+      "x": 1540,
+      "y": 1040,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "DirectionEmber.dc.html",
+      "title": "Ember",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 480,
+      "page": "page-2"
+    },
+    {
+      "file": "DirectionGraphite.dc.html",
+      "title": "Graphite",
+      "x": 820,
+      "y": 0,
+      "w": 720,
+      "h": 480,
+      "page": "page-2"
+    },
+    {
+      "file": "DirectionLedger.dc.html",
+      "title": "Ledger · editorial paper",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-3"
+    },
+    {
+      "file": "DirectionBento.dc.html",
+      "title": "Bento · soft tinted",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-3"
+    },
+    {
+      "file": "DirectionNoir.dc.html",
+      "title": "Noir · black and gold",
+      "x": 0,
+      "y": 1040,
+      "w": 1440,
+      "h": 900,
+      "page": "page-3"
+    },
+    {
+      "file": "DirectionTerminal.dc.html",
+      "title": "Terminal · operator console",
+      "x": 1540,
+      "y": 1040,
+      "w": 1440,
+      "h": 900,
+      "page": "page-3"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "aurora-note",
+      "x": 0,
+      "y": -150,
+      "w": 560,
+      "page": "page-1",
+      "text": "Aurora: cool charcoal, teal + violet accents, glass over a faint two-corner glow.\nDark is the primary theme; light keeps the same structure.\nStatus colours: teal = ok, amber = waiting, violet = needs a human, rose = blocked.\nCompany names are invented sample data."
+    },
+    {
+      "id": "alt-note",
+      "x": 0,
+      "y": -110,
+      "w": 480,
+      "page": "page-2",
+      "text": "Two tone alternates on the same glass system. Pick one, or keep Aurora."
+    },
+    {
+      "id": "dir-note",
+      "x": 0,
+      "y": -170,
+      "w": 640,
+      "page": "page-3",
+      "text": "Four directions that are not glass, each on its own axis. Same content as Aurora so only the look differs.\nLedger: warm paper, serif, ruled lists, one vermilion. Calm and unlike any CRM; dark mode becomes an 'ink' inversion, and status must carry on text more than colour.\nBento: cream ground, tinted columns, pill-shaped everything. Friendly and quick to read; the risk is reading as a consumer app.\nNoir: black, ivory, gold hairlines, serif titles. Premium and quiet; density costs are real and light mode is an afterthought.\nTerminal: monospace operator console, grid, bracketed tags, key hints. Most distinctive and densest; the least forgiving for a non-developer."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-3"
+  }
+}
