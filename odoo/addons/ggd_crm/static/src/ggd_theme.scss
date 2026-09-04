@@ -67,7 +67,7 @@ html[data-ggd-scheme="dark"] {
     --ggd-glow-2-a: 0.15;
     --ggd-glass: rgba(255, 255, 255, 0.055);
     --ggd-glass-2: rgba(255, 255, 255, 0.085);
-    --ggd-popover: rgba(24, 28, 38, 0.94);
+    --ggd-popover: rgba(24, 28, 38, 0.97);
     --ggd-border: rgba(255, 255, 255, 0.10);
     --ggd-border-2: rgba(255, 255, 255, 0.16);
     --ggd-nav: #0f1218;
@@ -108,7 +108,7 @@ html[data-ggd-scheme="dark"][data-ggd-tone="ember"] {
     --ggd-glow-2-a: 0.14;
     --ggd-glass: rgba(255, 255, 255, 0.06);
     --ggd-glass-2: rgba(255, 255, 255, 0.09);
-    --ggd-popover: rgba(32, 26, 22, 0.94);
+    --ggd-popover: rgba(32, 26, 22, 0.97);
     --ggd-border: rgba(255, 255, 255, 0.11);
     --ggd-border-2: rgba(255, 255, 255, 0.17);
     --ggd-nav: #171310;
@@ -144,7 +144,7 @@ html[data-ggd-scheme="dark"][data-ggd-tone="graphite"] {
     --ggd-glow-2-a: 0.10;
     --ggd-glass: rgba(255, 255, 255, 0.05);
     --ggd-glass-2: rgba(255, 255, 255, 0.08);
-    --ggd-popover: rgba(26, 27, 31, 0.94);
+    --ggd-popover: rgba(26, 27, 31, 0.97);
     --ggd-border: rgba(255, 255, 255, 0.10);
     --ggd-border-2: rgba(255, 255, 255, 0.16);
     --ggd-nav: #121316;
@@ -737,7 +737,9 @@ body,
     .ggd_strip_pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .ggd_strip_pills .o_field_widget { width: auto; }
     .ggd_strip_meta { color: var(--ggd-muted); font-size: 12px; font-weight: 500; }
-    .ggd_strip_meta .o_field_widget { display: inline; width: auto; }
+    .ggd_strip_meta > span { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+    .ggd_strip_meta .o_field_widget { display: inline-flex !important; width: auto !important; margin: 0 !important; }
+    .ggd_strip_meta .o_field_widget .o_input, .ggd_strip_meta .o_field_widget input { padding: 0; }
     .ggd_strip_meta .o_field_widget a, .ggd_strip_meta .o_field_widget span { color: var(--ggd-text) !important; font-weight: 600; }
     .ggd_strip_key { text-align: right; display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
     .ggd_strip_key .o_field_widget { width: auto; color: var(--ggd-muted) !important; }
@@ -779,6 +781,73 @@ body,
     .o_datetime_picker .o_date_item_cell.o_selected { background: RGBA(var(--ggd-accent-rgb), 0.35) !important; color: var(--ggd-text) !important; }
     .o_datetime_picker .o_date_item_cell:hover { background: var(--ggd-glass-2) !important; }
     .o_datetime_picker .o_today { border-color: var(--ggd-accent) !important; }
+}
+
+// ------------------------------------------------- discuss and settings
+// Both are one click away from the CRM and both paint their own greys.
+
+.o_web_client {
+    .o-mail-DiscussSidebar, .o-mail-DiscussSearch, .o-mail-DiscussSidebar-item,
+    .o-mail-DiscussSidebarChannel, .o-mail-DiscussSidebarChannel-container,
+    .o-mail-DiscussSidebarChannel-itemMain, .o-mail-DiscussSidebar .o-gap-0_5,
+    .o-mail-DiscussContent-header, .o-mail-DiscussContent-core, .o-mail-DiscussContent-core .bg-inherit,
+    .o-mail-Discuss, .o-mail-DiscussContent {
+        background: transparent !important;
+        color: var(--ggd-text);
+        border-color: var(--ggd-border) !important;
+    }
+    .o-mail-Discuss { padding: 0 22px 22px; gap: 14px; }
+    .o-mail-DiscussSidebar { @extend %ggd-glass; padding: 8px; }
+    .o-mail-DiscussContent { @extend %ggd-glass; overflow: hidden; }
+    .o-mail-DiscussSidebar-item, .o-mail-DiscussSidebarChannel { border-radius: 8px !important; color: var(--ggd-text) !important; }
+    .o-mail-DiscussSidebar-item:hover, .o-mail-DiscussSidebarChannel:hover,
+    .o-mail-DiscussSidebar-item.o-active, .o-mail-DiscussSidebarChannel.o-active,
+    .o-mail-DiscussSidebar-item.o-active .o-mail-DiscussSidebarChannel-itemMain { background: var(--ggd-glass-2) !important; }
+    .o-mail-DiscussContent-threadName, .o-mail-DiscussContent-header input,
+    .text-900, .text-dark, .text-black { color: var(--ggd-text) !important; }
+    .o-mail-DiscussSearch-inputContainer { background: var(--ggd-input) !important; border-color: var(--ggd-border) !important; border-radius: 10px; }
+    // Odoo colours the bubbles with .o-blue/.o-green/.o-orange rules that carry
+    // !important at the same weight as a plain override, so these are one
+    // class heavier on purpose.
+    --o-message-bubble-bg: var(--ggd-glass-2);
+    .o-mail-Message .o-mail-Message-bubble,
+    .o-mail-Message .o-mail-Message-bubble.o-blue,
+    .o-mail-Message .o-mail-Message-bubble.o-green,
+    .o-mail-Message .o-mail-Message-bubble.o-orange,
+    .o-mail-Message .o-mail-Message-bubble.o-muted {
+        background: var(--ggd-glass-2) !important;
+        border-color: var(--ggd-border) !important;
+    }
+    .o-mail-Message.o-selfAuthored .o-mail-Message-bubble,
+    .o-mail-Message.o-selfAuthored .o-mail-Message-bubble.o-blue,
+    .o-mail-Message.o-selfAuthored .o-mail-Message-bubble.o-green { background: RGBA(var(--ggd-accent-rgb), 0.16) !important; }
+    .o-mail-Composer-bg, .o-mail-Composer-inputContainer, .o-mail-Composer-quickActions, .o-mail-Composer-actions {
+        background: var(--ggd-input) !important;
+        border-color: var(--ggd-border) !important;
+    }
+    // Odoo's onboarding pointer keeps its shape but takes the accent
+    .o_tour_pointer_tip { background: var(--ggd-accent) !important; }
+
+    .settings_tab, .settings, .o_setting_container, .app_settings_block, .o_settings_container,
+    .settings .o_setting_box, .settings .o_setting_left_pane, .settings .o_setting_right_pane {
+        background: transparent !important;
+        color: var(--ggd-text);
+        border-color: var(--ggd-border) !important;
+    }
+    .settings_tab { @extend %ggd-glass; border-radius: 0 !important; border-width: 0 1px 0 0 !important; }
+    .settings_tab .tab { color: var(--ggd-text) !important; border-radius: 8px; }
+    .settings_tab .tab.selected, .settings_tab .tab:hover { background: var(--ggd-glass-2) !important; }
+    .settings h2 { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+    .settings .o_setting_box .o_form_label { color: var(--ggd-text) !important; }
+    .settings .text-muted { color: var(--ggd-muted) !important; }
+    .settings .o_setting_right_pane { border-left-color: var(--ggd-border) !important; }
+
+    // alerts in either scheme
+    .alert { border-radius: var(--ggd-radius-sm); border-color: transparent; }
+    .alert-warning { background: RGBA(var(--ggd-wait-rgb), 0.16) !important; color: var(--ggd-wait) !important; }
+    .alert-info { background: RGBA(var(--ggd-review-rgb), 0.16) !important; color: var(--ggd-review) !important; }
+    .alert-danger { background: RGBA(var(--ggd-stop-rgb), 0.14) !important; color: var(--ggd-stop) !important; }
+    .alert-success { background: RGBA(var(--ggd-ok-rgb), 0.14) !important; color: var(--ggd-ok) !important; }
 }
 
 // ------------------------------------------------------------- misc
