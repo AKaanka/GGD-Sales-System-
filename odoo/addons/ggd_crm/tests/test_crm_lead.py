@@ -1957,3 +1957,68 @@ class TestGgdDailySendCap(TransactionCase):
         lead = self._approved_lead(1)
         self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
         self.assertFalse(lead.ggd_claim_send_key(self._key(lead)))
+
+
+@tagged("post_install", "-at_install")
+class TestGgdAutomatedMailSuppression(TransactionCase):
+    """Leads the mail gateway makes from machine mail arrive suppressed."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def _incoming(self, sender, subject="Inbound"):
+        return self.Lead.message_new(
+            {
+                "email_from": sender,
+                "subject": subject,
+                "message_id": "<gw-%s@ggd-qa.invalid>" % abs(hash(sender)),
+            },
+            {"name": subject, "type": "opportunity"},
+        )
+
+    def test_dmarc_report_arrives_suppressed(self):
+        """The exact sender that reached the pipeline on 2 and 4 September."""
+        lead = self._incoming(
+            "noreply-dmarc-support@google.com",
+            "Report domain: germanygrowthdesk.com Submitter: google.com",
+        )
+        self.assertTrue(lead.ggd_do_not_contact)
+        self.assertTrue(lead.ggd_automation_needs_review)
+
+    def test_machine_senders_are_suppressed(self):
+        for sender in (
+            "mailer-daemon@example.com",
+            "postmaster@example.com",
+            "no-reply@vendor.example",
+            "noreply@vendor.example",
+            "do-not-reply@vendor.example",
+            "bounces@vendor.example",
+            "abuse@vendor.example",
+        ):
+            with self.subTest(sender=sender):
+                self.assertTrue(self._incoming(sender).ggd_do_not_contact)
+
+    def test_a_real_enquiry_is_untouched(self):
+        """The alias must still take ordinary inbound mail normally."""
+        lead = self._incoming("buyer@fictional-prospect.invalid", "Quote request")
+        self.assertFalse(lead.ggd_do_not_contact)
+        self.assertFalse(lead.ggd_automation_needs_review)
+
+    def test_a_suppressed_lead_cannot_be_approved(self):
+        lead = self._incoming("noreply-dmarc-support@google.com")
+        lead.write(
+            {
+                "ggd_contact_basis": "other",
+                "ggd_contact_basis_note": VALID_NOTE,
+                "ggd_draft_subject": VALID_DRAFT_SUBJECT,
+                "ggd_draft_body": VALID_DRAFT_BODY,
+                "ggd_draft_version": VALID_DRAFT_VERSION,
+            }
+        )
+        # Filling in the basis is exactly what the old validation error
+        # invited; it must no longer be enough to unlock the send path.
+        with self.assertRaises(ValidationError):
+            lead.action_ggd_approve_outreach()
+        self.assertFalse(lead.ggd_outreach_approved)

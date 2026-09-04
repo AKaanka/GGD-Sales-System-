@@ -30,6 +30,16 @@ class CrmLead(models.Model):
     # Group that may approve outreach and clear Do not contact.
     GGD_APPROVER_GROUP = "ggd_crm.group_ggd_outreach_approver"
 
+    # Senders whose mail is machine-generated: bounces, delivery and DMARC
+    # reports, and the no-reply mailboxes they come from. Deliberately close
+    # to the bounceSignals regex in GGD-04's "Normalize and sanitize inbound
+    # email" node, so the two lists do not drift apart.
+    GGD_AUTOMATED_SENDER = re.compile(
+        r"(mailer-daemon|postmaster|no-?reply|do-?not-?reply|"
+        r"bounce|dmarc|abuse@|nobody@)",
+        re.I,
+    )
+
     # Minimum length for the contact-basis note. The note must carry actual
     # evidence - a date, a source, a document reference - not a restatement of
     # the selection label. A length floor cannot enforce quality, but it does
@@ -795,6 +805,42 @@ class CrmLead(models.Model):
                 )
             )
         return True
+
+    @api.model
+    def message_new(self, msg_dict, custom_values=None):
+        """Suppress leads the mail gateway creates from machine mail.
+
+        The info@ alias mints an opportunity for every message delivered to
+        it, so DMARC aggregate reports, delivery notifications and vendor
+        no-reply mail all arrive as leads carrying a live, deliverable
+        address. Nothing downstream recognises them for what they are:
+        GGD-01 skips them only because they happen to have no source URL,
+        and approval is refused only because they happen to have no contact
+        basis - a field a person can fill in to make the validation error go
+        away, which is what the error text invites. Setting Do not contact
+        on arrival makes the suppression a property of the record instead of
+        an absent field, and clearing it already requires an approver.
+
+        The lead is still created. Refusing would drop mail on the floor,
+        and a suppressed record that a human can see is worth more than a
+        message nobody knows arrived.
+        """
+        values = dict(custom_values or {})
+        sender = (msg_dict or {}).get("email_from") or ""
+        automated = bool(self.GGD_AUTOMATED_SENDER.search(sender))
+        if automated:
+            values["ggd_do_not_contact"] = True
+            values["ggd_automation_needs_review"] = True
+        lead = super().message_new(msg_dict, values)
+        if automated:
+            lead.message_post(
+                body=_(
+                    "Created from machine-generated mail (%(sender)s). Marked "
+                    "Do not contact on arrival; clearing it needs an approver.",
+                    sender=sender,
+                )
+            )
+        return lead
 
     def _ggd_check_approver(self, action):
         """Raise AccessError unless the acting user may authorise outreach.
