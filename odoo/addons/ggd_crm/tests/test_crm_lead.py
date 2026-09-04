@@ -1863,6 +1863,21 @@ class TestGgdDailySendCap(TransactionCase):
         cls.Lead = cls.env["crm.lead"]
         cls.Params = cls.env["ir.config_parameter"].sudo()
 
+    def setUp(self):
+        super().setUp()
+        # The cap counts every lead in the database, not only this class's
+        # fixtures, so any real send claimed in the trailing 24 hours makes
+        # these tests start from a non-zero count and the arithmetic below
+        # stops holding. Clearing the window here keeps the suite reproducible
+        # whatever the stack has been doing; TransactionCase rolls the
+        # statement back, so live records are not modified.
+        self.env.cr.execute(
+            "UPDATE crm_lead SET ggd_last_sent_at = NULL "
+            "WHERE ggd_last_sent_at >= %s",
+            (fields.Datetime.now() - timedelta(hours=24),),
+        )
+        self.Lead.invalidate_model(["ggd_last_sent_at"])
+
     def _set_cap(self, value):
         self.Params.set_param(self.Lead.GGD_DAILY_SEND_CAP_PARAM, value)
 
