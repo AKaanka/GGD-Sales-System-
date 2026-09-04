@@ -4,9 +4,13 @@ from uuid import uuid4
 
 from markupsafe import Markup, escape
 
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tools import email_normalize
+
+_logger = logging.getLogger(__name__)
 
 
 class CrmLead(models.Model):
@@ -29,6 +33,13 @@ class CrmLead(models.Model):
 
     # Group that may approve outreach and clear Do not contact.
     GGD_APPROVER_GROUP = "ggd_crm.group_ggd_outreach_approver"
+
+    # Manual mail fetch (#49). The cron polls every 5 minutes; this is the
+    # button that does not wait. The floor is server-side because a button a
+    # person can hold down is a button that hammers Zoho's IMAP endpoint, and
+    # a lockout on info@ would stop all incoming mail rather than one click.
+    GGD_FETCH_MIN_INTERVAL_SECONDS = 30
+    GGD_FETCH_LAST_RUN_PARAM = "ggd_crm.last_manual_mail_fetch"
 
     # Senders whose mail is machine-generated: bounces, delivery and DMARC
     # reports, and the no-reply mailboxes they come from. Deliberately close
@@ -841,6 +852,85 @@ class CrmLead(models.Model):
                 )
             )
         return lead
+
+    @api.model
+    def ggd_fetch_incoming_mail(self):
+        """Poll the incoming mail servers now, for a user without Settings rights.
+
+        Reading the mailbox this database is already configured to read is not
+        an administrative act, but `fetchmail.server` is admin-only, so the
+        fetch runs under sudo. Two things keep that narrow: the method takes no
+        arguments, so a caller cannot name a server and make Odoo connect
+        somewhere of their choosing, and it only touches servers already
+        confirmed in Settings.
+
+        Returns a plain dict for the UI rather than raising. A mail server that
+        is unreachable is an ordinary Tuesday, not an error worth a traceback
+        in the user's face.
+        """
+        Param = self.env["ir.config_parameter"].sudo()
+        now = fields.Datetime.now()
+
+        previous = fields.Datetime.to_datetime(
+            Param.get_param(self.GGD_FETCH_LAST_RUN_PARAM) or False
+        )
+        if previous:
+            waited = (now - previous).total_seconds()
+            if 0 <= waited < self.GGD_FETCH_MIN_INTERVAL_SECONDS:
+                return {
+                    "ok": False,
+                    "reason": "rate_limited",
+                    "message": _(
+                        "Mail was fetched %(seconds)s seconds ago. Wait a moment "
+                        "before fetching again — the mail server rate-limits, and "
+                        "the 5-minute poll is still running either way.",
+                        seconds=int(waited),
+                    ),
+                }
+
+        servers = self.env["fetchmail.server"].sudo().search([("state", "=", "done")])
+        if not servers:
+            return {
+                "ok": False,
+                "reason": "no_server",
+                "message": _(
+                    "No confirmed incoming mail server is configured, so there is "
+                    "nothing to fetch from."
+                ),
+            }
+
+        Message = self.env["mail.message"].sudo()
+        before = Message.search([], order="id desc", limit=1).id or 0
+
+        # Claim the slot before fetching, not after: a fetch that hangs must
+        # still hold the rate limit, or holding the button queues them up.
+        Param.set_param(self.GGD_FETCH_LAST_RUN_PARAM, fields.Datetime.to_string(now))
+
+        try:
+            servers.fetch_mail()
+        except Exception:  # noqa: BLE001 - surfaced to the user, not swallowed
+            _logger.exception("Manual mail fetch failed")
+            return {
+                "ok": False,
+                "reason": "error",
+                "message": _(
+                    "The mail server could not be reached. The 5-minute poll will "
+                    "keep trying; check Settings > Technical > Incoming Mail "
+                    "Servers if this persists."
+                ),
+            }
+
+        arrived = Message.search_count([("id", ">", before)])
+        return {
+            "ok": True,
+            "reason": "fetched",
+            "count": arrived,
+            "message": (
+                _("Fetched %(count)s new message(s).", count=arrived)
+                if arrived
+                else _("Fetched — nothing new.")
+            ),
+        }
 
     def _ggd_check_approver(self, action):
         """Raise AccessError unless the acting user may authorise outreach.

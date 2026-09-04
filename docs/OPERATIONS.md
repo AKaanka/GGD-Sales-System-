@@ -97,6 +97,33 @@ exists to prevent.
 
 If a backup fails checksum verification, do not decrypt it. Fetch another copy.
 
+### Fetching incoming mail by hand
+
+Incoming mail is polled, not pushed: `Mail: Fetchmail Service` runs every five
+minutes, so a reply can sit unseen for that long. The chatter on an opportunity
+carries a **Fetch mail** button beside *Send message* that polls immediately and
+pulls anything new into the open chatter.
+
+It works for any CRM user and grants nobody Settings rights. `fetchmail.server`
+is admin-only, so `crm.lead.ggd_fetch_incoming_mail()` runs the fetch under
+`sudo`; it takes no arguments and only touches servers already confirmed in
+Settings, so a caller cannot name a server and make Odoo connect somewhere of
+their choosing.
+
+Presses are rate-limited to one every **30 seconds**, enforced on the server
+rather than by greying the button out. The limit protects a shared IMAP
+endpoint: Zoho throttles, and a lockout on `info@` would stop *all* incoming
+mail rather than one impatient click. The slot is claimed before the fetch
+runs, so a fetch that hangs still holds the limit.
+
+The five-minute cron keeps running regardless. The button is a shortcut, not a
+replacement, and turning the cron off would leave mail arriving only when
+somebody happens to click.
+
+To change the interval, edit `GGD_FETCH_MIN_INTERVAL_SECONDS` in
+`odoo/addons/ggd_crm/models/crm_lead.py`. The last run is stored in
+`ir.config_parameter` as `ggd_crm.last_manual_mail_fetch`.
+
 ## Updates
 
 Never update Odoo and n8n blindly.
