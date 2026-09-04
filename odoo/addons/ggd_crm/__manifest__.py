@@ -16,6 +16,7 @@
         "web.assets_backend": [
             "ggd_crm/static/src/dark_mode_systray.js",
             "ggd_crm/static/src/dark_mode_systray.xml",
+            "ggd_crm/static/src/dark_mode_systray.scss",
         ],
         # Served only when the cookie asks for dark, so light mode pays
         # nothing for it.

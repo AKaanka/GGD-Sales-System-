@@ -264,3 +264,46 @@ hr, .o_horizontal_separator, .table > :not(caption) > * > * {
         color: $ggd-text !important;
     }
 }
+
+// ------------------------------------------------- third pass: unreadable text
+// Kaan: "I cannot see some writing, only when I click them."
+//
+// Found by walking the DOM and comparing each element's colour against its
+// effective background: the offenders were carrying rgb(33, 37, 41) -
+// Bootstrap's $body-color - on a background of rgb(30, 33, 40). Near-black on
+// near-black. They only appeared on click because focus and hover states put
+// a lighter background behind them.
+//
+// Inheriting from body was not enough because these elements set the colour
+// explicitly in light mode, so the value had to be replaced rather than left
+// to cascade.
+.o_web_client {
+    b, strong, em, u, s, small, mark,
+    td, th, li, dt, dd, caption, legend, label,
+    .o_field_widget, .o_form_label, .o_horizontal_separator,
+    .o_kanban_record_title, .oe_kanban_details,
+    .o_stat_text, .o_stat_value, .o_column_title,
+    .o_data_cell, .o_list_number, .o_list_char, .o_list_text,
+    .o_notebook .nav-link, .breadcrumb-item, .o_last_breadcrumb_item {
+        color: $ggd-text;
+    }
+
+    // The kanban column totals were the specific case reported. They sit on
+    // the page background rather than a card, so they had nothing to hide in.
+    .o_kanban_counter, .o_kanban_counter_side, .o_kanban_counter_progress,
+    .o_column_progress, .o_kanban_header .o_kanban_config,
+    .o_kanban_counter b, .o_kanban_header b, .o_column_title b {
+        color: $ggd-text !important;
+    }
+
+    // Semantic colours must survive all of the above: an overdue date being
+    // red is information, not styling.
+    .text-danger, .text-danger * { color: #f0776c !important; }
+    .text-success, .text-success * { color: #6bcf8e !important; }
+    .text-warning, .text-warning * { color: #e8c468 !important; }
+    .text-info, .text-info * { color: #6cb6e8 !important; }
+}
+
+// The button takes its colour from the navbar by inheritance, and its shape
+// from dark_mode_systray.scss in the always-loaded bundle. Nothing to add
+// here - a colour override would only fight the light-mode case.
