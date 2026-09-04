@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="ggd_crm.RingField">
+        <div class="ggd_ring"
+             t-att-class="{ 'ggd_ring--sm': props.size === 'sm', 'ggd_ring--empty': !hasValue }"
+             t-att-style="style"
+             t-att-title="title"
+             role="img"
+             t-att-aria-label="title">
+            <div class="ggd_ring_inner">
+                <t t-if="hasValue" t-esc="value"/>
+                <t t-else="">–</t>
+            </div>
+        </div>
+    </t>
+
+</templates>

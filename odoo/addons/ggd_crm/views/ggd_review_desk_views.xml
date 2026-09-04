@@ -99,12 +99,22 @@
                 <field name="name"/>
                 <field name="partner_name" optional="show"/>
                 <field name="email_from" optional="show"/>
-                <field name="ggd_fit_score" optional="show"/>
-                <field name="ggd_qualification_state" optional="show"/>
-                <field name="ggd_draft_status" optional="show"/>
+                <field name="ggd_fit_score" widget="ggd_ring" options="{'size': 'sm'}" optional="show"/>
+                <field name="ggd_qualification_state" widget="badge" optional="show"
+                       decoration-success="ggd_qualification_state == 'ready'"
+                       decoration-info="ggd_qualification_state == 'review'"
+                       decoration-danger="ggd_qualification_state == 'failed'"/>
+                <field name="ggd_draft_status" widget="badge" optional="show"
+                       decoration-success="ggd_draft_status in ('approved', 'sent')"
+                       decoration-warning="ggd_draft_status == 'ready'"/>
                 <field name="ggd_outreach_approved" optional="show"/>
-                <field name="ggd_delivery_status" optional="show"/>
-                <field name="ggd_reply_category" optional="show"/>
+                <field name="ggd_delivery_status" widget="badge" optional="show"
+                       decoration-danger="ggd_delivery_status in ('claimed', 'bounced')"
+                       decoration-success="ggd_delivery_status == 'accepted'"/>
+                <field name="ggd_reply_category" widget="badge" optional="show"
+                       decoration-success="ggd_reply_category in ('interested', 'meeting')"
+                       decoration-info="ggd_reply_category in ('objection', 'unclear', 'information', 'referral')"
+                       decoration-danger="ggd_reply_category in ('unsubscribe', 'not_interested')"/>
                 <field name="ggd_contact_basis" optional="hide"/>
                 <field name="ggd_do_not_contact" optional="hide"/>
                 <field name="ggd_last_sent_at" optional="hide"/>

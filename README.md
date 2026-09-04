@@ -90,6 +90,9 @@ Never use the Odoo master password as your normal Odoo login password.
 4. Remove the default `Apps` filter and search for `GGD CRM`.
 5. Install **Germany Growth Desk CRM Controls**.
 6. Follow [docs/ODOO-SETUP.md](docs/ODOO-SETUP.md) to create the pipeline.
+   The interface wears the Aurora theme, with a light and a dark scheme and
+   three tones chosen from the sun/moon button in the top bar; see
+   [docs/UI-THEME.md](docs/UI-THEME.md).
 
 The extension adds approval, compliance, qualification, reply-analysis, and LLM audit fields to opportunities.
 

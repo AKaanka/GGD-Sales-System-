@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Markup follows Odoo's own systray items: a bare button holding an
+         fa-lg icon inside o_menu_systray_item, so it sits and hovers like the
+         clock and chat icons beside it. -->
+    <t t-name="ggd_crm.AppearanceMenu">
+        <div class="o_menu_systray_item o_ggd_appearance">
+            <Dropdown position="'bottom-end'" menuClass="'o_ggd_appearance_menu'">
+                <button title="Appearance" aria-label="Appearance">
+                    <i t-att-class="'fa fa-lg ' + (isDark ? 'fa-moon-o' : 'fa-sun-o')" role="img"/>
+                </button>
+                <t t-set-slot="content">
+                    <div class="dropdown-header">Scheme</div>
+                    <DropdownItem class="{ 'ggd_on': !isDark }" onSelected="() => this.setScheme('light')">
+                        <i class="fa fa-sun-o me-2" role="img"/>Light
+                    </DropdownItem>
+                    <DropdownItem class="{ 'ggd_on': isDark }" onSelected="() => this.setScheme('dark')">
+                        <i class="fa fa-moon-o me-2" role="img"/>Dark
+                    </DropdownItem>
+                    <div class="dropdown-divider"/>
+                    <div class="dropdown-header">Tone</div>
+                    <t t-foreach="tones" t-as="tone" t-key="tone.id">
+                        <DropdownItem class="{ 'ggd_on': state.tone === tone.id }" onSelected="() => this.setTone(tone.id)">
+                            <span class="ggd_swatch" t-attf-style="background: {{ tone.swatch }}"/>
+                            <t t-esc="tone.label"/>
+                        </DropdownItem>
+                    </t>
+                </t>
+            </Dropdown>
+        </div>
+    </t>
+
+</templates>
