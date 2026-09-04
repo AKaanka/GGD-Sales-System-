@@ -94,11 +94,12 @@ class TestGgdOutreachApproval(TransactionCase):
     # Approval refusals
     # ------------------------------------------------------------------
 
-    def test_approve_refused_without_contact_basis(self):
+    def test_approve_allowed_without_contact_basis(self):
+        """Kaan's decision, 4 September 2026: the basis no longer gates approval."""
         lead = self._lead(ggd_contact_basis_note=VALID_NOTE)
-        with self.assertRaises(ValidationError):
-            lead.action_ggd_approve_outreach()
-        self.assertFalse(lead.ggd_outreach_approved)
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_contact_basis)
 
     def test_approve_refused_when_do_not_contact(self):
         lead = self._lead(
@@ -130,16 +131,16 @@ class TestGgdOutreachApproval(TransactionCase):
                 self.assertTrue(lead.ggd_outreach_approved)
                 self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
 
-    def test_approve_refused_when_note_missing_or_thin(self):
+    def test_approve_allowed_when_note_missing_or_thin(self):
+        """The 20-character evidence floor no longer gates approval."""
         for note in (False, "", "   ", "ok"):
             with self.subTest(note=note):
                 lead = self._lead(
                     ggd_contact_basis="consent",
                     ggd_contact_basis_note=note,
                 )
-                with self.assertRaises(ValidationError):
-                    lead.action_ggd_approve_outreach()
-                self.assertFalse(lead.ggd_outreach_approved)
+                lead.action_ggd_approve_outreach()
+                self.assertTrue(lead.ggd_outreach_approved)
 
     # ------------------------------------------------------------------
     # Approval success and metadata
@@ -201,30 +202,34 @@ class TestGgdOutreachApproval(TransactionCase):
     # ------------------------------------------------------------------
 
     def test_direct_write_cannot_bypass_the_gate(self):
-        """A gate enforced only in the UI button is not a gate."""
+        """A gate enforced only in the UI button is not a gate.
+
+        The contact basis left the gate on 4 September 2026; Do not contact
+        did not, and write() must still refuse it exactly as the button does.
+        """
         lead = self._lead(
             ggd_contact_basis=False,
             ggd_contact_basis_note=VALID_NOTE,
+            ggd_do_not_contact=True,
         )
         with self.assertRaises(ValidationError):
             lead.write({"ggd_outreach_approved": True})
         self.assertFalse(lead.ggd_outreach_approved)
 
-    def test_direct_write_cannot_bypass_the_note_requirement(self):
+    def test_direct_write_approves_without_a_note(self):
         lead = self._lead(ggd_contact_basis="consent")
-        with self.assertRaises(ValidationError):
-            lead.write({"ggd_outreach_approved": True})
-        self.assertFalse(lead.ggd_outreach_approved)
+        lead.write({"ggd_outreach_approved": True})
+        self.assertTrue(lead.ggd_outreach_approved)
 
-    def test_create_cannot_bypass_the_gate(self):
-        """A record must not come into existence already approved without a
-        basis, when it could never have been approved afterwards."""
-        with self.assertRaises(ValidationError):
-            self._lead(
-                ggd_contact_basis=False,
-                ggd_contact_basis_note=VALID_NOTE,
-                ggd_outreach_approved=True,
-            )
+    def test_create_approved_without_a_basis_is_allowed(self):
+        """Born approved with no basis: permitted now, since a basis is no
+        longer something the record could have been refused for later."""
+        lead = self._lead(
+            ggd_contact_basis=False,
+            ggd_contact_basis_note=VALID_NOTE,
+            ggd_outreach_approved=True,
+        )
+        self.assertTrue(lead.ggd_outreach_approved)
 
     def test_create_approved_allowed_on_a_sound_basis(self):
         lead = self._lead(
@@ -639,39 +644,30 @@ class TestGgdOutreachApproval(TransactionCase):
 
                 self.assertFalse(lead.ggd_last_send_key)
 
-    def test_contact_basis_cleared_after_approval_is_rejected(self):
-        """A basis removed after approval must stop the send.
+    def test_contact_basis_cleared_after_approval_still_sends(self):
+        """Clearing the basis after approval no longer stops the claim.
 
-        Approval happened on consent; the basis is then cleared. The approval
-        flag is still true, so only a fresh read of the basis under the claim
-        lock catches this.
+        It used to: the claim re-read the basis under the row lock. That
+        blocker was removed with the approval-time check, so the two cannot
+        disagree and an approved lead cannot stall at the claim.
         """
         lead = self._approved_lead()
         lead.write({"ggd_contact_basis": False})
         self.assertTrue(lead.ggd_outreach_approved)
+        self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
+        self.assertEqual(lead.ggd_last_send_key, self._key(lead))
 
-        with self.assertRaises(ValidationError):
-            lead.ggd_claim_send_key(self._key(lead))
-        with self.assertRaises(ValidationError):
-            lead.write({"ggd_last_send_key": self._key(lead)})
-
-        self.assertFalse(lead.ggd_last_send_key)
-
-    def test_missing_contact_basis_is_rejected(self):
+    def test_missing_contact_basis_no_longer_blocks_the_claim(self):
         lead = self._approved_lead()
         lead.write({"ggd_contact_basis": False})
+        lead.write({"ggd_last_send_key": self._key(lead)})
+        self.assertEqual(lead.ggd_last_send_key, self._key(lead))
 
-        with self.assertRaises(ValidationError):
-            lead.write({"ggd_last_send_key": self._key(lead)})
-        self.assertFalse(lead.ggd_last_send_key)
-
-    def test_thin_contact_basis_note_is_rejected(self):
+    def test_thin_contact_basis_note_no_longer_blocks_the_claim(self):
         lead = self._approved_lead()
         lead.write({"ggd_contact_basis_note": "ok"})
-
-        with self.assertRaises(ValidationError):
-            lead.write({"ggd_last_send_key": self._key(lead)})
-        self.assertFalse(lead.ggd_last_send_key)
+        lead.write({"ggd_last_send_key": self._key(lead)})
+        self.assertEqual(lead.ggd_last_send_key, self._key(lead))
 
     def test_blocked_claim_message_does_not_leak_stored_values(self):
         """Reasons cross the RPC boundary into n8n logs; row contents must not."""
@@ -679,7 +675,8 @@ class TestGgdOutreachApproval(TransactionCase):
             ggd_contact_basis_note="Opt-in ref SECRET-EVIDENCE-1183 on file.",
             email_from="secret-recipient@ggd-qa.invalid",
         )
-        lead.write({"ggd_contact_basis": False})
+        # Suppression, not a missing basis, is what blocks a claim now.
+        lead.write({"ggd_do_not_contact": True})
 
         with self.assertRaises(ValidationError) as caught:
             lead.write({"ggd_last_send_key": self._key(lead)})

@@ -874,24 +874,19 @@ class CrmLead(models.Model):
         ggd_outreach_approved directly is subject to the same rules. A gate
         enforced only in a UI button is not a gate. Takes plain values rather
         than reading self, so it can also run before a record exists.
+
+        The contact basis and its note are no longer required here, by Kaan's
+        decision on 4 September 2026. They were checked in two places - at
+        approval and again in _ggd_claim_blockers - and both have been
+        removed, so an approved lead can actually be sent rather than
+        failing later at the claim. The fields remain and are still worth
+        filling in; nothing enforces them. This reverses criterion 2 of #6.
+        What still refuses: a non-approver, and Do not contact.
         """
         self._ggd_check_approver(_("approve outreach"))
         if do_not_contact:
             raise ValidationError(
                 _("This opportunity is marked Do not contact and cannot be approved.")
-            )
-        if not contact_basis:
-            raise ValidationError(
-                _("Record and review the contact basis before approving outreach.")
-            )
-        note = (basis_note or "").strip()
-        if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
-            raise ValidationError(
-                _(
-                    "Record the evidence for the contact basis before approving. "
-                    "State where and when it arose and give a reference that can "
-                    "be checked today — not a restatement of the label."
-                )
             )
 
     def action_ggd_approve_outreach(self):
@@ -1013,12 +1008,6 @@ class CrmLead(models.Model):
             blockers.append(_("the approval timestamp is missing"))
         if state.get("ggd_do_not_contact"):
             blockers.append(_("the record is marked Do not contact"))
-        basis = state.get("ggd_contact_basis")
-        if not basis:
-            blockers.append(_("the contact basis is missing"))
-        note = (state.get("ggd_contact_basis_note") or "").strip()
-        if len(note) < self.GGD_CONTACT_BASIS_NOTE_MIN_LENGTH:
-            blockers.append(_("the contact-basis note is missing or too short"))
         if not state.get("ggd_contact_basis_verified_at"):
             blockers.append(_("the contact-basis verification timestamp is missing"))
         if not (state.get("email_from") or "").strip():
