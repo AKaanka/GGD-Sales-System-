@@ -967,7 +967,15 @@ class TestGgdOutreachApproval(TransactionCase):
     # SMTP audit, bounce handling, and deduplicated follow-up activities.
     # ------------------------------------------------------------------
 
-    def test_approval_requires_a_reviewed_versioned_draft(self):
+    def test_approval_no_longer_requires_a_draft_but_sending_still_does(self):
+        """Approving is free; sending an email that does not exist is not.
+
+        Kaan's decision, 4 September 2026. The approval is granted with no
+        subject, body or version, so no approved draft version is stamped,
+        so _ggd_expected_send_key has nothing to build a key from and the
+        claim cannot succeed. The idempotency guarantee is what keeps this
+        from becoming a way to send empty mail.
+        """
         lead = self._lead(
             ggd_contact_basis="consent",
             ggd_contact_basis_note=VALID_NOTE,
@@ -977,10 +985,13 @@ class TestGgdOutreachApproval(TransactionCase):
             ggd_draft_status="empty",
         )
 
-        with self.assertRaises(ValidationError):
-            lead.action_ggd_approve_outreach()
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
 
-        self.assertFalse(lead.ggd_outreach_approved)
+        with self.assertRaises(ValidationError):
+            lead.ggd_claim_send_key("%s:anything" % lead.id)
+        self.assertFalse(lead.ggd_last_send_key)
 
     def test_prepare_draft_revokes_old_approval_and_returns_new_version(self):
         lead = self._approved_lead()
@@ -1231,14 +1242,21 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertEqual(lead.ggd_last_confirmed_send_key, second_key)
         self.assertEqual(lead.ggd_last_message_id, "<qa-v2-final@example.invalid>")
 
-    def test_sent_draft_cannot_be_approved_again(self):
+    def test_sent_draft_can_be_approved_again_but_not_sent_again(self):
+        """Re-approving an already-sent draft is now allowed.
+
+        The approval-time guard against it went with the other prerequisites.
+        What stops a second send is the claim: the same send key was already
+        used, so ggd_claim_send_key reports it as already sent rather than
+        issuing a fresh claim. That is the duplicate-send protection now.
+        """
         lead = self._claimed_lead()
         self._finalize(lead, "<qa-already-sent@example.invalid>")
 
-        with self.assertRaises(ValidationError):
-            lead.action_ggd_approve_outreach()
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
 
-        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_claim_send_key(self._key(lead)))
 
     def test_unresolved_claim_blocks_a_new_draft(self):
         lead = self._claimed_lead()
@@ -1510,15 +1528,20 @@ class TestGgdOutreachApproval(TransactionCase):
         with self.assertRaises(ValidationError):
             lead.ggd_queue_follow_up("This follow-up is too early.")
 
-    def test_approval_requires_a_valid_recipient(self):
+    def test_approval_no_longer_requires_a_recipient_but_sending_does(self):
+        """A lead with no address can be approved; it can never be claimed."""
         lead = self._lead(
             email_from=False,
             ggd_contact_basis="consent",
             ggd_contact_basis_note=VALID_NOTE,
         )
 
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+
         with self.assertRaises(ValidationError):
-            lead.action_ggd_approve_outreach()
+            lead.ggd_claim_send_key(self._key(lead))
+        self.assertFalse(lead.ggd_last_send_key)
 
     def test_recipient_change_revokes_approval(self):
         lead = self._approved_lead()
