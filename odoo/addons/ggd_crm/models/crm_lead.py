@@ -875,8 +875,20 @@ class CrmLead(models.Model):
         enforced only in a UI button is not a gate. Takes plain values rather
         than reading self, so it can also run before a record exists.
 
-        The contact basis and its note are no longer required here, by Kaan's
-        decision on 4 September 2026. They were checked in two places - at
+        Approving requires nothing of the record itself, by Kaan's decision
+        on 4 September 2026: not a contact basis, not a note, not a drafted
+        subject or body, not a recipient. Two rules survive, and neither is
+        something a person fills in - who is clicking, and whether the
+        contact asked not to be written to.
+
+        The send path is unchanged and still requires a real email. An
+        approval granted with no draft produces no approved draft version,
+        so _ggd_expected_send_key returns False and GGD-03 cannot claim.
+        That is deliberate: the send key is the idempotency guarantee, and
+        an empty draft is not a message anyone can send.
+
+        The contact basis and its note stopped being required here by the
+        same decision. They were checked in two places - at
         approval and again in _ggd_claim_blockers - and both have been
         removed, so an approved lead can actually be sent rather than
         failing later at the claim. The fields remain and are still worth
@@ -895,20 +907,6 @@ class CrmLead(models.Model):
                 lead.ggd_do_not_contact,
                 lead.ggd_contact_basis,
                 lead.ggd_contact_basis_note,
-            )
-            lead._ggd_check_draft_ready(
-                lead.ggd_draft_subject,
-                lead.ggd_draft_body,
-                lead.ggd_draft_version,
-            )
-            lead._ggd_check_recipient_ready(lead.email_from)
-            lead._ggd_check_no_unresolved_send_claim(
-                lead.ggd_delivery_status,
-                lead.ggd_last_send_key,
-                lead.ggd_last_confirmed_send_key,
-            )
-            lead._ggd_check_draft_can_be_approved(
-                lead.ggd_draft_version, lead.ggd_last_sent_draft_version
             )
             lead.write(
                 {
@@ -1585,12 +1583,6 @@ class CrmLead(models.Model):
                     values.get("ggd_contact_basis"),
                     values.get("ggd_contact_basis_note"),
                 )
-                self._ggd_check_draft_ready(
-                    values.get("ggd_draft_subject"),
-                    values.get("ggd_draft_body"),
-                    values.get("ggd_draft_version"),
-                )
-                self._ggd_check_recipient_ready(values.get("email_from"))
                 values.setdefault("ggd_outreach_approved_by", self.env.user.id)
                 values.setdefault("ggd_outreach_approved_at", fields.Datetime.now())
                 values.setdefault("ggd_contact_basis_verified_at", fields.Datetime.now())
@@ -1825,29 +1817,6 @@ class CrmLead(models.Model):
                     values.get("ggd_do_not_contact", lead.ggd_do_not_contact),
                     values.get("ggd_contact_basis", lead.ggd_contact_basis),
                     values.get("ggd_contact_basis_note", lead.ggd_contact_basis_note),
-                )
-                lead._ggd_check_draft_ready(
-                    values.get("ggd_draft_subject", lead.ggd_draft_subject),
-                    values.get("ggd_draft_body", lead.ggd_draft_body),
-                    values.get("ggd_draft_version", lead.ggd_draft_version),
-                )
-                lead._ggd_check_recipient_ready(
-                    values.get("email_from", lead.email_from)
-                )
-                lead._ggd_check_no_unresolved_send_claim(
-                    values.get("ggd_delivery_status", lead.ggd_delivery_status),
-                    values.get("ggd_last_send_key", lead.ggd_last_send_key),
-                    values.get(
-                        "ggd_last_confirmed_send_key",
-                        lead.ggd_last_confirmed_send_key,
-                    ),
-                )
-                lead._ggd_check_draft_can_be_approved(
-                    values.get("ggd_draft_version", lead.ggd_draft_version),
-                    values.get(
-                        "ggd_last_sent_draft_version",
-                        lead.ggd_last_sent_draft_version,
-                    ),
                 )
             # Stamp the approval metadata and approved draft version that the
             # button would have set. Without these, the outbound claim cannot
