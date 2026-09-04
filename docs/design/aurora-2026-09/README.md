@@ -30,3 +30,92 @@ cd docs/design/aurora-2026-09/source && python3 gen.py && python3 gen2.py
 
 Then open any `.dc.html` in a browser. The `<script src="./support.js">`
 line in each file is a hook for the canvas editor and is harmless outside it.
+
+## Gallery
+
+GitHub renders these on the repository page; the issue cannot embed them because the repository is private.
+
+### Chosen: Aurora, as drawn
+
+**Pipeline, dark**
+
+![Pipeline, dark](mockups/aurora-pipeline-dark.jpg)
+
+**Review desk, dark**
+
+![Review desk, dark](mockups/aurora-review-desk-dark.jpg)
+
+**Opportunity, dark**
+
+![Opportunity, dark](mockups/aurora-opportunity-dark.jpg)
+
+**Pipeline, light**
+
+![Pipeline, light](mockups/aurora-pipeline-light.jpg)
+
+### The tones, shipped as user-selectable
+
+**Ember**
+
+![Ember](mockups/tone-ember.jpg)
+
+**Graphite**
+
+![Graphite](mockups/tone-graphite.jpg)
+
+### Shipped: the running Odoo after PR #56
+
+**Pipeline, Aurora dark**
+
+![Pipeline, Aurora dark](odoo/odoo-pipeline-dark.jpg)
+
+**Opportunity with the GGD tab, Aurora dark**
+
+![Opportunity with the GGD tab, Aurora dark](odoo/odoo-opportunity-dark.jpg)
+
+**Review desk, Aurora dark**
+
+![Review desk, Aurora dark](odoo/odoo-review-desk-dark.jpg)
+
+**Pipeline, Aurora light**
+
+![Pipeline, Aurora light](odoo/odoo-pipeline-light.jpg)
+
+**Appearance menu**
+
+![Appearance menu](odoo/odoo-appearance-menu-light.jpg)
+
+**Review desk, Ember light**
+
+![Review desk, Ember light](odoo/odoo-review-desk-ember-light.jpg)
+
+**Opportunity, Graphite dark**
+
+![Opportunity, Graphite dark](odoo/odoo-opportunity-graphite-dark.jpg)
+
+**Discuss, dark**
+
+![Discuss, dark](odoo/odoo-discuss-dark.jpg)
+
+**Settings, dark**
+
+![Settings, dark](odoo/odoo-settings-dark.jpg)
+
+### Not chosen: the four alternatives
+
+**Ledger**
+
+![Ledger](mockups/alt-ledger.jpg)
+
+**Bento**
+
+![Bento](mockups/alt-bento.jpg)
+
+**Noir**
+
+![Noir](mockups/alt-noir.jpg)
+
+**Terminal**
+
+![Terminal](mockups/alt-terminal.jpg)
+
