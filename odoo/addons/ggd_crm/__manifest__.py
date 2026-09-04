@@ -1,7 +1,7 @@
 {
     "name": "Germany Growth Desk CRM Controls",
     "summary": "Qualification, outreach approval, reply analysis, and AI audit fields for GGD",
-    "version": "19.0.1.17.0",
+    "version": "19.0.1.18.0",
     "category": "Sales/CRM",
     "author": "Germany Growth Desk",
     "license": "LGPL-3",
@@ -14,16 +14,14 @@
     ],
     "assets": {
         "web.assets_backend": [
+            "ggd_crm/static/src/ggd_fonts.scss",
+            "ggd_crm/static/src/ggd_theme.scss",
+            "ggd_crm/static/src/appearance_menu.js",
+            "ggd_crm/static/src/appearance_menu.xml",
+            "ggd_crm/static/src/ggd_ring_field.js",
+            "ggd_crm/static/src/ggd_ring_field.xml",
             "ggd_crm/static/src/fetch_mail_button.js",
             "ggd_crm/static/src/fetch_mail_button.xml",
-            "ggd_crm/static/src/dark_mode_systray.js",
-            "ggd_crm/static/src/dark_mode_systray.xml",
-            "ggd_crm/static/src/dark_mode_systray.scss",
-        ],
-        # Served only when the cookie asks for dark, so light mode pays
-        # nothing for it.
-        "web.assets_web_dark": [
-            "ggd_crm/static/src/dark_theme.dark.scss",
         ],
     },
     "installable": True,

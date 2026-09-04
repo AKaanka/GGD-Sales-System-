@@ -1,0 +1,840 @@
+// The GGD "Aurora" theme for Odoo 19 Community.
+//
+// One stylesheet, two axes, chosen at runtime on <html>:
+//
+//   data-ggd-scheme = light | dark
+//   data-ggd-tone   = aurora | ember | graphite
+//
+// appearance_menu.js sets both attributes before the web client renders and
+// again when the user picks something in the systray, so a change applies
+// without a reload. Every colour below is a CSS custom property switched by
+// those attributes; the structural rules further down never name a colour.
+//
+// Odoo 19 compiles its Bootstrap to literal colours, so its own classes have
+// to be overridden rather than re-themed, and many of them carry !important.
+// The overrides are grouped by screen area. Selectors were taken from the DOM
+// of the running Odoo (navbar, control panel, kanban, list, form, chatter),
+// not from memory.
+//
+// libsass cannot evaluate rgba() around a var(), so the uppercase RGBA()
+// spelling is used where a custom property carries an r,g,b triple: libsass
+// passes the uppercase form through untouched. Bootstrap does the same.
+
+// ---------------------------------------------------------------- palette
+
+:root {
+    // Aurora, light
+    --ggd-bg: #f2f4f9;
+    --ggd-glow-1: 66, 214, 198;
+    --ggd-glow-1-a: 0.26;
+    --ggd-glow-2: 148, 118, 255;
+    --ggd-glow-2-a: 0.20;
+    --ggd-glass: rgba(255, 255, 255, 0.58);
+    --ggd-glass-2: rgba(255, 255, 255, 0.78);
+    --ggd-popover: rgba(255, 255, 255, 0.94);
+    --ggd-border: rgba(20, 24, 34, 0.08);
+    --ggd-border-2: rgba(20, 24, 34, 0.14);
+    --ggd-nav: #ffffff;
+    --ggd-input: rgba(255, 255, 255, 0.72);
+    --ggd-text: #141826;
+    --ggd-muted: #5b6478;
+    --ggd-faint: #8a93a6;
+    --ggd-shadow: 0 10px 32px rgba(20, 24, 34, 0.10);
+    --ggd-accent-rgb: 79, 214, 200;
+    --ggd-accent: #4fd6c8;
+    --ggd-on-accent: #0b1512;
+    --ggd-accent-2: #a08cff;
+    --ggd-link: #0f8f83;
+    // status colours: text colour and the r,g,b behind the tint
+    --ggd-ok: #0f8f83;
+    --ggd-ok-rgb: 79, 214, 200;
+    --ggd-wait: #a9640a;
+    --ggd-wait-rgb: 240, 180, 92;
+    --ggd-review: #5f48d6;
+    --ggd-review-rgb: 160, 140, 255;
+    --ggd-stop: #c2374f;
+    --ggd-stop-rgb: 242, 123, 142;
+    --ggd-radius-sm: 10px;
+    --ggd-radius: 14px;
+    --ggd-radius-lg: 18px;
+    --ggd-blur: blur(22px) saturate(150%);
+}
+
+html[data-ggd-scheme="dark"] {
+    color-scheme: dark;
+    --ggd-bg: #0d1017;
+    --ggd-glow-1-a: 0.16;
+    --ggd-glow-2-a: 0.15;
+    --ggd-glass: rgba(255, 255, 255, 0.055);
+    --ggd-glass-2: rgba(255, 255, 255, 0.085);
+    --ggd-popover: rgba(24, 28, 38, 0.94);
+    --ggd-border: rgba(255, 255, 255, 0.10);
+    --ggd-border-2: rgba(255, 255, 255, 0.16);
+    --ggd-nav: #0f1218;
+    --ggd-input: rgba(255, 255, 255, 0.05);
+    --ggd-text: #e9edf4;
+    --ggd-muted: #9aa4b8;
+    --ggd-faint: #6b7488;
+    --ggd-shadow: 0 10px 32px rgba(0, 0, 0, 0.38);
+    --ggd-link: #4fd6c8;
+    --ggd-ok: #4fd6c8;
+    --ggd-wait: #f0b45c;
+    --ggd-review: #a08cff;
+    --ggd-stop: #f27b8e;
+}
+
+// Ember: warm charcoal, amber and coral. The waiting state shares a hue with
+// the accent here; the tint behind it is what keeps the two apart.
+html[data-ggd-tone="ember"] {
+    --ggd-bg: #f7f2ed;
+    --ggd-glow-1: 240, 150, 80;
+    --ggd-glow-1-a: 0.24;
+    --ggd-glow-2: 230, 90, 110;
+    --ggd-glow-2-a: 0.16;
+    --ggd-border: rgba(40, 28, 20, 0.08);
+    --ggd-border-2: rgba(40, 28, 20, 0.14);
+    --ggd-text: #211a15;
+    --ggd-muted: #6e6259;
+    --ggd-faint: #978a80;
+    --ggd-accent-rgb: 240, 163, 92;
+    --ggd-accent: #f0a35c;
+    --ggd-on-accent: #1a1008;
+    --ggd-accent-2: #f27b8e;
+    --ggd-link: #b8532e;
+}
+html[data-ggd-scheme="dark"][data-ggd-tone="ember"] {
+    --ggd-bg: #15110f;
+    --ggd-glow-1-a: 0.18;
+    --ggd-glow-2-a: 0.14;
+    --ggd-glass: rgba(255, 255, 255, 0.06);
+    --ggd-glass-2: rgba(255, 255, 255, 0.09);
+    --ggd-popover: rgba(32, 26, 22, 0.94);
+    --ggd-border: rgba(255, 255, 255, 0.11);
+    --ggd-border-2: rgba(255, 255, 255, 0.17);
+    --ggd-nav: #171310;
+    --ggd-text: #f2ebe4;
+    --ggd-muted: #a89c92;
+    --ggd-faint: #7a6f66;
+    --ggd-link: #f0a35c;
+}
+
+// Graphite: near-monochrome with one electric lime. Status colours stay
+// semantic; only the accent and the temperature change.
+html[data-ggd-tone="graphite"] {
+    --ggd-bg: #f4f4f5;
+    --ggd-glow-1: 120, 120, 130;
+    --ggd-glow-1-a: 0.10;
+    --ggd-glow-2: 200, 255, 80;
+    --ggd-glow-2-a: 0.18;
+    --ggd-border: rgba(20, 20, 24, 0.08);
+    --ggd-border-2: rgba(20, 20, 24, 0.14);
+    --ggd-text: #17181b;
+    --ggd-muted: #5d616a;
+    --ggd-faint: #8b8f98;
+    --ggd-accent-rgb: 198, 245, 66;
+    --ggd-accent: #c6f542;
+    --ggd-on-accent: #121400;
+    --ggd-accent-2: #9aa0aa;
+    --ggd-link: #4f7d00;
+}
+html[data-ggd-scheme="dark"][data-ggd-tone="graphite"] {
+    --ggd-bg: #101113;
+    --ggd-glow-1: 255, 255, 255;
+    --ggd-glow-1-a: 0.07;
+    --ggd-glow-2-a: 0.10;
+    --ggd-glass: rgba(255, 255, 255, 0.05);
+    --ggd-glass-2: rgba(255, 255, 255, 0.08);
+    --ggd-popover: rgba(26, 27, 31, 0.94);
+    --ggd-border: rgba(255, 255, 255, 0.10);
+    --ggd-border-2: rgba(255, 255, 255, 0.16);
+    --ggd-nav: #121316;
+    --ggd-text: #ecedef;
+    --ggd-muted: #8d919a;
+    --ggd-faint: #666a73;
+    --ggd-link: #c6f542;
+}
+
+// ------------------------------------------------------------- foundations
+
+body,
+.o_web_client {
+    font-family: Manrope, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ggd-text);
+    -webkit-font-smoothing: antialiased;
+}
+
+.o_web_client {
+    background-color: var(--ggd-bg);
+    background-image:
+        radial-gradient(900px 620px at -6% -10%, RGBA(var(--ggd-glow-1), var(--ggd-glow-1-a)), transparent 60%),
+        radial-gradient(1000px 700px at 108% 108%, RGBA(var(--ggd-glow-2), var(--ggd-glow-2-a)), transparent 62%);
+    background-attachment: fixed;
+}
+
+// Everything that used to paint its own flat background now lets the glow
+// through. The glass surfaces are the only things that paint.
+.o_action_manager,
+.o_content,
+.o_view_controller,
+.o_kanban_renderer,
+.o_kanban_view,
+.o_list_view,
+.o_form_view,
+.o_form_view_container,
+.o_form_sheet_bg,
+.o_renderer,
+.o_breadcrumb .breadcrumb,
+.o_notebook_headers,
+.o_notebook_headers .nav-tabs,
+.o-mail-Chatter-top,
+.o-mail-Chatter-content,
+.o-mail-Thread {
+    background: transparent !important;
+}
+
+.o_web_client a:not(.btn):not(.dropdown-item):not(.nav-link) {
+    color: var(--ggd-link);
+}
+
+.ggd_mono,
+.o_web_client .font-monospace {
+    font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.86em;
+}
+
+.ggd_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ggd-faint);
+}
+
+.ggd_faint {
+    color: var(--ggd-faint);
+    font-size: 12px;
+}
+
+// glass surface, reused by every panel
+%ggd-glass {
+    background: var(--ggd-glass) !important;
+    border: 1px solid var(--ggd-border) !important;
+    border-radius: var(--ggd-radius-lg);
+    backdrop-filter: var(--ggd-blur);
+    -webkit-backdrop-filter: var(--ggd-blur);
+    color: var(--ggd-text);
+}
+
+// text colours Odoo hard-codes to Bootstrap's greys
+.o_web_client {
+    h1, h2, h3, h4, h5, h6, label, p, td, th, li, dt, dd, legend, caption,
+    .o_field_widget, .o_form_label, .o_horizontal_separator,
+    .o_kanban_record_title, .o_column_title, .o_stat_text, .o_stat_value,
+    .o_data_cell, .breadcrumb-item, .o_last_breadcrumb_item,
+    .o_notebook .nav-link, .o-mail-Message-body, .o-mail-Chatter {
+        color: var(--ggd-text);
+    }
+    .text-muted, .o_form_label_help, small, .o-mail-Message-date,
+    .o_field_widget.o_readonly_modifier.text-muted {
+        color: var(--ggd-muted) !important;
+    }
+    .text-danger, .text-danger * { color: var(--ggd-stop) !important; }
+    .text-success, .text-success * { color: var(--ggd-ok) !important; }
+    .text-warning, .text-warning * { color: var(--ggd-wait) !important; }
+    .text-info, .text-info * { color: var(--ggd-review) !important; }
+}
+
+// ------------------------------------------------------------------ navbar
+// Flat: one solid colour, one hairline, no gradient, no shadow, no radius.
+
+.o_main_navbar {
+    background: var(--ggd-nav) !important;
+    border-bottom: 1px solid var(--ggd-border-2) !important;
+    color: var(--ggd-text) !important;
+    box-shadow: none !important;
+
+    .o_menu_brand,
+    .o_nav_entry,
+    .o_navbar_breadcrumbs,
+    .o_navbar_breadcrumbs .btn,
+    .dropdown-toggle,
+    .o_menu_systray .dropdown-toggle,
+    > a, > button {
+        color: var(--ggd-text) !important;
+        background: transparent !important;
+    }
+    .o_menu_brand {
+        font-weight: 800;
+        letter-spacing: -0.01em;
+    }
+    .o_menu_sections > * {
+        background: transparent !important;
+    }
+    .o_menu_sections .o_nav_entry,
+    .o_menu_sections .dropdown-toggle {
+        color: var(--ggd-muted) !important;
+        font-weight: 600;
+        border-radius: var(--ggd-radius-sm);
+    }
+    .o_nav_entry:hover,
+    .dropdown-toggle:hover,
+    .o-dropdown--menu-toggle:hover,
+    .o_navbar_apps_menu .dropdown-toggle:hover {
+        background: var(--ggd-glass-2) !important;
+        color: var(--ggd-text) !important;
+    }
+    .o_menu_systray,
+    .o_menu_systray .o-dropdown,
+    .o_menu_systray .o-dropdown-item,
+    .o_user_menu {
+        background: transparent !important;
+        color: var(--ggd-text) !important;
+    }
+    .o_menu_systray > div > button,
+    .o_menu_systray .o_menu_systray_item > button,
+    .o_menu_systray .dropdown-toggle {
+        color: var(--ggd-muted) !important;
+        border-radius: var(--ggd-radius-sm);
+        &:hover { color: var(--ggd-text) !important; }
+    }
+    .o_menu_systray .badge {
+        background: var(--ggd-accent) !important;
+        color: var(--ggd-on-accent) !important;
+    }
+}
+
+// ------------------------------------------------------------- dropdowns
+// Popovers sit over other glass, so they are more opaque than the panels.
+
+.o_web_client .dropdown-menu,
+.o_web_client .o-dropdown--menu,
+.o_web_client .o_popover,
+.o_web_client .o-autocomplete--dropdown-menu {
+    background: var(--ggd-popover) !important;
+    border: 1px solid var(--ggd-border-2) !important;
+    border-radius: var(--ggd-radius);
+    box-shadow: var(--ggd-shadow);
+    backdrop-filter: var(--ggd-blur);
+    -webkit-backdrop-filter: var(--ggd-blur);
+    color: var(--ggd-text) !important;
+    padding: 6px;
+
+    .dropdown-item, .o-dropdown-item, .dropdown-header {
+        color: var(--ggd-text) !important;
+        border-radius: 8px;
+        background: transparent;
+    }
+    .dropdown-header { color: var(--ggd-faint) !important; }
+    .dropdown-item:hover, .dropdown-item:focus, .o-dropdown-item:hover,
+    .dropdown-item.focus, .o-autocomplete--dropdown-item.ui-state-active {
+        background: var(--ggd-glass-2) !important;
+    }
+    .dropdown-divider { border-color: var(--ggd-border) !important; }
+}
+
+// ------------------------------------------------------------- buttons
+
+.o_web_client .btn {
+    border-radius: var(--ggd-radius-sm);
+    font-weight: 600;
+}
+.o_web_client .btn-primary,
+.o_web_client .btn-primary:focus {
+    background: var(--ggd-accent) !important;
+    border-color: transparent !important;
+    color: var(--ggd-on-accent) !important;
+    box-shadow: 0 6px 18px RGBA(var(--ggd-accent-rgb), 0.28);
+}
+.o_web_client .btn-primary:hover {
+    filter: brightness(0.94);
+}
+.o_web_client .btn-secondary,
+.o_web_client .btn-light,
+.o_web_client .btn-outline-secondary,
+.o_web_client .btn-outline-primary,
+.o_web_client .o_button_generate_leads {
+    background: var(--ggd-glass) !important;
+    border: 1px solid var(--ggd-border) !important;
+    color: var(--ggd-text) !important;
+    &:hover, &:focus { background: var(--ggd-glass-2) !important; border-color: var(--ggd-border-2) !important; }
+}
+.o_web_client .btn-link {
+    color: var(--ggd-link) !important;
+}
+
+// ------------------------------------------------------- control panel
+
+.o_control_panel {
+    background: transparent !important;
+    border: 0 !important;
+    padding: 16px 22px 8px !important;
+
+    .o_last_breadcrumb_item,
+    .o_breadcrumb .active {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--ggd-text) !important;
+    }
+    .breadcrumb-item a, .o_breadcrumb a {
+        color: var(--ggd-faint) !important;
+        font-weight: 600;
+    }
+    .o_cp_searchview.input-group {
+        gap: 6px;
+    }
+    .o_searchview.form-control {
+        background: var(--ggd-input) !important;
+        border: 1px solid var(--ggd-border) !important;
+        border-radius: 12px !important;
+        min-height: 38px;
+        box-shadow: none !important;
+        color: var(--ggd-text) !important;
+        &:focus-within { border-color: RGBA(var(--ggd-accent-rgb), 0.6) !important; box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.15) !important; }
+        .o_searchview_icon, .btn { color: var(--ggd-faint) !important; background: transparent !important; }
+        .o_searchview_input { color: var(--ggd-text) !important; background: transparent !important; }
+        .o_searchview_input::placeholder { color: var(--ggd-faint); }
+    }
+    .o_searchview_facet {
+        border-radius: 999px !important;
+        background: RGBA(var(--ggd-accent-rgb), 0.14) !important;
+        border: 1px solid RGBA(var(--ggd-accent-rgb), 0.45) !important;
+        color: var(--ggd-text) !important;
+        .o_searchview_facet_label { background: transparent !important; color: var(--ggd-text) !important; }
+        .o_facet_values, .o_facet_value { color: var(--ggd-text) !important; }
+        .o_facet_remove { color: var(--ggd-muted) !important; }
+    }
+    .o_searchview_dropdown_toggler {
+        border-radius: 12px !important;
+        min-height: 38px;
+    }
+    .o_cp_switch_buttons {
+        background: var(--ggd-glass);
+        border: 1px solid var(--ggd-border);
+        border-radius: 12px;
+        padding: 3px;
+        gap: 2px;
+        .btn {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            color: var(--ggd-faint) !important;
+            border-radius: 9px !important;
+            &.active, &:hover { background: var(--ggd-glass-2) !important; border-color: var(--ggd-border) !important; color: var(--ggd-text) !important; }
+        }
+    }
+    .o_cp_pager .btn { background: transparent !important; border: 0 !important; color: var(--ggd-muted) !important; }
+    .o_pager_value, .o_pager_limit { color: var(--ggd-muted); }
+}
+
+// ------------------------------------------------------------- kanban
+
+.o_kanban_renderer {
+    padding: 4px 22px 22px !important;
+    gap: 14px;
+
+    .o_kanban_group {
+        @extend %ggd-glass;
+        padding: 12px !important;
+        margin: 0 !important;
+        min-width: 268px;
+    }
+    .o_kanban_header {
+        background: transparent !important;
+        border: 0 !important;
+        padding: 2px 4px 6px !important;
+    }
+    .o_column_title, .o_kanban_header_title, .o_kanban_header b {
+        font-size: 13px;
+        font-weight: 800 !important;
+        color: var(--ggd-text) !important;
+    }
+    .o_kanban_counter {
+        margin: 0 4px 8px !important;
+        .o_column_progress { height: 3px; border-radius: 999px; background: var(--ggd-glass-2); overflow: hidden; }
+        .o_animated_number, .o_kanban_counter_side { color: var(--ggd-muted) !important; font-weight: 700; font-size: 11px; }
+    }
+    .o_kanban_quick_add, .o_group_config .btn, .o_kanban_config .btn { color: var(--ggd-faint) !important; background: transparent !important; }
+
+    .o_kanban_record {
+        background: var(--ggd-glass-2) !important;
+        border: 1px solid var(--ggd-border) !important;
+        border-radius: var(--ggd-radius) !important;
+        padding: 13px 14px !important;
+        margin-bottom: 10px !important;
+        box-shadow: none !important;
+        color: var(--ggd-text) !important;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        &:hover {
+            border-color: RGBA(var(--ggd-accent-rgb), 0.5) !important;
+            box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.10), 0 10px 26px rgba(0, 0, 0, 0.12) !important;
+        }
+        .fs-5 { font-size: 13.5px !important; letter-spacing: -0.01em; }
+        .o_kanban_card_crm_lead_revenue, .o_field_monetary { color: var(--ggd-muted) !important; font-size: 12px; }
+        .o_tag { border-radius: 999px; font-weight: 600; font-size: 11px; }
+    }
+    .o_column_quick_create {
+        @extend %ggd-glass;
+        .o_quick_create_button, .o_quick_create_title { color: var(--ggd-muted) !important; }
+    }
+    .o_kanban_quick_create {
+        @extend %ggd-glass;
+        border-radius: var(--ggd-radius) !important;
+    }
+}
+
+.ggd_kanban_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    .ggd_kanban_industry { color: var(--ggd-muted); font-size: 12px; flex: 1; min-width: 0; }
+}
+
+// ------------------------------------------------------------- list
+
+.o_list_view .o_content {
+    padding: 0 22px 22px !important;
+}
+.o_list_renderer {
+    @extend %ggd-glass;
+    overflow: hidden;
+    border-radius: var(--ggd-radius-lg) !important;
+}
+.o_list_table {
+    background: transparent !important;
+    color: var(--ggd-text) !important;
+    thead th, thead .o_list_controller {
+        background: transparent !important;
+        color: var(--ggd-faint) !important;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--ggd-border) !important;
+        padding-top: 12px !important;
+        padding-bottom: 12px !important;
+    }
+    tbody td {
+        border-color: var(--ggd-border) !important;
+        background: transparent !important;
+        color: var(--ggd-text) !important;
+        padding-top: 11px !important;
+        padding-bottom: 11px !important;
+        vertical-align: middle;
+    }
+    tbody tr:hover td, .o_data_row:hover > td { background: var(--ggd-glass-2) !important; }
+    .o_data_row.o_data_row_selected td, .o_data_row.o_data_row_selected:hover td { background: RGBA(var(--ggd-accent-rgb), 0.08) !important; }
+    tfoot, tfoot td { background: transparent !important; border-color: var(--ggd-border) !important; color: var(--ggd-muted) !important; }
+    .o_list_number_th, .o_list_number { font-variant-numeric: tabular-nums; }
+}
+
+// ------------------------------------------------------------- form
+
+.o_form_view {
+    .o_form_sheet_bg { padding: 0 22px 22px !important; }
+    .o_form_statusbar {
+        @extend %ggd-glass;
+        border-radius: var(--ggd-radius) !important;
+        margin: 0 0 14px !important;
+        padding: 8px 12px !important;
+        .o_statusbar_buttons .btn { margin-right: 6px; }
+    }
+    // The stage bar becomes the stepper from the design: dots and labels,
+    // no arrow chevrons.
+    .o_statusbar_status {
+        gap: 4px;
+        .o_arrow_button, .o_arrow_button.btn-secondary {
+            background: transparent !important;
+            border: 0 !important;
+            clip-path: none !important;
+            margin: 0 !important;
+            color: var(--ggd-faint) !important;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 6px 10px 6px 8px !important;
+            border-radius: 8px !important;
+            &::before, &::after { display: none !important; }
+            &:hover { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; }
+            &.o_arrow_button_current, &.disabled.o_arrow_button_current {
+                color: var(--ggd-text) !important;
+                background: RGBA(var(--ggd-accent-rgb), 0.14) !important;
+            }
+        }
+    }
+    .o_form_sheet {
+        @extend %ggd-glass;
+        padding: 20px 22px !important;
+        box-shadow: none !important;
+    }
+    .oe_title h1, .oe_title .o_field_text textarea, .oe_title .o_input {
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        font-size: 24px;
+    }
+    .o_form_label {
+        color: var(--ggd-muted) !important;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .o_horizontal_separator {
+        @extend .ggd_label;
+        border: 0 !important;
+        box-shadow: none !important;   // Odoo draws the rule under the label with a shadow, not a border
+        margin: 4px 0 8px !important;
+        width: 100%;
+        &::before, &::after { display: none !important; }
+    }
+    .o_notebook {
+        margin-top: 14px;
+        background: transparent !important;
+        .o_notebook_headers {
+            border-bottom: 1px solid var(--ggd-border) !important;
+            .nav-tabs { gap: 18px; border: 0 !important; }
+            .nav-item { border: 0 !important; }
+            .nav-link {
+                background: transparent !important;
+                border: 0 !important;
+                border-bottom: 2px solid transparent !important;
+                color: var(--ggd-faint) !important;
+                font-weight: 700;
+                padding: 10px 2px !important;
+                &.active { color: var(--ggd-text) !important; border-bottom-color: var(--ggd-accent) !important; }
+            }
+        }
+        .o_notebook_content { padding-top: 16px; }
+        // each labelled group on the GGD page becomes a sub-card. The group
+        // is a Bootstrap row of two col-lg-6 columns, so the gap between the
+        // cards has to come out of their width or the second one wraps.
+        .o_group {
+            column-gap: 14px;
+            row-gap: 14px;
+            > .o_inner_group {
+                background: var(--ggd-glass-2);
+                border: 1px solid var(--ggd-border);
+                border-radius: var(--ggd-radius);
+                padding: 12px 14px;
+                margin-bottom: 0;
+            }
+            @media (min-width: 992px) {
+                > .o_inner_group.col-lg-6 { width: calc(50% - 7px); }
+            }
+        }
+    }
+    .o_cell { border: 0 !important; }
+}
+
+// inputs everywhere: a box, not Odoo's underline
+.o_web_client {
+    .o_input, .o_field_widget input, .o_field_widget textarea, .o_field_widget select,
+    .form-control, .form-select, .o-mail-Composer-input, .o_searchview_input.o_input {
+        background: var(--ggd-input) !important;
+        border: 1px solid var(--ggd-border) !important;
+        border-radius: var(--ggd-radius-sm) !important;
+        color: var(--ggd-text) !important;
+        box-shadow: none !important;
+        padding: 5px 10px;
+        &:focus, &:focus-within {
+            border-color: RGBA(var(--ggd-accent-rgb), 0.6) !important;
+            box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.15) !important;
+        }
+        &::placeholder { color: var(--ggd-faint); }
+    }
+    .o_field_widget.o_readonly_modifier .o_input,
+    .o_field_widget.o_readonly_modifier input {
+        background: transparent !important;
+        border-color: transparent !important;
+        padding-left: 0;
+    }
+    .o_field_many2one_selection .o_input_dropdown .o_dropdown_button { color: var(--ggd-faint); }
+    .form-check-input { border-color: var(--ggd-border-2); background-color: var(--ggd-input); }
+    .form-check-input:checked { background-color: var(--ggd-accent); border-color: var(--ggd-accent); }
+}
+
+// ------------------------------------------------------------- chatter
+
+.o-mail-Form-chatter,
+.o-mail-ChatterContainer {
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 22px 22px 0 !important;
+}
+.o-mail-Chatter {
+    @extend %ggd-glass;
+    padding: 12px 14px !important;
+    .o-mail-Chatter-topbar {
+        border: 0 !important;
+        background: transparent !important;
+        gap: 6px;
+        .btn { border-radius: 999px !important; font-size: 12px; }
+    }
+    .o-mail-Message, .o-mail-Composer { background: transparent !important; color: var(--ggd-text) !important; }
+    .o-mail-Message:hover { background: var(--ggd-glass-2) !important; border-radius: var(--ggd-radius-sm); }
+    .o-mail-Message-author { font-weight: 700; }
+    .o-mail-Thread hr, .o-mail-Thread .o-mail-DateSection { border-color: var(--ggd-border) !important; color: var(--ggd-faint) !important; }
+    .o-mail-Composer-input { min-height: 44px; }
+}
+
+// ------------------------------------------------------------- badges
+
+.o_web_client .badge {
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    padding: 4px 9px;
+}
+.o_web_client .badge.text-bg-success { color: var(--ggd-ok) !important; background: RGBA(var(--ggd-ok-rgb), 0.14) !important; }
+.o_web_client .badge.text-bg-warning { color: var(--ggd-wait) !important; background: RGBA(var(--ggd-wait-rgb), 0.16) !important; }
+.o_web_client .badge.text-bg-info    { color: var(--ggd-review) !important; background: RGBA(var(--ggd-review-rgb), 0.16) !important; }
+.o_web_client .badge.text-bg-danger,
+.o_web_client .ggd_pill_stop         { color: var(--ggd-stop) !important; background: RGBA(var(--ggd-stop-rgb), 0.14) !important; }
+.o_web_client .badge.text-bg-300,
+.o_web_client .badge.text-bg-secondary,
+.o_web_client .badge.text-bg-light   { color: var(--ggd-muted) !important; background: var(--ggd-glass-2) !important; }
+
+// ------------------------------------------------------------- ring
+
+.ggd_ring {
+    --ggd-p: 0%;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex: none;
+    background: conic-gradient(var(--ggd-accent) 0 var(--ggd-p), var(--ggd-glass-2) var(--ggd-p) 100%);
+    .ggd_ring_inner {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--ggd-bg);
+        font-weight: 800;
+        font-size: 18px;
+        color: var(--ggd-text);
+        font-variant-numeric: tabular-nums;
+    }
+    &.ggd_ring--sm {
+        width: 30px;
+        height: 30px;
+        .ggd_ring_inner { width: 22px; height: 22px; font-size: 10px; font-weight: 800; }
+    }
+    &.ggd_ring--empty .ggd_ring_inner { color: var(--ggd-faint); }
+}
+
+// ------------------------------------------------------------- form strip
+
+.ggd_strip {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 4px 0 16px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--ggd-border);
+    .ggd_strip_main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .ggd_strip_pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .ggd_strip_pills .o_field_widget { width: auto; }
+    .ggd_strip_meta { color: var(--ggd-muted); font-size: 12px; font-weight: 500; }
+    .ggd_strip_meta .o_field_widget { display: inline; width: auto; }
+    .ggd_strip_meta .o_field_widget a, .ggd_strip_meta .o_field_widget span { color: var(--ggd-text) !important; font-weight: 600; }
+    .ggd_strip_key { text-align: right; display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+    .ggd_strip_key .o_field_widget { width: auto; color: var(--ggd-muted) !important; }
+}
+
+// ------------------------------------------------- calendar, activity, pivot
+// Not GGD screens, but one click away in the CRM's view switcher, so they
+// must not fall back to Odoo's white.
+
+.o_web_client {
+    .bg-view, .o_calendar_container, .o_calendar_renderer, .o_calendar_sidebar_container,
+    .o_activity_view, .o_activity_view_table_footer, .o_pivot, .o_graph_renderer {
+        background: transparent !important;
+        color: var(--ggd-text);
+    }
+    .o_calendar_renderer, .o_calendar_sidebar_container, .o_activity_view .table, .o_pivot .table {
+        @extend %ggd-glass;
+        border-radius: var(--ggd-radius-lg) !important;
+    }
+    .o_calendar_container { padding: 0 22px 22px; gap: 14px; }
+    .o_calendar_sidebar_container { padding: 12px; }
+    .fc .fc-scrollgrid, .fc td, .fc th, .table-bordered > :not(caption) > * > * {
+        border-color: var(--ggd-border) !important;
+    }
+    .fc .fc-col-header-cell-cushion, .fc .fc-daygrid-day-number, .fc .fc-timegrid-slot-label,
+    .o_activity_view th, .o_activity_view td, .o_pivot th, .o_pivot td {
+        color: var(--ggd-text);
+    }
+    .fc .fc-day-today { background: RGBA(var(--ggd-accent-rgb), 0.08) !important; }
+    .o_activity_view thead th, .o_activity_view_table_footer td, .o_pivot thead th, .o_pivot .o_pivot_header_cell_closed, .o_pivot .o_pivot_header_cell_opened {
+        background: var(--ggd-glass-2) !important;
+        color: var(--ggd-text) !important;
+    }
+    .o_activity_summary_cell { background: var(--ggd-glass-2) !important; }
+    .o_pivot .bg-100, .o_pivot .o_pivot_cell_value.bg-100 { background: var(--ggd-glass-2) !important; }
+    // the date picker
+    .o_datetime_picker { background: var(--ggd-popover) !important; color: var(--ggd-text) !important; }
+    .o_datetime_picker .o_date_item_cell { color: var(--ggd-text); border-radius: 8px; }
+    .o_datetime_picker .o_date_item_cell.o_selected { background: RGBA(var(--ggd-accent-rgb), 0.35) !important; color: var(--ggd-text) !important; }
+    .o_datetime_picker .o_date_item_cell:hover { background: var(--ggd-glass-2) !important; }
+    .o_datetime_picker .o_today { border-color: var(--ggd-accent) !important; }
+}
+
+// ------------------------------------------------------------- misc
+
+.o_web_client .modal-content {
+    background: var(--ggd-popover) !important;
+    border: 1px solid var(--ggd-border-2) !important;
+    border-radius: var(--ggd-radius-lg);
+    color: var(--ggd-text) !important;
+    backdrop-filter: var(--ggd-blur);
+    -webkit-backdrop-filter: var(--ggd-blur);
+    .modal-header, .modal-footer { border-color: var(--ggd-border) !important; background: transparent !important; }
+}
+.o_web_client .o_notification {
+    background: var(--ggd-popover) !important;
+    border: 1px solid var(--ggd-border-2) !important;
+    border-radius: var(--ggd-radius);
+    color: var(--ggd-text) !important;
+}
+.o_web_client .o_view_nocontent .o_nocontent_help { color: var(--ggd-muted); }
+.o_web_client hr, .o_web_client .table > :not(caption) > * > * { border-color: var(--ggd-border) !important; }
+.o_web_client .o_searchpanel, .o_web_client .o_search_panel { @extend %ggd-glass; margin: 4px 0 22px 22px; }
+
+// thin scrollbars that follow the scheme
+.o_web_client ::-webkit-scrollbar { width: 10px; height: 10px; }
+.o_web_client ::-webkit-scrollbar-thumb { background: var(--ggd-border-2); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+.o_web_client ::-webkit-scrollbar-track { background: transparent; }
+
+// systray appearance menu
+.o_ggd_appearance {
+    display: flex;
+    align-items: center;
+    > button {
+        background: transparent;
+        border: 0;
+        padding: 0 0.55rem;
+        line-height: 1;
+        color: inherit;
+        opacity: 0.9;
+        &:hover, &:focus { opacity: 1; background: var(--ggd-glass-2); border-radius: 8px; }
+        &:focus-visible { outline: 2px solid RGBA(var(--ggd-accent-rgb), 0.6); outline-offset: -2px; }
+    }
+}
+.o_ggd_appearance_menu {
+    min-width: 220px;
+    .ggd_swatch {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-right: 8px;
+        vertical-align: -2px;
+        border: 1px solid var(--ggd-border-2);
+    }
+    .dropdown-item.active, .dropdown-item.ggd_on {
+        background: RGBA(var(--ggd-accent-rgb), 0.14) !important;
+        font-weight: 700;
+    }
+}

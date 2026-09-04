@@ -36,6 +36,52 @@
                 />
             </xpath>
 
+
+            <!-- The status strip from the Aurora design: fit score ring, the
+                 gate at a glance, and the send key. Sits above the title so a
+                 reviewer sees where the record stands before reading it. -->
+            <xpath expr="//div[hasclass('oe_title')]" position="before">
+                <div class="ggd_strip">
+                    <field name="ggd_fit_score" widget="ggd_ring" readonly="1"/>
+                    <div class="ggd_strip_main">
+                        <div class="ggd_strip_pills">
+                            <field name="ggd_draft_status" widget="badge" readonly="1"
+                                   decoration-success="ggd_draft_status in ('approved', 'sent')"
+                                   decoration-warning="ggd_draft_status == 'ready'"
+                                   decoration-muted="ggd_draft_status == 'empty'"/>
+                            <field name="ggd_delivery_status" widget="badge" readonly="1"
+                                   invisible="not ggd_delivery_status or ggd_delivery_status == 'none'"
+                                   decoration-danger="ggd_delivery_status in ('claimed', 'bounced')"
+                                   decoration-success="ggd_delivery_status == 'accepted'"/>
+                            <field name="ggd_reply_category" widget="badge" readonly="1"
+                                   invisible="not ggd_reply_category"
+                                   decoration-success="ggd_reply_category in ('interested', 'meeting')"
+                                   decoration-info="ggd_reply_category in ('objection', 'unclear', 'information', 'referral')"
+                                   decoration-danger="ggd_reply_category in ('unsubscribe', 'not_interested')"/>
+                            <field name="ggd_qualification_state" widget="badge" readonly="1"
+                                   invisible="ggd_qualification_state != 'review'"
+                                   decoration-info="ggd_qualification_state == 'review'"/>
+                            <field name="ggd_contact_basis" widget="badge" readonly="1"
+                                   invisible="not ggd_contact_basis"/>
+                            <span class="badge ggd_pill_stop" invisible="not ggd_do_not_contact">Do not contact</span>
+                        </div>
+                        <div class="ggd_strip_meta">
+                            <span invisible="not ggd_outreach_approved">Approved by
+                                <field name="ggd_outreach_approved_by" readonly="1"/> on
+                                <field name="ggd_outreach_approved_at" readonly="1"/>
+                            </span>
+                            <span invisible="ggd_outreach_approved">Not yet approved for outreach</span>
+                        </div>
+                    </div>
+                    <div class="ggd_strip_key">
+                        <span class="ggd_label">Send key</span>
+                        <field name="ggd_last_send_key" readonly="1" class="ggd_mono"/>
+                        <span class="ggd_faint" invisible="ggd_delivery_status != 'claimed'">claim open</span>
+                        <span class="ggd_faint" invisible="ggd_delivery_status == 'claimed'">no claim open</span>
+                    </div>
+                </div>
+            </xpath>
+
             <xpath expr="//notebook" position="inside">
                 <page string="GGD Intelligence" name="ggd_intelligence">
                     <group string="Qualification" col="2">
@@ -134,6 +180,38 @@
                         </group>
                     </group>
                 </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Kanban card: the fit ring, the industry and the outbound state, so the
+         pipeline reads without opening records. -->
+    <record id="crm_lead_view_kanban_ggd" model="ir.ui.view">
+        <field name="name">crm.lead.kanban.ggd.controls</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='tag_ids']" position="after">
+                <div class="ggd_kanban_row">
+                    <field name="ggd_fit_score" widget="ggd_ring" options="{'size': 'sm'}"/>
+                    <field name="ggd_industry" class="ggd_kanban_industry text-truncate"/>
+                    <field name="ggd_draft_status" widget="badge"
+                           invisible="not ggd_draft_status or ggd_draft_status == 'empty'"
+                           decoration-success="ggd_draft_status in ('approved', 'sent')"
+                           decoration-warning="ggd_draft_status == 'ready'"/>
+                    <field name="ggd_delivery_status" widget="badge"
+                           invisible="not ggd_delivery_status or ggd_delivery_status == 'none'"
+                           decoration-danger="ggd_delivery_status in ('claimed', 'bounced')"
+                           decoration-success="ggd_delivery_status == 'accepted'"/>
+                    <field name="ggd_reply_category" widget="badge"
+                           invisible="not ggd_reply_category"
+                           decoration-success="ggd_reply_category in ('interested', 'meeting')"
+                           decoration-info="ggd_reply_category in ('objection', 'unclear', 'information', 'referral')"
+                           decoration-danger="ggd_reply_category in ('unsubscribe', 'not_interested')"/>
+                    <field name="ggd_qualification_state" widget="badge"
+                           invisible="ggd_qualification_state != 'review'"
+                           decoration-info="ggd_qualification_state == 'review'"/>
+                </div>
             </xpath>
         </field>
     </record>

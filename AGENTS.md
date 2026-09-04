@@ -63,6 +63,7 @@ not a software developer, so work in small, understandable stages.
 - `docs/ODOO-SETUP.md`: CRM configuration and control tests.
 - `docs/N8N-AUTOMATION-SPEC.md`: workflow design and failure behaviour.
 - `docs/OPERATIONS.md`: backups, updates, and VPS migration.
+- `docs/UI-THEME.md`: the Aurora theme, its tones, and where to edit it.
 - `compose.yaml`: local Odoo, n8n, and database services.
 - `scripts/validate-project.sh`: safe static validation.
 
