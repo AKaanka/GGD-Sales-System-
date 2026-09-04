@@ -215,13 +215,16 @@ body,
     font-size: 12px;
 }
 
-// glass surface, reused by every panel
+// glass surface, reused by every panel. No backdrop-filter here on purpose:
+// a filter makes the element the containing block for position: fixed
+// descendants, and Odoo drags kanban cards and list rows as fixed elements,
+// so a blurred column shifted the dragged card by the column's own offset.
+// Panels sit over a static glow, where the blur showed nothing anyway; the
+// popovers and modals, which float over content, keep theirs.
 %ggd-glass {
     background: var(--ggd-glass) !important;
     border: 1px solid var(--ggd-border) !important;
     border-radius: var(--ggd-radius-lg);
-    backdrop-filter: var(--ggd-blur);
-    -webkit-backdrop-filter: var(--ggd-blur);
     color: var(--ggd-text);
 }
 
@@ -775,6 +778,8 @@ body,
     }
     .o_activity_summary_cell { background: var(--ggd-glass-2) !important; }
     .o_pivot .bg-100, .o_pivot .o_pivot_cell_value.bg-100 { background: var(--ggd-glass-2) !important; }
+    .o_pivot .o_pivot_cell_value, .o_pivot .o_pivot_header_cell_closed, .o_pivot .o_pivot_header_cell_opened, .o_pivot .o_value, .o_pivot span,
+    .o_graph_renderer .o_value, .o_pivot_measure_row { color: var(--ggd-text) !important; }
     // the date picker
     .o_datetime_picker { background: var(--ggd-popover) !important; color: var(--ggd-text) !important; }
     .o_datetime_picker .o_date_item_cell { color: var(--ggd-text); border-radius: 8px; }
@@ -848,6 +853,137 @@ body,
     .alert-info { background: RGBA(var(--ggd-review-rgb), 0.16) !important; color: var(--ggd-review) !important; }
     .alert-danger { background: RGBA(var(--ggd-stop-rgb), 0.14) !important; color: var(--ggd-stop) !important; }
     .alert-success { background: RGBA(var(--ggd-ok-rgb), 0.14) !important; color: var(--ggd-ok) !important; }
+}
+
+// ------------------------------------------------- interaction states
+// Found by a stylesheet audit: every :hover, :focus, :active, .show and
+// pseudo-element rule of Odoo's that still set a literal colour and matched
+// an element on one of eleven screens. The accent replaces Odoo's purple
+// wherever it marked focus or an open control.
+
+.o_web_client {
+    --btn-focus-box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.35);
+    --settings__tab-bg--active: var(--ggd-glass-2);
+    --mail-DiscussSidebar-itemActiveBgColor: RGBA(var(--ggd-accent-rgb), 0.16);
+    --mail-DiscussSidebar-itemActiveOutlineColor: RGBA(var(--ggd-accent-rgb), 0.4);
+    --NavBar-entry-color--hover: var(--ggd-text);
+    --NavBar-entry-backgroundColor--hover: var(--ggd-glass-2);
+    --NavBar-entry-backgroundColor--focus: var(--ggd-glass-2);
+    --NavBar-entry-backgroundColor--active: var(--ggd-glass-2);
+    --mail-Composer-actionHoverColor: var(--ggd-text);
+
+    // a plain .btn (the card menu, the gear, pager arrows) darkens its icon
+    // to near-black on hover in Bootstrap; that vanishes on a dark ground
+    .btn:hover, .btn:focus-visible, .btn:active, .btn:first-child:active, .btn.show { color: var(--ggd-text); }
+    .btn-primary:hover, .btn-primary:active, .btn-primary:focus-visible, .btn-primary:first-child:active { color: var(--ggd-on-accent) !important; background: var(--ggd-accent) !important; }
+    .btn-secondary:active, .btn-light:active, .btn-outline-secondary:active, .btn-secondary:first-child:active { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; border-color: var(--ggd-border-2) !important; }
+    .btn-link:hover, .btn-link:focus-visible { color: var(--ggd-link); }
+    .btn-link.o_facet_remove:hover, .o_facet_remove:hover { color: var(--ggd-text) !important; }
+
+    // one focus ring
+    .btn:focus-visible, .nav-link:focus-visible, .o_notebook .nav-link:focus-visible, .o_notebook .nav-link.active:focus-visible,
+    .form-check-input:focus, .form-control:focus, .form-select:focus, .o_input:focus,
+    .dropdown-item:focus-visible, .o-dropdown-item:focus-visible, a:focus-visible, .o_searchview_facet:focus-visible {
+        outline: none !important;
+        box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.35) !important;
+        border-color: RGBA(var(--ggd-accent-rgb), 0.6) !important;
+    }
+    .form-check:hover .form-check-input:not(:disabled), .form-check-input:hover { border-color: RGBA(var(--ggd-accent-rgb), 0.7) !important; }
+    .form-control::placeholder, .o_input::placeholder, input::placeholder, textarea::placeholder { color: var(--ggd-faint) !important; opacity: 1; }
+    .o_searchview:focus-within + .o_searchview_dropdown_toggler { border-color: RGBA(var(--ggd-accent-rgb), 0.6) !important; }
+    .o_field_many2one_avatar img:hover, .o_m2o_avatar:hover img, .o_avatar:hover { outline: 2px solid var(--ggd-accent) !important; outline-offset: 1px; }
+
+    // an open dropdown's toggle, and the item under the keyboard
+    .o-dropdown.btn-secondary.show, .o-dropdown.btn-outline-secondary.show, .o-dropdown.btn-light.show, .btn.show,
+    .o_searchview_dropdown_toggler.show {
+        background: var(--ggd-glass-2) !important;
+        color: var(--ggd-text) !important;
+        border-color: RGBA(var(--ggd-accent-rgb), 0.5) !important;
+    }
+    .o-dropdown--menu .dropdown-item.focus, .o-dropdown--menu .dropdown-toggle.focus, .o-dropdown--menu .o-navigable.focus,
+    .dropdown-item:active, .o-dropdown-item:active, .dropdown-item.active, .dropdown-item.selected {
+        background: RGBA(var(--ggd-accent-rgb), 0.16) !important;
+        color: var(--ggd-text) !important;
+    }
+
+    // the flat top bar, on hover and with the keyboard
+    .o_main_navbar .o_menu_brand:hover, .o_main_navbar .o_navbar_apps_menu .dropdown-toggle:hover,
+    .o_main_navbar .o_menu_sections .o_nav_entry:hover, .o_main_navbar .o_menu_sections .dropdown-toggle:hover,
+    .o_main_navbar .o_menu_sections .o_nav_entry:focus, .o_main_navbar .o_menu_sections .dropdown-toggle:focus,
+    .o_main_navbar .o_menu_sections .o_nav_entry:active, .o_main_navbar .o_menu_sections .dropdown-toggle:active,
+    .o_main_navbar .o_menu_systray > div > button:hover, .o_main_navbar .o_menu_systray .dropdown-toggle:hover {
+        color: var(--ggd-text) !important;
+        background: var(--ggd-glass-2) !important;
+    }
+
+    // links that Odoo darkens or purples on hover
+    .btn-link.btn-action:hover, .btn-link.btn-action:focus, .btn-link.btn-action.focus,
+    .btn-link.text-action:hover, .btn-link.text-action:focus, .text-action, .btn-link.text-action,
+    .o_form_view .o_form_uri:hover, .o_form_view .o_form_uri:focus, .o_form_view .o_form_uri.focus { color: var(--ggd-link) !important; }
+    .btn-link.btn-dark:hover, .btn-link.btn-dark:focus, .btn-link.btn-dark.focus, .btn-link.text-dark:hover, .btn-link.text-dark:focus { color: var(--ggd-text) !important; }
+    .btn-link.btn-danger:hover, .btn-link.text-danger:hover { color: var(--ggd-stop) !important; }
+
+    .o_control_panel .o_back_button a::after { color: var(--ggd-faint) !important; }
+    .o_statusbar_status .o_arrow_button:disabled:not(.o_arrow_button_current),
+    .o_field_statusbar > .o_statusbar_status > .o_arrow_button:not(.d-none):disabled:not(.o_arrow_button_current) { color: var(--ggd-faint) !important; }
+    .oe_title, .oe_title h1 { color: var(--ggd-text); }
+
+    // discuss and chatter, on hover and when active
+    .o-mail-Message-body, .o-discuss-text-body, .o-mail-Message-content { color: var(--ggd-text) !important; }
+    .o-mail-AutoresizeInput:not([disabled]):focus { color: var(--ggd-text) !important; }
+    .o-mail-Composer-actions button:hover, .o-mail-Composer-actions button:focus { color: var(--ggd-text) !important; }
+    .o-mail-Followers-button:focus, .o-mail-Followers-button:hover { background: var(--ggd-glass-2) !important; }
+    .o-mail-DiscussSidebar-item:hover, .o-mail-DiscussSidebarCategory:hover, .o-mail-DiscussSidebarCategory:active,
+    .o-mail-DiscussSearch-inputContainer:has(.o-mail-DiscussSearch-inputClickable:hover) {
+        background: var(--ggd-glass-2) !important;
+        outline-color: var(--ggd-border-2) !important;
+    }
+    .o-mail-DiscussSidebar-item.o-active { background: RGBA(var(--ggd-accent-rgb), 0.16) !important; outline-color: RGBA(var(--ggd-accent-rgb), 0.4) !important; }
+    .o_odoobot_command { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; }
+
+    // settings tabs
+    .settings_tab .tab:hover, .settings_tab .tab.selected { color: var(--ggd-text) !important; }
+    .o_base_settings_view .o_form_renderer .o_setting_container .settings_tab .selected { background: var(--ggd-glass-2) !important; box-shadow: inset 2px 0 0 var(--ggd-accent) !important; }
+    .o_base_settings_view .o_form_renderer .o_setting_container .settings_tab .tab::after { background: var(--ggd-accent) !important; }
+
+    // the presence dot's halo in the user menu, and the search facet's hover layer
+    .o-mail-ImStatus.bg-white, .bg-white.rounded-circle { background-color: var(--ggd-nav) !important; }
+    .o_searchview_facet .opacity-100-hover.bg-view { background: var(--ggd-glass-2) !important; border-color: RGBA(var(--ggd-accent-rgb), 0.5) !important; box-shadow: none !important; }
+}
+
+// ------------------------------------------------- drag and drop
+
+.o_web_client {
+    --KanbanColumn__highlight-background: RGBA(var(--ggd-accent-rgb), 0.08);
+    --KanbanColumn__highlight-border: RGBA(var(--ggd-accent-rgb), 0.5);
+    .o_kanban_renderer .o_kanban_group.o_kanban_hover {
+        background: RGBA(var(--ggd-accent-rgb), 0.08) !important;
+        box-shadow: inset 0 0 0 1px RGBA(var(--ggd-accent-rgb), 0.5) !important;
+    }
+    .o_kanban_renderer .o_dragged, .o_kanban_renderer .o_kanban_record.o_dragged, .o_dragged_embedded_action, .ui-sortable-helper {
+        transform: none !important;
+        opacity: 1 !important;
+        border-color: var(--ggd-accent) !important;
+        box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.18), 0 18px 40px rgba(0, 0, 0, 0.35) !important;
+    }
+    .o_kanban_renderer .o_kanban_group.o_group_draggable.o_dragged { background: var(--ggd-glass-2) !important; }
+    .o_list_renderer .o_list_table tbody .o_column_resizing::after, .o_list_renderer .o_resize::after, .o_list_renderer th .o_resize { background-color: var(--ggd-accent) !important; }
+    .o_row_draggable .o_handle_cell, .o_row_draggable .o_handle_cell i { color: var(--ggd-faint) !important; }
+}
+
+// ------------------------------------------------- lines and utilities
+// Bootstrap's border and background utilities carry !important and Odoo
+// uses them freely: the calendar header, the filter menu columns, list rows.
+
+.o_web_client {
+    .border, .border-top, .border-bottom, .border-start, .border-end, .border-secondary, .border-light, .border-1,
+    .dropdown-divider, hr { border-color: var(--ggd-border) !important; opacity: 1; }
+    .o_kanban_renderer { border-top: 0 !important; }
+    .o_list_sortable_icon { background: transparent !important; }
+    tr.o_data_row, .o_list_table tr, .o_list_table th, .o_list_table td { border-color: var(--ggd-border) !important; }
+    .o_select_menu_caret::after, .o_dropdown_button::after { border-top-color: var(--ggd-muted) !important; }
+    .bg-100, .bg-200, .bg-light { background-color: var(--ggd-glass-2) !important; }
+    .o_kanban_header .o_kanban_config i, .o_group_config i, .o_column_title i { color: var(--ggd-faint); }
 }
 
 // ------------------------------------------------------------- misc
