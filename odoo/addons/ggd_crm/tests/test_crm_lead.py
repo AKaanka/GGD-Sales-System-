@@ -1084,14 +1084,44 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertTrue(lead.ggd_outreach_approved)
         self.assertEqual(lead.ggd_approved_draft_version, lead.ggd_draft_version)
 
-    def test_direct_draft_edit_revokes_approval(self):
+    def test_a_draft_edit_carries_the_approval_with_it(self):
+        """Kaan's decision, 4 September 2026: editing no longer revokes.
+
+        The approval follows the edit, and the approved version is re-pointed
+        at the new draft so the send goes out with the edited text instead of
+        stalling at the claim on a version mismatch.
+        """
         lead = self._approved_lead()
+        original_version = lead.ggd_draft_version
 
         lead.write({"ggd_draft_subject": "Edited after approval"})
 
-        self.assertFalse(lead.ggd_outreach_approved)
-        self.assertFalse(lead.ggd_approved_draft_version)
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertNotEqual(lead.ggd_draft_version, original_version)
+        self.assertEqual(lead.ggd_approved_draft_version, lead.ggd_draft_version)
         self.assertEqual(lead.ggd_draft_status, "ready")
+        self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
+
+    def test_an_edit_after_approval_is_recorded_in_the_chatter(self):
+        """All that survives of the old guarantee: the record says it changed."""
+        lead = self._approved_lead()
+        before = len(lead.message_ids)
+
+        lead.write({"ggd_draft_subject": "Edited after approval"})
+
+        self.assertGreater(len(lead.message_ids), before)
+        body = lead.message_ids[0].body
+        self.assertIn("the subject", body)
+        self.assertIn("not revoked", body)
+
+    def test_an_edit_on_an_unapproved_lead_says_nothing(self):
+        """A note on every draft edit would be noise."""
+        lead = self._lead()
+        before = len(lead.message_ids)
+
+        lead.write({"ggd_draft_subject": "Edited before any approval"})
+
+        self.assertEqual(len(lead.message_ids), before)
 
     def test_clearing_a_draft_returns_the_lead_to_empty(self):
         """Removing a draft must not leave the record claiming to be ready.
@@ -1115,17 +1145,21 @@ class TestGgdOutreachApproval(TransactionCase):
         self.assertFalse(lead.ggd_draft_subject)
         self.assertFalse(lead.ggd_draft_body)
 
-    def test_clearing_a_draft_still_revokes_approval(self):
+    def test_clearing_a_draft_leaves_nothing_to_send(self):
+        """Clearing no longer revokes either, but there is no version to send.
+
+        The approval flag survives; the claim refuses on the missing subject
+        and body, exactly as it does for an approval granted without a draft.
+        """
         lead = self._approved_lead()
 
         lead.write({"ggd_draft_subject": False, "ggd_draft_body": False})
 
         self.assertEqual(lead.ggd_draft_status, "empty")
         self.assertFalse(lead.ggd_draft_version)
-        self.assertFalse(lead.ggd_outreach_approved)
         self.assertFalse(lead.ggd_approved_draft_version)
-        self.assertFalse(lead.ggd_approved_recipient)
-        self.assertFalse(lead.ggd_outreach_approved_by)
+        with self.assertRaises(ValidationError):
+            lead.ggd_claim_send_key("%s:anything" % lead.id)
 
     def test_whitespace_only_draft_values_count_as_a_clear(self):
         lead = self._lead()
@@ -1543,14 +1577,20 @@ class TestGgdOutreachApproval(TransactionCase):
             lead.ggd_claim_send_key(self._key(lead))
         self.assertFalse(lead.ggd_last_send_key)
 
-    def test_recipient_change_revokes_approval(self):
+    def test_a_recipient_change_carries_the_approval_with_it(self):
+        """The approved recipient follows the change rather than revoking it.
+
+        Worth reading twice: an approval given for one address now covers a
+        different one, and only the chatter note records that it moved.
+        """
         lead = self._approved_lead()
 
         lead.write({"email_from": "replacement@ggd-qa.invalid"})
 
-        self.assertFalse(lead.ggd_outreach_approved)
-        self.assertFalse(lead.ggd_approved_draft_version)
-        self.assertEqual(lead.ggd_draft_status, "ready")
+        self.assertTrue(lead.ggd_outreach_approved)
+        self.assertEqual(lead.ggd_approved_recipient, "replacement@ggd-qa.invalid")
+        self.assertIn("the recipient", lead.message_ids[0].body)
+        self.assertTrue(lead.ggd_claim_send_key(self._key(lead)))
 
     def test_unresolved_claim_blocks_recipient_change(self):
         lead = self._claimed_lead()

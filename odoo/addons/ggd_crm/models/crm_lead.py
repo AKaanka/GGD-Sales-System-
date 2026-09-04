@@ -1764,47 +1764,46 @@ class CrmLead(models.Model):
                     lead.ggd_last_send_key,
                     lead.ggd_last_confirmed_send_key,
                 )
+        # Kaan's decision, 4 September 2026: editing a draft or changing the
+        # recipient no longer revokes the approval. It used to, on the reasoning
+        # that a human approved one specific version and an edited version is
+        # not that one. The approval now follows the edit instead: the approved
+        # version and recipient are re-pointed at what the record says after the
+        # write, so the send goes out with the edited text rather than stalling.
+        #
+        # Removing the revocation alone would not have been enough - the claim
+        # compares the current draft version against the approved one, so an
+        # edited draft would have failed later at the claim instead of here.
+        # Both had to move together or the change would only relocate the
+        # failure. The chatter note below is what is left of the old guarantee:
+        # the record still says that its approved content changed, and when.
+        edited_after_approval = self.filtered("ggd_outreach_approved")
         if draft_changed:
             values = dict(values)
-            # A draft change always revokes approval, whether the draft was
-            # edited or removed: the human approved a specific version, and
-            # that version no longer stands either way.
-            revocation = {
-                "ggd_outreach_approved": False,
-                "ggd_outreach_approved_by": False,
-                "ggd_outreach_approved_at": False,
-                "ggd_contact_basis_verified_at": False,
-                "ggd_approved_draft_version": False,
-                "ggd_approved_recipient": False,
-            }
             if self._ggd_is_clearing_draft(values):
-                values.update(revocation)
                 values.update(
                     {
                         "ggd_draft_version": False,
                         "ggd_draft_status": "empty",
+                        # Nothing left to send, so no version can be approved.
+                        # The approval flag stays; the claim refuses on the
+                        # missing subject and body, as it does for any approval
+                        # granted without a draft.
+                        "ggd_approved_draft_version": False,
                     }
                 )
             else:
                 values.setdefault("ggd_draft_version", uuid4().hex)
-                values.update(revocation)
                 values["ggd_draft_status"] = "ready"
-        elif "email_from" in values and not values.get("ggd_outreach_approved"):
-            for lead in self.filtered("ggd_outreach_approved"):
-                values = dict(values)
-                values.update(
-                    {
-                        "ggd_outreach_approved": False,
-                        "ggd_outreach_approved_by": False,
-                        "ggd_outreach_approved_at": False,
-                        "ggd_contact_basis_verified_at": False,
-                        "ggd_approved_draft_version": False,
-                        "ggd_approved_recipient": False,
-                        "ggd_draft_status": (
-                            "ready" if lead.ggd_draft_version else "empty"
-                        ),
-                    }
-                )
+                if edited_after_approval:
+                    values["ggd_approved_draft_version"] = values[
+                        "ggd_draft_version"
+                    ]
+        if "email_from" in values and edited_after_approval:
+            values = dict(values)
+            values.setdefault(
+                "ggd_approved_recipient", email_normalize(values.get("email_from"))
+            )
         send_key = values.get("ggd_last_send_key")
         if send_key and self._ggd_is_suppressing(values):
             # Suppression always wins. A write that marks Do not contact or
@@ -1924,4 +1923,25 @@ class CrmLead(models.Model):
                     email_normalize(values.get("email_from", self.email_from)),
                 )
                 values.setdefault("ggd_draft_status", "approved")
-        return super().write(values)
+        result = super().write(values)
+        if edited_after_approval and (draft_changed or "email_from" in values):
+            changed = [
+                label
+                for field, label in (
+                    ("ggd_draft_subject", _("the subject")),
+                    ("ggd_draft_body", _("the body")),
+                    ("email_from", _("the recipient")),
+                )
+                if field in values
+            ]
+            if changed:
+                for lead in edited_after_approval:
+                    lead.message_post(
+                        body=_(
+                            "Approved outreach edited: %(changed)s changed after "
+                            "approval. The approval now covers this version — it "
+                            "was not revoked. Re-read the draft before it sends.",
+                            changed=", ".join(changed),
+                        )
+                    )
+        return result
