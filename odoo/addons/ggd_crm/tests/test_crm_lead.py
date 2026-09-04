@@ -2042,3 +2042,85 @@ class TestGgdAutomatedMailSuppression(TransactionCase):
         with self.assertRaises(ValidationError):
             lead.action_ggd_approve_outreach()
         self.assertFalse(lead.ggd_outreach_approved)
+
+
+@tagged("post_install", "-at_install")
+class TestGgdManualMailFetch(TransactionCase):
+    """The chatter's Fetch mail button (#49): rights, rate limit, failure."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+        cls.Params = cls.env["ir.config_parameter"].sudo()
+        Users = cls.env["res.users"].with_context(no_reset_password=True)
+        cls.plain_user = Users.create(
+            {
+                "name": "QA CRM user without Settings",
+                "login": "qa-fetch-user@ggd-qa.invalid",
+                "group_ids": [
+                    (
+                        6,
+                        0,
+                        [
+                            cls.env.ref("base.group_user").id,
+                            cls.env.ref("sales_team.group_sale_salesman_all_leads").id,
+                        ],
+                    )
+                ],
+            }
+        )
+
+    def setUp(self):
+        super().setUp()
+        # The limit is a stored timestamp shared by everyone, so a previous
+        # test or a real click would otherwise decide this one's outcome.
+        self.Params.set_param(self.Lead.GGD_FETCH_LAST_RUN_PARAM, "")
+
+    def test_a_crm_user_without_settings_rights_can_fetch(self):
+        """The whole point: no new privileges to press the button."""
+        self.assertFalse(self.plain_user.has_group("base.group_system"))
+        result = self.Lead.with_user(self.plain_user).ggd_fetch_incoming_mail()
+        self.assertIn("ok", result)
+        self.assertIn("message", result)
+
+    def test_a_rapid_second_press_is_refused(self):
+        self.Lead.ggd_fetch_incoming_mail()
+        second = self.Lead.ggd_fetch_incoming_mail()
+        self.assertFalse(second["ok"])
+        self.assertEqual(second["reason"], "rate_limited")
+
+    def test_the_limit_lets_go_once_the_interval_has_passed(self):
+        self.Lead.ggd_fetch_incoming_mail()
+        stale = fields.Datetime.now() - timedelta(
+            seconds=self.Lead.GGD_FETCH_MIN_INTERVAL_SECONDS + 1
+        )
+        self.Params.set_param(
+            self.Lead.GGD_FETCH_LAST_RUN_PARAM, fields.Datetime.to_string(stale)
+        )
+        self.assertNotEqual(
+            self.Lead.ggd_fetch_incoming_mail().get("reason"), "rate_limited"
+        )
+
+    def test_an_unreachable_server_is_a_message_not_a_traceback(self):
+        """A mail server that is down is an ordinary Tuesday."""
+        with patch.object(
+            type(self.env["fetchmail.server"]),
+            "fetch_mail",
+            side_effect=Exception("connection refused"),
+        ):
+            result = self.Lead.ggd_fetch_incoming_mail()
+        if result["reason"] != "no_server":
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["reason"], "error")
+            self.assertNotIn("connection refused", result["message"])
+
+    def test_the_slot_is_claimed_before_the_fetch_runs(self):
+        """A hanging fetch must still hold the limit, or presses queue up."""
+        with patch.object(
+            type(self.env["fetchmail.server"]),
+            "fetch_mail",
+            side_effect=Exception("hangs"),
+        ):
+            self.Lead.ggd_fetch_incoming_mail()
+        self.assertTrue(self.Params.get_param(self.Lead.GGD_FETCH_LAST_RUN_PARAM))

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="ggd_crm.ChatterFetchMail"
+       t-inherit="mail.Chatter"
+       t-inherit-mode="extension">
+        <!-- After Log note, so the button sits beside Send message without
+             displacing the two people already reach for. Log note is the
+             anchor rather than Activity because it carries no t-if. -->
+        <xpath expr="//button[hasclass('o-mail-Chatter-logNote')]" position="after">
+            <button t-if="ggdCanFetchMail"
+                    class="o-ggd-Chatter-fetchMail btn btn-secondary text-nowrap me-1"
+                    t-att-class="{ 'my-2': !props.compactHeight }"
+                    t-att-disabled="ggdFetch.busy"
+                    title="Fetch incoming mail now, without waiting for the 5-minute poll"
+                    t-on-click="() => this.ggdFetchIncomingMail()">
+                <i class="fa fa-refresh me-1"
+                   t-att-class="{ 'fa-spin': ggdFetch.busy }"
+                   role="img"/>
+                <span>Fetch mail</span>
+            </button>
+        </xpath>
+    </t>
+
+</templates>
