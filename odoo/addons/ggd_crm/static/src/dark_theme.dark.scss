@@ -1,0 +1,122 @@
+// Dark theme for Odoo 19 Community (#53).
+//
+// Community defines the web.assets_web_dark bundle and the template that
+// serves it, but ships almost no dark stylesheets: three .dark.scss files in
+// `web`, for a calendar, an emoji picker and a file viewer. The theme itself
+// is an Enterprise asset. So the bundle loads correctly and repaints nothing,
+// which is exactly what the first attempt looked like.
+//
+// This file is the missing paint. It contributes to web.assets_web_dark from
+// our own addon, so it is served only when the color_scheme cookie asks for
+// dark and costs nothing in light mode.
+//
+// Written as flat overrides rather than variable reassignment because Odoo 19
+// compiles its SCSS to literal colours - there are no --bs-* custom
+// properties on :root to redefine at runtime. Checked in the browser before
+// writing this.
+
+$ggd-bg:          #1c1f26;   // app background, behind everything
+$ggd-surface:     #262a36;   // sheets, cards, panels. Odoo's own offline
+                             // page uses this exact value for dark.
+$ggd-surface-alt: #2f3441;   // rows, hovers, inputs
+$ggd-border:      #3b4150;
+$ggd-text:        #e6e8ee;
+$ggd-text-muted:  #a2a8b8;
+
+// ---------------------------------------------------------------- surfaces
+body,
+.o_web_client,
+.o_action_manager,
+.o_content,
+.o_kanban_renderer,
+.o_list_view,
+.o_form_view,
+.o_form_sheet_bg,
+.o_view_controller {
+    background-color: $ggd-bg !important;
+    color: $ggd-text;
+}
+
+.o_control_panel,
+.o_form_sheet,
+.o_list_table,
+.modal-content,
+.dropdown-menu,
+.o-mail-Chatter,
+.o_searchview,
+.o_cp_searchview,
+.o_notebook,
+.o_kanban_record,
+.card {
+    background-color: $ggd-surface !important;
+    color: $ggd-text !important;
+    border-color: $ggd-border !important;
+}
+
+// --------------------------------------------------------------------- text
+.o_form_view, .o_list_view, .o_content, .modal-content, .o-mail-Chatter,
+.o_field_widget, .o_form_label, .o_horizontal_separator,
+h1, h2, h3, h4, h5, h6, label, p, span, div, td, th, a:not(.btn) {
+    color: $ggd-text;
+}
+
+.text-muted, .o_form_label_help, small, .o-mail-Message-date {
+    color: $ggd-text-muted !important;
+}
+
+// ------------------------------------------------------------------- tables
+.o_list_table thead th {
+    background-color: $ggd-surface-alt !important;
+    color: $ggd-text !important;
+    border-color: $ggd-border !important;
+}
+
+.o_list_table tbody tr td {
+    border-color: $ggd-border !important;
+}
+
+.o_list_table tbody tr:hover td,
+.o_data_row:hover > td {
+    background-color: $ggd-surface-alt !important;
+}
+
+// ------------------------------------------------------------------- inputs
+input, textarea, select,
+.o_input, .o_field_widget input, .o_searchview_input {
+    background-color: $ggd-surface-alt !important;
+    color: $ggd-text !important;
+    border-color: $ggd-border !important;
+}
+
+input::placeholder, textarea::placeholder, .o_searchview_input::placeholder {
+    color: $ggd-text-muted !important;
+}
+
+// ------------------------------------------------------------------ buttons
+.btn-secondary, .btn-light, .o_button_generate_leads {
+    background-color: $ggd-surface-alt !important;
+    color: $ggd-text !important;
+    border-color: $ggd-border !important;
+}
+
+// The navbar is already dark-on-purple in light mode; only its dropdowns
+// need help, and they inherit the navbar colour rather than the surface.
+.o_main_navbar .dropdown-menu {
+    background-color: $ggd-surface !important;
+    border-color: $ggd-border !important;
+}
+
+// ------------------------------------------------------------------ chatter
+.o-mail-Message, .o-mail-Composer, .o-mail-Composer-input {
+    background-color: $ggd-surface !important;
+    color: $ggd-text !important;
+}
+
+.o-mail-Message:hover {
+    background-color: $ggd-surface-alt !important;
+}
+
+// --------------------------------------------------------------- separators
+hr, .o_horizontal_separator, .table > :not(caption) > * > * {
+    border-color: $ggd-border !important;
+}
