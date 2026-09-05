@@ -1500,9 +1500,16 @@ body,
         background: RGBA(var(--ggd-accent-rgb), 0.08) !important;
         box-shadow: inset 0 0 0 1px RGBA(var(--ggd-accent-rgb), 0.5) !important;
     }
+    // A card is a translucent pane: it borrows the column panel behind it. The
+    // dragged copy is lifted out of the column and carried over the board, so
+    // the same fill lets the column it is passing over - its header above all,
+    // which the card overlaps first - be read straight through the card. The
+    // two layers here are the colour a resting card already has, the glass
+    // composited onto the panel, written so it is opaque.
     .o_kanban_renderer .o_dragged, .o_kanban_renderer .o_kanban_record.o_dragged, .o_dragged_embedded_action, .ui-sortable-helper {
         transform: none !important;
         opacity: 1 !important;
+        background: linear-gradient(var(--ggd-glass-2), var(--ggd-glass-2)), var(--ggd-panel) !important;
         border-color: var(--ggd-accent) !important;
         box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.18), 0 18px 40px rgba(0, 0, 0, 0.35) !important;
     }
