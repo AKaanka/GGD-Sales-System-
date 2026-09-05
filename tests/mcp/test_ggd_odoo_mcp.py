@@ -321,8 +321,7 @@ class ReadToolTests(unittest.TestCase):
         self.assertEqual(result["total_matching"], 36)
         self.assertTrue(result["has_more"])
         self.assertFalse(result["complete"])
-        self.assertIn("offset=1", result["pagination_note"])
-        self.assertEqual(result["data_safety_note"], connector.DATA_SAFETY_NOTE)
+        self.assertEqual(result["next_page_offset"], 1)
         record = result["records"][0]
         self.assertEqual(record["record"], "crm.lead,4242")
         self.assertEqual(record["stage"], "Qualified")
@@ -411,7 +410,7 @@ class ReadToolTests(unittest.TestCase):
         })
         result = connector.tool_pipeline_report(client, {"group_by": "stage"})
         self.assertFalse(result["complete"])
-        self.assertIn("900 opportunities match", result["incomplete_note"])
+        self.assertIn("900 match but only the first 3", result["incomplete_note"])
         self.assertEqual(result["totals"]["expected_revenue"], 300.0)
         self.assertEqual(result["totals"]["weighted_revenue"], 150.0)
         self.assertEqual(result["groups"][0]["group"], "Qualified")
@@ -867,6 +866,67 @@ class FailureTests(unittest.TestCase):
         headers = client.calls[0][3]
         self.assertEqual(headers["X-odoo-database"], "ggd")
         self.assertEqual(headers["Authorization"], "Bearer %s" % SENTINEL_KEY)
+
+
+class PayloadSizeTests(unittest.TestCase):
+    """The connector's output is charged to Kaan on every turn it stays in
+    context, so the shape of it is a feature, not a cosmetic choice."""
+
+    def test_prune_drops_nulls_but_keeps_false_and_zero(self):
+        pruned = connector.prune({
+            "phone": None, "approved": False, "fit_score": 0,
+            "name": "x", "nested": {"a": None, "b": False},
+            "rows": [{"c": None, "d": 0}],
+        })
+        self.assertEqual(pruned, {
+            "approved": False, "fit_score": 0, "name": "x",
+            "nested": {"b": False}, "rows": [{"d": 0}],
+        })
+
+    def test_a_serialised_result_contains_no_nulls_and_no_indentation(self):
+        client = FakeOdoo(routes={
+            ("crm.lead", "search_count"): 1,
+            ("crm.lead", "search_read"): [lead_row(phone=False, city=False)],
+        })
+        text = connector.call_tool(
+            "ggd_search_records", {"query": "x"}, client
+        )["content"][0]["text"]
+        self.assertNotIn("null", text)
+        self.assertNotIn("\n", text)
+        self.assertNotIn(", ", text)
+        record = json.loads(text)["records"][0]
+        self.assertNotIn("phone", record)
+        self.assertNotIn("city", record)
+        # ...but the flags a reader must not guess at are still there.
+        self.assertIs(record["ggd"]["do_not_contact"], False)
+        self.assertIs(record["ggd"]["outreach_approved"], False)
+
+    def test_the_untrusted_note_rides_only_with_free_text(self):
+        with_text = connector.list_result(
+            [{"id": 1, "text": {"description": "hello"}}], 1, 0, 10
+        )
+        without = connector.list_result([{"id": 1}], 1, 0, 10)
+        self.assertIn("untrusted", with_text)
+        self.assertNotIn("untrusted", without)
+
+    def test_read_tools_declare_only_the_hints_that_mean_something(self):
+        for tool in connector.build_tools():
+            annotations = tool["annotations"]
+            if not annotations["readOnlyHint"]:
+                continue
+            # Per the MCP spec these are meaningful only when readOnlyHint is
+            # false, so carrying them on a read tool is per-turn cost for
+            # nothing.
+            self.assertNotIn("destructiveHint", annotations)
+            self.assertNotIn("idempotentHint", annotations)
+            self.assertNotIn("title", annotations)
+
+    def test_the_tool_declarations_stay_within_a_per_turn_budget(self):
+        """tools/list is re-sent on every turn of every conversation, used or
+        not. A regression here is paid for continuously and silently, so it
+        gets a number rather than good intentions."""
+        size = len(json.dumps(connector.build_tools(), separators=(",", ":")))
+        self.assertLess(size, 7000, "tools/list grew to %d characters" % size)
 
 
 class TextHandlingTests(unittest.TestCase):

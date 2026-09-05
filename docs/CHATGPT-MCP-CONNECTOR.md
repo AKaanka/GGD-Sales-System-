@@ -75,6 +75,23 @@ answer says which offset to ask for next. The pipeline report carries
 `complete`, and if it is false it says how many opportunities it could not add
 up. Ask for the numbers if the summary reads too confidently.
 
+### Why the answers look terse
+
+Everything the connector returns sits in the conversation's context and is
+charged again on every later turn, so it is deliberately compact:
+
+- **Empty fields are omitted.** A company with no published phone number has
+  no `phone` key, rather than `"phone": null`. `false` and `0` are kept, since
+  "not approved" and "fit score 0" are answers rather than absences.
+- **Pages are small by default** — 10 records, 5 chatter messages. Every
+  answer reports `total_matching` and the offset for the next page, and you
+  can ask for up to 50 at a time ("show me 40 of them").
+
+Together with a leaner tool declaration this cut what a typical reporting
+session puts in context by roughly a third. If you would rather see more per
+answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
+`mcp/ggd_odoo_mcp.py` are one line each.
+
 ---
 
 ## The seven tools

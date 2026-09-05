@@ -203,9 +203,8 @@ def main():
     check("its chatter history comes with it",
           "messages" in detail.get("history", {}),
           json.dumps(detail.get("history"))[:200])
-    check("free text is returned under a 'text' key, not as instruction",
-          "text" in detail["opportunity"] and
-          detail.get("data_safety_note", "").startswith("Everything under"))
+    check("free text is returned under a 'text' key, labelled untrusted",
+          "text" in detail["opportunity"] and "untrusted" in detail)
 
     section("4. Pagination and incomplete results")
     page1, _ = server.call("ggd_search_records", {"limit": 1, "offset": 0})
@@ -213,8 +212,8 @@ def main():
     check("one record per page is honoured", page1.get("returned") <= 1)
     if total > 1:
         check("more pages are announced, not hidden",
-              page1.get("has_more") is True and "offset=1" in
-              page1.get("pagination_note", ""),
+              page1.get("has_more") is True
+              and page1.get("next_page_offset") == 1,
               json.dumps(page1)[:200])
         page2, _ = server.call("ggd_search_records", {"limit": 1, "offset": 1})
         first = [r["id"] for r in page1.get("records", [])]
