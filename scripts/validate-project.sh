@@ -27,6 +27,9 @@ PY
 echo "Running script unit tests..."
 python3 -m unittest discover -s tests/scripts
 
+echo "Running MCP connector unit tests..."
+python3 -m unittest discover -s tests/mcp
+
 if command -v node >/dev/null 2>&1; then
   echo "Checking n8n workflow exports..."
   node tests/workflows/test-workflow-exports.js
