@@ -48,9 +48,11 @@ company as a subtitle, the fit ring, the industry and the outbound pills;
 the revenue line is hidden by the theme rather than removed from the
 template, because the CRM's forecast kanban inherits the same template.
 
-Cards cannot be reordered inside a column: `crm.lead` has no `sequence`
-field and Odoo orders the pipeline by priority, so stock Odoo refuses it
-too. Adding that would be a data-model change.
+Cards can be reordered by hand inside a column. Stock Odoo refuses this
+on `crm.lead`, which has no `sequence` field and orders by priority; the
+addon adds `sequence` (default 10, set by dragging) and makes the kanban
+sort by it first. The model's own order is untouched, so the list view and
+searches still order by priority as the CRM ships them.
 
 ## The colour language
 

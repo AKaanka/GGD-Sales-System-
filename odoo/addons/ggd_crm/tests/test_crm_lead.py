@@ -2164,3 +2164,36 @@ class TestGgdManualMailFetch(TransactionCase):
         ):
             self.Lead.ggd_fetch_incoming_mail()
         self.assertTrue(self.Params.get_param(self.Lead.GGD_FETCH_LAST_RUN_PARAM))
+
+
+class TestGgdPipelineOrder(TransactionCase):
+    """Cards can be reordered by hand inside a pipeline column."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def test_a_lead_carries_a_sequence_with_a_default(self):
+        lead = self.Lead.create({"name": "Order QA", "type": "opportunity"})
+        self.assertEqual(lead.sequence, 10)
+
+    def test_the_kanban_sorts_by_sequence_first(self):
+        """The order the board uses, not the model's: the CRM's list keeps priority."""
+        arch = self.Lead.get_views([(False, "kanban")])["views"]["kanban"]["arch"]
+        self.assertIn('default_order="sequence, priority desc, id desc"', arch)
+        self.assertEqual(self.Lead._order, "priority desc, id desc")
+
+    def test_resequence_writes_the_order_the_board_shows(self):
+        """web_resequence is what a drag calls; the card dropped first gets the lowest number."""
+        first, second = (
+            self.Lead.create({"name": "Order QA %s" % i, "type": "opportunity"}) for i in (1, 2)
+        )
+        (first | second).web_resequence(specification={}, field_name="sequence", offset=0)
+        moved = self.Lead.browse([second.id, first.id])
+        moved.web_resequence(specification={}, field_name="sequence", offset=0)
+        self.assertLess(second.sequence, first.sequence)
+        self.assertEqual(
+            self.Lead.search([("id", "in", moved.ids)], order="sequence, id").ids,
+            [second.id, first.id],
+        )

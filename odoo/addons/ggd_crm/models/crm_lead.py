@@ -103,6 +103,18 @@ class CrmLead(models.Model):
     ggd_industry = fields.Char(string="Industry")
     ggd_product_focus = fields.Text(string="Product / capability focus")
     ggd_source_url = fields.Char(string="Research source URL")
+    # Hand order inside a pipeline column. Odoo orders crm.lead by priority
+    # and id and resequences a kanban only through a field named "sequence",
+    # so without this the board refused to let a card be moved within its
+    # column. The model's own order is untouched: only the kanban sorts by
+    # it, first, so the list and the search stay as the CRM ships them.
+    sequence = fields.Integer(
+        string="Pipeline order",
+        default=10,
+        index=True,
+        help="Position of the card inside its pipeline column. Set by dragging.",
+    )
+
     ggd_fit_score = fields.Integer(
         string="GGD fit score",
         help="LLM-assisted or manually reviewed fit score from 0 to 100.",

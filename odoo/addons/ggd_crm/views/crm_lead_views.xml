@@ -191,6 +191,14 @@
         <field name="model">crm.lead</field>
         <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
         <field name="arch" type="xml">
+            <!-- Cards can be reordered by hand inside a column: the kanban
+                 sorts by the sequence field first, then as the CRM does. -->
+            <xpath expr="//kanban" position="attributes">
+                <attribute name="default_order">sequence, priority desc, id desc</attribute>
+            </xpath>
+            <xpath expr="//field[@name='stage_id']" position="before">
+                <field name="sequence"/>
+            </xpath>
             <!-- The column header counts records rather than summing revenue:
                  this pipeline is about people to write to, not money. -->
             <xpath expr="//progressbar" position="attributes">

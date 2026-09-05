@@ -1,22 +1,5 @@
-// Drive the local Odoo through headless Chrome over the DevTools protocol.
-// No dependencies beyond Node 22 (for the built-in WebSocket) and a Chrome.
-//
-// usage: node odoo-shot.mjs <session_id> <light|dark> <tone|-> <outdir> <name=path[@@step]> ...
-//
-// Each page argument navigates to http://<ODOO_HOST>:<port><path> (default
-// localhost:8069), optionally runs a step, then writes <outdir>/<name>.png,
-// <name>.dom.txt (an outline of the o_* classes) and <name>.errors.txt (the
-// console errors seen while on that page). A step is one of:
-//
-//   @@<js>                          evaluate the expression; a string result goes to <name>.js.txt
-//   @@@file:<path>|<prep js>        evaluate a file after setting window.__ggd_prep to the prep body
-//   @@@hover:<selector>|<js>        move the mouse onto the element, then run js
-//   @@@drag:<from sel>|<to sel>|<js> press on one element, move onto the other, run js, release
-//   @@@force:<sel>;<sel>;...        force :hover/:focus/:focus-visible/:active on the first two
-//                                   matches of each selector and report Odoo-coloured results
-//
-// Environment: CHROME (binary path), ODOO_HOST (default localhost:8069),
-// VW and VH (viewport, default 1440x900). See README.md for the session id.
+// Screenshot + DOM outline of the local Odoo through headless Chrome (CDP, no deps).
+// usage: node odoo-shot.mjs <session_id> <scheme:light|dark> <tone> <outdir> <name=path> [name=path ...]
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
@@ -128,8 +111,10 @@ for (const spec of pages) {
     await sleep(500);
     js = after;
   }
-  if (js && js.startsWith("@drag:")) {
+  if (js && (js.startsWith("@drag:") || js.startsWith("@drop:"))) {
     // "@drag:<from selector>|<to selector>|<js after>": press on the first, move to the second, hold, then screenshot
+    // and release back where it started (no change). "@drop:" is the same but releases on the target.
+    const dropIt = js.startsWith("@drop:");
     const [fromSel, toSel, after = ""] = js.slice(6).split("|");
     const rect = async (sel) => (await send("Runtime.evaluate", { expression: `(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return JSON.stringify({x: r.x + r.width / 2, y: r.y + r.height / 2}); })()`, returnByValue: true })).result.result.value;
     const a = JSON.parse(await rect(fromSel)), b = JSON.parse(await rect(toSel));
@@ -138,7 +123,7 @@ for (const spec of pages) {
     for (let i = 1; i <= 12; i++) { await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (b.x - a.x) * i / 12, y: a.y + (b.y - a.y) * i / 12, button: "left" }); await sleep(60); }
     await sleep(500);
     js = after;
-    var dragRelease = { x: a.x, y: a.y };
+    var dragRelease = dropIt ? { x: b.x, y: b.y + 20 } : { x: a.x, y: a.y };
   }
   if (js) {
     const r = await send("Runtime.evaluate", { expression: js, awaitPromise: true, returnByValue: true });
