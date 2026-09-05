@@ -184,8 +184,13 @@
         </field>
     </record>
 
-    <!-- Kanban card: the fit ring, the industry and the outbound state, so the
-         pipeline reads without opening records. -->
+    <!-- Kanban card: the Aurora card, one to one with the design. Title, a
+         subtitle of city and industry, and one row that carries the fit score
+         and the outbound state. Everything else Odoo puts on a CRM card -
+         the partner avatar, the priority stars, the assignee, the rotting
+         clock - is gone: the board is one person's outreach queue, the column
+         order is set by hand, and the scheduled activity is the only one of
+         them that says anything, so it moves into the pill row. -->
     <record id="crm_lead_view_kanban_ggd" model="ir.ui.view">
         <field name="name">crm.lead.kanban.ggd.controls</field>
         <field name="model">crm.lead</field>
@@ -198,43 +203,105 @@
             </xpath>
             <xpath expr="//field[@name='stage_id']" position="before">
                 <field name="sequence"/>
+                <field name="city"/>
+                <field name="ggd_board_state"/>
             </xpath>
-            <!-- The column header counts records rather than summing revenue:
+            <!-- The line under the column title is the mix of outbound states
+                 of the cards in the column, as the design draws it, and it
+                 keeps Odoo's own behaviour: clicking a segment filters the
+                 column down to that state. The revenue sums are dropped -
                  this pipeline is about people to write to, not money. -->
             <xpath expr="//progressbar" position="attributes">
+                <attribute name="field">ggd_board_state</attribute>
+                <attribute name="colors">{"ok": "success", "wait": "warning", "review": "info", "stop": "danger"}</attribute>
                 <attribute name="sum_field"/>
                 <attribute name="recurring_revenue_sum_field"/>
+                <attribute name="help">Filter the column by outbound state: teal done, amber waiting on you, violet needs a decision, rose stop and look.</attribute>
             </xpath>
+            <!-- Odoo's own card body goes first, so the subtitle below can
+                 reuse partner_name without an xpath having to tell the two
+                 apart. The partner block repeats the title on every record
+                 this CRM creates, and the footer is three controls the design
+                 has no place for: priority, because the column is ordered by
+                 hand; the assignee, because there is one user; the rotting
+                 clock, because the review desk already asks that question. -->
+            <xpath expr="//t[@t-name='card']//div[hasclass('d-flex')][field[@name='partner_id']]" position="replace"/>
+            <xpath expr="//field[@name='contact_name']" position="replace"/>
+            <xpath expr="//field[@name='partner_name']" position="replace"/>
+            <xpath expr="//t[@t-name='card']/footer" position="replace"/>
             <!-- The revenue line is hidden by the theme, not removed here: the
                  CRM's forecast kanban inherits this view and looks for the
                  expected_revenue field with an xpath of its own. -->
-            <xpath expr="//field[@name='partner_name']" position="attributes">
-                <attribute name="class">ggd_kanban_sub</attribute>
-            </xpath>
-            <xpath expr="//field[@name='contact_name']" position="attributes">
-                <attribute name="class">ggd_kanban_sub</attribute>
-            </xpath>
-            <xpath expr="//field[@name='tag_ids']" position="after">
-                <div class="ggd_kanban_row">
-                    <field name="ggd_fit_score" widget="ggd_ring" options="{'size': 'sm'}"/>
-                    <field name="ggd_industry" class="ggd_kanban_industry text-truncate"/>
-                    <field name="ggd_draft_status" widget="badge"
-                           invisible="not ggd_draft_status or ggd_draft_status == 'empty'"
-                           decoration-success="ggd_draft_status in ('approved', 'sent')"
-                           decoration-warning="ggd_draft_status == 'ready'"/>
-                    <field name="ggd_delivery_status" widget="badge"
-                           invisible="not ggd_delivery_status or ggd_delivery_status == 'none'"
-                           decoration-danger="ggd_delivery_status in ('claimed', 'bounced')"
-                           decoration-success="ggd_delivery_status == 'accepted'"/>
-                    <field name="ggd_reply_category" widget="badge"
-                           invisible="not ggd_reply_category"
-                           decoration-success="ggd_reply_category in ('interested', 'meeting')"
-                           decoration-info="ggd_reply_category in ('objection', 'unclear', 'information', 'referral')"
-                           decoration-danger="ggd_reply_category in ('unsubscribe', 'not_interested')"/>
-                    <field name="ggd_qualification_state" widget="badge"
-                           invisible="ggd_qualification_state != 'review'"
-                           decoration-info="ggd_qualification_state == 'review'"/>
+            <xpath expr="//t[@t-name='card']//div[hasclass('o_kanban_card_crm_lead_revenue')]" position="after">
+                <div class="ggd_kanban_sub">
+                    <field name="city" invisible="not city"/>
+                    <span t-if="record.city.raw_value and record.ggd_industry.raw_value"> · </span>
+                    <field name="ggd_industry" invisible="not ggd_industry"/>
+                    <field name="partner_name" invisible="city or ggd_industry"/>
                 </div>
+            </xpath>
+            <xpath expr="//field[@name='tag_ids']" position="replace">
+                <div class="ggd_kanban_row">
+                    <field name="ggd_fit_score" widget="ggd_ring" options="{'variant': 'bar'}"/>
+                    <div class="ggd_kanban_pills">
+                        <field name="ggd_draft_status" widget="badge"
+                               invisible="not ggd_draft_status or ggd_draft_status == 'empty'"
+                               decoration-success="ggd_draft_status in ('approved', 'sent')"
+                               decoration-warning="ggd_draft_status == 'ready'"/>
+                        <field name="ggd_delivery_status" widget="badge"
+                               invisible="not ggd_delivery_status or ggd_delivery_status == 'none'"
+                               decoration-danger="ggd_delivery_status in ('claimed', 'bounced')"
+                               decoration-success="ggd_delivery_status == 'accepted'"/>
+                        <field name="ggd_reply_category" widget="badge"
+                               invisible="not ggd_reply_category"
+                               decoration-success="ggd_reply_category in ('interested', 'meeting')"
+                               decoration-info="ggd_reply_category in ('objection', 'unclear', 'information', 'referral')"
+                               decoration-danger="ggd_reply_category in ('unsubscribe', 'not_interested')"/>
+                        <field name="ggd_qualification_state" widget="badge"
+                               invisible="ggd_qualification_state != 'review'"
+                               decoration-info="ggd_qualification_state == 'review'"/>
+                        <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                        <field name="activity_ids" widget="kanban_activity"/>
+                    </div>
+                    <!-- The design lights the card that is waiting on a
+                         person. The theme finds it with :has() on this
+                         marker, so no card class has to be computed. -->
+                    <span class="ggd_card_wait" invisible="ggd_board_state != 'wait'"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- The four filters behind the pipeline's quick-filter chips. They live
+         in the search view rather than in the chip component because a chip
+         has to leave a facet behind: a user who clicks "Needs review" and then
+         opens the Filters menu must see the same filter ticked, and one who
+         saves the view must get his chip back. The chip only toggles them.
+         The domains are ggd_board_chip_counts()'s domains; keep the two in
+         step or a chip will count one set and filter another. -->
+    <record id="crm_lead_view_search_ggd_board" model="ir.ui.view">
+        <field name="name">crm.lead.search.ggd.board</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search/field[1]" position="before">
+                <filter name="ggd_chip_sendable" string="Sendable today"
+                        domain="[('ggd_outreach_approved','=',True),
+                                 ('ggd_draft_status','=','approved'),
+                                 ('ggd_do_not_contact','=',False),
+                                 ('email_from','!=',False)]"/>
+                <filter name="ggd_chip_needs_review" string="Needs review"
+                        domain="['|','|','|','|',
+                                 ('ggd_automation_needs_review','=',True),
+                                 ('ggd_qualification_needs_review','=',True),
+                                 ('ggd_reply_needs_review','=',True),
+                                 ('ggd_delivery_needs_review','=',True),
+                                 ('ggd_workflow_needs_review','=',True)]"/>
+                <filter name="ggd_chip_unresolved_claim" string="Unresolved claim"
+                        domain="[('ggd_delivery_status','=','claimed')]"/>
+                <filter name="ggd_chip_replies" string="Replies"
+                        domain="[('ggd_last_reply_received_at','!=',False)]"/>
+                <separator/>
             </xpath>
         </field>
     </record>

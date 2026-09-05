@@ -14,9 +14,11 @@
                     t-att-disabled="ggdFetch.busy"
                     title="Fetch incoming mail now, without waiting for the 5-minute poll"
                     t-on-click="() => this.ggdFetchIncomingMail()">
-                <i class="fa fa-refresh me-1"
-                   t-att-class="{ 'fa-spin': ggdFetch.busy }"
-                   role="img"/>
+                <span class="ggd_icon me-1"
+                      t-att-class="{ 'ggd_icon--spin': ggdFetch.busy }"
+                      role="img">
+                    <t t-call="ggd_crm.icon.refresh"/>
+                </span>
                 <span>Fetch mail</span>
             </button>
         </xpath>

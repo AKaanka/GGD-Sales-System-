@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        The count beside the column title.
+
+        The design puts the number of cards in a pill next to the stage name.
+        Odoo prints it there too - but only while the column has no progress
+        bar; with one it moves the number to the right-hand end of the bar as
+        an animated aggregate. The pipeline has a progress bar (it is the
+        design's status line), so the count has to be put back by hand.
+
+        Scoped to crm.lead: web.KanbanHeader is one template for every kanban
+        in the database, and the other boards should keep Odoo's arrangement.
+    -->
+    <t t-name="ggd_crm.KanbanHeader" t-inherit="web.KanbanHeader" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('o_column_title')]/span[hasclass('text-truncate')]" position="after">
+            <span t-if="props.list.resModel === 'crm.lead' and !props.list.model.useSampleModel"
+                  class="ggd_col_count"
+                  t-esc="group.count"/>
+        </xpath>
+    </t>
+
+</templates>

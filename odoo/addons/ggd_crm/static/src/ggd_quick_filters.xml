@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="ggd_crm.QuickFilters">
+        <div t-if="chips.length" class="ggd_quick_filters">
+            <button t-foreach="chips" t-as="chip" t-key="chip.id"
+                    type="button"
+                    class="ggd_chip"
+                    t-att-class="{ 'ggd_chip--on': chip.active, 'ggd_chip--empty': chip.empty }"
+                    t-att-aria-pressed="chip.active ? 'true' : 'false'"
+                    t-on-click="() => this.toggle(chip)">
+                <t t-if="chip.check" t-call="ggd_crm.icon.check"/>
+                <span t-esc="chip.label"/>
+                <span class="ggd_chip_n" t-esc="chip.counter"/>
+            </button>
+        </div>
+    </t>
+
+    <!-- The bar sits between the control panel and the board, as the design
+         draws it: inside the layout's content so it takes the board's
+         horizontal padding, but outside .o_kanban_renderer so it does not
+         scroll sideways with the columns. -->
+    <t t-name="ggd_crm.KanbanView" t-inherit="web.KanbanView" t-inherit-mode="extension">
+        <xpath expr="//t[@t-component='props.Renderer']" position="before">
+            <GgdQuickFilters t-if="props.resModel === 'crm.lead'"/>
+        </xpath>
+    </t>
+
+</templates>
