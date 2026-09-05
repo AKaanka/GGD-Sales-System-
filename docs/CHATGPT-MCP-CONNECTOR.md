@@ -49,15 +49,23 @@ Ask in plain language. Some prompts that work:
 - "What is overdue? Show me the follow-up report."
 - "List the ten most overdue activities and who they are assigned to."
 
+**New leads (writes to Odoo — only when you ask)**
+
+- "Create a lead from https://www.fercelik.com/home, then save a sourced
+  qualification."
+- "I found this company at a trade fair — create a lead from
+  https://example.com/en/about with contact Ms Y, Head of Procurement."
+
 **Qualification (writes to Odoo — only when you ask)**
 
 - "Save this assessment on opportunity 42: fit score 74, confidence 0.85,
   summary …, angle …, source https://…"
 
-The desktop app asks before running the write, provided your tool-approval
+The desktop app asks before running either write, provided your tool-approval
 setting is not `auto`. Check it under **Settings** in the desktop app; the
 `writes` mode prompts for anything not marked read-only, and this connector
-marks five tools read-only and one — `ggd_save_qualification` — as a write.
+marks five tools read-only and two — `ggd_create_lead` and
+`ggd_save_qualification` — as writes.
 
 ### Reading the answers honestly
 
@@ -69,7 +77,7 @@ up. Ask for the numbers if the summary reads too confidently.
 
 ---
 
-## The six tools
+## The seven tools
 
 | Tool | Reads or writes | What it is for |
 | --- | --- | --- |
@@ -78,7 +86,42 @@ up. Ask for the numbers if the summary reads too confidently.
 | `ggd_get_opportunity` | read | One opportunity in full, with activities and chatter. |
 | `ggd_pipeline_report` | read | Counts and expected revenue by stage, salesperson or qualification state. |
 | `ggd_followup_report` | read | Overdue Odoo activities, most overdue first. |
+| `ggd_create_lead` | **write** | Opens one new Target Identified opportunity from a company you researched. Refuses duplicates. |
 | `ggd_save_qualification` | **write** | Saves a fit assessment through the addon's own audited method. |
+
+### What `ggd_create_lead` does, and stops at
+
+It creates **one opportunity at the Target Identified stage** and nothing more
+— the stage `PLAN.md` defines as "company and source are recorded". The fields
+it accepts are exactly the "Required data before qualification" list in
+`docs/ODOO-SETUP.md`: company name and source URL are required, and
+opportunity name, website, contact name, job title, email, phone, city,
+country, industry, product focus and a lead-source note are optional. It
+accepts no model name, method name, field list, domain or raw Odoo payload,
+and it builds the values dict itself — extra arguments naming Odoo fields are
+ignored, and a payload carrying any approval, draft, send, Do-Not-Contact or
+score field is refused before it is sent.
+
+So a lead it creates is **never** approved for outreach, has no draft, no send
+key and no contact basis, and the tool reports that gate state back to you
+after the create so you can see it rather than take it on trust. There is no
+tool here that could later change any of that.
+
+**It refuses to create a duplicate.** Before creating, it searches open
+`crm.lead` records for the company name, the website host (with `www.`
+stripped, so a company's pages match each other) and the email if you gave
+one. If anything matches, nothing is created and it hands you the existing
+id(s) instead, telling you to qualify that record. A matching `res.partner`
+contact is reported but does not block — a customer record is not a pipeline
+record.
+
+Two things it will refuse rather than accept: a `source_url` that is not
+`http://` or `https://`, and any field long enough to be a pasted web page
+(summarise instead — nothing is silently truncated). It also refuses text that
+looks like a handed-over credential.
+
+Archived records do not count as duplicates: a company that was dropped or
+lost can legitimately be researched again.
 
 ### What a false return means
 
@@ -104,13 +147,16 @@ not redesign it or add a second scoring scheme.
 Two independent boundaries, both tested by
 `./scripts/check-mcp-connector.sh`.
 
-**The connector's allowlist.** It can call exactly nine Odoo operations:
-`search_read` and `search_count` on `crm.lead` and `res.partner`,
-`search_read`/`search_count` on `mail.message`, `search_read` on
-`mail.activity` and `crm.stage`, and `crm.lead.ggd_apply_qualification`. No
-tool accepts a model name, a method name, a domain, a field list or SQL. There
-is no write, create, delete, email, approval or Do-Not-Contact tool, and
-asking for one gets a refusal, not an attempt.
+**The connector's allowlist.** It can call exactly twelve Odoo operations:
+`search_read` and `search_count` on `crm.lead`, `res.partner`, `mail.message`
+and `mail.activity`, `search_read` on `crm.stage` and `res.country`, and two
+writes — `crm.lead.ggd_apply_qualification` and `crm.lead.create`. No tool
+accepts a model name, a method name, a domain, a field list or SQL.
+
+The **only** create path is `ggd_create_lead`, and it can create nothing but a
+`crm.lead`: `create` on any other model is refused, as is `write`, `unlink`,
+`copy`, anything under `mail`, and every approval, draft and send method on
+the addon. Asking for one gets a refusal, not an attempt.
 
 **Odoo's access rights.** These hold even if the key were to leak, which is
 why they matter more. The reporting user is an ordinary internal user with CRM
@@ -198,7 +244,7 @@ cp ~/.codex/config.toml ~/.codex/config.toml.bak-$(date +%Y%m%d)
 ```
 
 Only non-secret settings are stored there. Restart the ChatGPT desktop app,
-then check **Settings > MCP servers**: `ggd_odoo` should be listed with six
+then check **Settings > MCP servers**: `ggd_odoo` should be listed with seven
 tools.
 
 ### 5. Prove it

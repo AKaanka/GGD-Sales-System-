@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -159,11 +160,12 @@ def main():
           json.dumps(init)[:200])
     tools = server.request("tools/list")["result"]["tools"]
     names = sorted(t["name"] for t in tools)
-    check("six tools are advertised", len(tools) == 6, ", ".join(names))
+    check("seven tools are advertised", len(tools) == 7, ", ".join(names))
     writes = [t["name"] for t in tools
               if not t["annotations"].get("readOnlyHint")]
-    check("exactly one tool is marked as a write",
-          writes == ["ggd_save_qualification"], str(writes))
+    check("exactly two tools are marked as writes",
+          sorted(writes) == ["ggd_create_lead", "ggd_save_qualification"],
+          str(writes))
 
     section("2. Authentication")
     status, is_error = server.call("ggd_connection_status")
@@ -250,7 +252,113 @@ def main():
         print("        %d of %d overdue activities on this page"
               % (followup["returned"], followup["total_matching"]))
 
-    section("6. Saving a qualification (fictional record only)")
+    section("6. Creating a lead from a researched company")
+    # A fresh name per run. The teardown archives fixtures rather than
+    # deleting them, so a stable name would be found archived on the next run
+    # and the create path would never be exercised twice.
+    run_tag = time.strftime("%Y%m%d-%H%M%S")
+    company = "[GGD-MCP-TEST] Fictional Fence Works GmbH %s" % run_tag
+    source_url = "https://fence-works.ggd-mcp-test.invalid/home"
+
+    # Every forbidden field the outbound gate is made of is passed in here on
+    # purpose. The schema does not declare them, so a correct connector must
+    # ignore them and produce an unapproved, undrafted, unclaimed record.
+    created, is_error = server.call("ggd_create_lead", {
+        "company_name": company,
+        "source_url": source_url,
+        "contact_name": "A. Fictional",
+        "job_title": "Head of Fictional Procurement",
+        "email": "einkauf@fence-works.ggd-mcp-test.invalid",
+        "city": "Berlin",
+        "country": "Germany",
+        "industry": "Fictional fencing systems",
+        "product_focus": "Fictional welded mesh panels.",
+        "lead_source_note": "Created by the MCP connector live check. Not real.",
+        "ggd_outreach_approved": True,
+        "ggd_do_not_contact": True,
+        "ggd_draft_body": "Dear sir",
+        "ggd_last_send_key": "1:deadbeef",
+    })
+    ok = check("a researched company becomes a new opportunity",
+               not is_error and created.get("created") is True,
+               json.dumps(created)[:400])
+    new_lead_id = (created.get("opportunity") or {}).get("id")
+    if ok:
+        print("        created crm.lead,%s at stage %r"
+              % (new_lead_id, (created.get("opportunity") or {}).get("stage")))
+    check("it lands at Target Identified",
+          (created.get("opportunity") or {}).get("stage") == "Target Identified",
+          json.dumps(created.get("opportunity"))[:200])
+    check("it is not yet qualified",
+          (created.get("opportunity") or {}).get("qualification_state")
+          == "pending")
+    gate = created.get("outbound_gate") or {}
+    check("the outbound gate is shut on the new record",
+          gate.get("outreach_approved") is False
+          and gate.get("has_draft") is False
+          and gate.get("has_send_key") is False
+          and gate.get("do_not_contact") is False
+          and gate.get("contact_basis") is None,
+          json.dumps(gate))
+    check("the forbidden fields passed in were ignored, not stored",
+          "deadbeef" not in json.dumps(created))
+    check("it points at ggd_save_qualification as the next step",
+          "ggd_save_qualification" in created.get("next_step", ""))
+
+    again, is_error = server.call("ggd_create_lead", {
+        "company_name": company, "source_url": source_url,
+    })
+    check("asking again does not create a duplicate",
+          not is_error and again.get("created") is False
+          and again.get("status") == "already_in_crm",
+          json.dumps(again)[:300])
+    check("it hands back the record that already exists",
+          new_lead_id in [r.get("id") for r in
+                          again.get("existing_opportunities", [])],
+          json.dumps(again.get("existing_opportunities"))[:300])
+
+    bad_url, is_error = server.call("ggd_create_lead", {
+        "company_name": "[GGD-MCP-TEST] Never Created", "source_url": "fercelik.com",
+    })
+    check("a source_url that is not a web address is refused",
+          is_error and bad_url.get("error") == "invalid_argument",
+          json.dumps(bad_url)[:200])
+
+    secretish, is_error = server.call("ggd_create_lead", {
+        "company_name": "[GGD-MCP-TEST] Never Created Either",
+        "source_url": "https://example.invalid/x",
+        "lead_source_note": "portal api_key: abc123",
+    })
+    check("a value that looks like a credential is refused",
+          is_error and secretish.get("error") == "invalid_argument",
+          json.dumps(secretish)[:200])
+
+    if new_lead_id:
+        qualified, is_error = server.call("ggd_save_qualification", {
+            "opportunity_id": new_lead_id,
+            "fit_score": 68,
+            "confidence": 0.82,
+            "fit_summary": "Fictional assessment of a fictional company.",
+            "personalization_angle": "Fictional angle. Connector test only.",
+            "source_url": source_url,
+        })
+        check("the created lead can then be qualified",
+              not is_error and qualified.get("status") == "saved"
+              and (qualified.get("stored") or {}).get("qualification_state")
+              == "ready",
+              json.dumps(qualified)[:300])
+        after = server.call(
+            "ggd_get_opportunity",
+            {"opportunity_id": new_lead_id, "history_limit": 0},
+        )[0]
+        after_ggd = (after.get("opportunity") or {}).get("ggd") or {}
+        check("qualifying it still did not open the outbound gate",
+              after_ggd.get("outreach_approved") is False
+              and after_ggd.get("draft_status") == "empty"
+              and after_ggd.get("do_not_contact") is False,
+              json.dumps(after_ggd)[:300])
+
+    section("7. Saving a qualification (fictional record only)")
     high, is_error = server.call("ggd_save_qualification", {
         "opportunity_id": lead_id,
         "fit_score": 74,
@@ -299,7 +407,7 @@ def main():
           is_error and bad.get("error") == "invalid_argument",
           json.dumps(bad)[:200])
 
-    section("7. Operations the connector does not offer")
+    section("8. Operations the connector does not offer")
     unknown = server.request("tools/call", {
         "name": "ggd_send_email", "arguments": {}
     })
@@ -309,6 +417,7 @@ def main():
     for model, method in (
         ("crm.lead", "write"),
         ("crm.lead", "unlink"),
+        ("res.partner", "create"),
         ("crm.lead", "action_ggd_approve_outreach"),
         ("crm.lead", "ggd_claim_send_key"),
         ("mail.mail", "send"),
@@ -322,7 +431,7 @@ def main():
             check("the connector refuses %s.%s" % (model, method),
                   exc.kind == "not_allowed", exc.message[:120])
 
-    section("8. Operations Odoo itself refuses for this user")
+    section("9. Operations Odoo itself refuses for this user")
     refused(client, "approve outreach", "crm.lead",
             "action_ggd_approve_outreach", {"ids": [lead_id]},
             403, "Outreach approver")
@@ -337,7 +446,7 @@ def main():
     refused(client, "delete an opportunity", "crm.lead", "unlink",
             {"ids": [doomed_id]}, 403, "not allowed to delete")
 
-    section("9. A missing or expired key")
+    section("10. A missing or expired key")
     absent = Server({"GGD_KEYCHAIN_SERVICE": "ggd-odoo-mcp-does-not-exist"})
     absent.request("initialize", {"protocolVersion": "2025-06-18",
                                   "capabilities": {},

@@ -12,10 +12,15 @@
 #
 # SAFETY
 #
-# It creates three fictional opportunities, all prefixed [GGD-MCP-TEST], all
-# on the RFC 2606 reserved .invalid domain, all created with
-# mail_create_nosubscribe and mail_notrack so nobody is subscribed and no
-# tracking notification is raised. It counts mail.mail before and after and
+# It creates three fictional opportunities directly, all prefixed
+# [GGD-MCP-TEST], all on the RFC 2606 reserved .invalid domain, all created
+# with mail_create_nosubscribe and mail_notrack so nobody is subscribed and no
+# tracking notification is raised. The connector itself then creates a fourth
+# through ggd_create_lead, carrying a per-run timestamp in its name: the
+# teardown archives rather than deletes, so a stable name would come back
+# archived on the next run and the create path would never be exercised twice.
+# Each run therefore leaves one more archived [GGD-MCP-TEST] record behind.
+# They are fictional and inert; delete them in Odoo whenever you like. It counts mail.mail before and after and
 # fails if that count moved: this database has a real Zoho outgoing server
 # configured and an active mail queue cron, so "no email was sent" is checked
 # rather than assumed.

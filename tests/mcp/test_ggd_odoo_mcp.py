@@ -153,23 +153,30 @@ class ProtocolTests(unittest.TestCase):
         }, self.client)
         self.assertEqual(response["error"]["code"], -32602)
 
-    def test_six_tools_with_accurate_write_marking(self):
+    def test_tools_are_marked_read_only_or_write_accurately(self):
         tools = connector.build_tools()
         names = [tool["name"] for tool in tools]
-        self.assertEqual(len(tools), 6)
+        self.assertEqual(len(tools), 7)
         self.assertEqual(sorted(names), sorted(connector.TOOL_HANDLERS))
+        writers = set()
         for tool in tools:
             annotations = tool["annotations"]
             self.assertFalse(annotations["openWorldHint"])
-            if tool["name"] == "ggd_save_qualification":
-                self.assertFalse(annotations["readOnlyHint"])
-                self.assertTrue(annotations["destructiveHint"])
-                self.assertFalse(annotations["idempotentHint"])
-            else:
-                self.assertTrue(
-                    annotations["readOnlyHint"],
-                    "%s must be marked read-only" % tool["name"],
-                )
+            if annotations["readOnlyHint"]:
+                continue
+            writers.add(tool["name"])
+            self.assertFalse(
+                annotations["idempotentHint"],
+                "%s must not claim idempotence" % tool["name"],
+            )
+        self.assertEqual(writers, {"ggd_create_lead", "ggd_save_qualification"})
+        by_name = dict((t["name"], t) for t in tools)
+        # Overwriting an existing assessment is destructive; opening a new
+        # opportunity changes nothing that was already there.
+        self.assertTrue(
+            by_name["ggd_save_qualification"]["annotations"]["destructiveHint"])
+        self.assertFalse(
+            by_name["ggd_create_lead"]["annotations"]["destructiveHint"])
 
     def test_no_tool_accepts_a_domain_field_list_or_method(self):
         forbidden = {"domain", "fields", "method", "model", "sql", "context"}
@@ -191,7 +198,7 @@ class ProtocolTests(unittest.TestCase):
                    stdout.getvalue().strip().splitlines()]
         self.assertEqual(replies[0]["result"], {})
         self.assertEqual(replies[1]["error"]["code"], -32700)
-        self.assertEqual(len(replies[2]["result"]["tools"]), 6)
+        self.assertEqual(len(replies[2]["result"]["tools"]), 7)
 
 
 class AllowlistTests(unittest.TestCase):
@@ -200,7 +207,8 @@ class AllowlistTests(unittest.TestCase):
         for model, method in (
             ("crm.lead", "write"),
             ("crm.lead", "unlink"),
-            ("crm.lead", "create"),
+            ("crm.lead", "copy"),
+            ("res.partner", "create"),
             ("crm.lead", "action_ggd_approve_outreach"),
             ("crm.lead", "ggd_prepare_draft"),
             ("crm.lead", "ggd_claim_send_key"),
@@ -213,12 +221,22 @@ class AllowlistTests(unittest.TestCase):
             self.assertEqual(caught.exception.kind, "not_allowed")
         self.assertEqual(client.calls, [], "no request may have been sent")
 
-    def test_the_allowlist_holds_only_reads_and_the_audited_write(self):
+    def test_the_allowlist_holds_only_reads_and_two_narrow_writes(self):
         writes = set(
-            method for model, method in connector.ALLOWED_CALLS
+            (model, method) for model, method in connector.ALLOWED_CALLS
             if method not in ("search_read", "search_count")
         )
-        self.assertEqual(writes, {"ggd_apply_qualification"})
+        self.assertEqual(writes, {
+            ("crm.lead", "ggd_apply_qualification"),
+            ("crm.lead", "create"),
+        })
+
+    def test_create_is_only_permitted_on_crm_lead(self):
+        creatable = set(
+            model for model, method in connector.ALLOWED_CALLS
+            if method == "create"
+        )
+        self.assertEqual(creatable, {"crm.lead"})
 
 
 class ArgumentValidationTests(unittest.TestCase):
@@ -520,6 +538,272 @@ class QualificationWriteTests(unittest.TestCase):
         )
 
 
+class CreateLeadTests(unittest.TestCase):
+    """ggd_create_lead: the second write, and the narrower of the two."""
+
+    GATE_ROW = {
+        "id": 5001,
+        "name": "Fictional Fence Works GmbH opportunity",
+        "partner_name": "Fictional Fence Works GmbH",
+        "website": "https://fence-works.invalid/home",
+        "ggd_source_url": "https://fence-works.invalid/home",
+        "stage_id": [6, "Target Identified"],
+        "ggd_qualification_state": "pending",
+        "ggd_outreach_approved": False,
+        "ggd_draft_status": "empty",
+        "ggd_draft_version": False,
+        "ggd_do_not_contact": False,
+        "ggd_delivery_status": False,
+        "ggd_last_send_key": False,
+        "ggd_contact_basis": False,
+    }
+
+    def _client(self, duplicates=None, partners=None, gate_row=None):
+        gate_row = dict(gate_row or self.GATE_ROW)
+
+        def lead_search_read(body):
+            # _gate_state asks for exactly the gate field list; the duplicate
+            # check asks for the summary list. Route on which one arrived.
+            if body["fields"] == connector.GATE_READBACK_FIELDS:
+                return [gate_row]
+            return list(duplicates or [])
+
+        return FakeOdoo(routes={
+            ("crm.lead", "search_read"): lead_search_read,
+            ("res.partner", "search_read"): list(partners or []),
+            ("crm.stage", "search_read"): [{
+                "id": 6, "name": "Target Identified", "sequence": 10,
+                "is_won": False, "fold": False,
+            }],
+            ("res.country", "search_read"): [
+                {"id": 57, "name": "Germany", "code": "DE"}
+            ],
+            ("crm.lead", "create"): [5001],
+        })
+
+    def _args(self, **overrides):
+        args = {
+            "company_name": "Fictional Fence Works GmbH",
+            "source_url": "https://fence-works.invalid/home",
+        }
+        args.update(overrides)
+        return args
+
+    def _payload(self, client):
+        create = [c for c in client.calls if c[1] == "create"]
+        self.assertEqual(len(create), 1, "exactly one create per call")
+        body = create[0][2]
+        self.assertNotIn("ids", body, "create is @api.model; ids must not be sent")
+        self.assertEqual(list(body), ["vals_list"])
+        self.assertEqual(len(body["vals_list"]), 1)
+        return body["vals_list"][0]
+
+    # -- 1. it creates -----------------------------------------------------
+
+    def test_a_researched_company_becomes_a_target_identified_opportunity(self):
+        client = self._client()
+        result = connector.tool_create_lead(client, self._args())
+        self.assertTrue(result["created"])
+        self.assertEqual(result["status"], "created")
+        self.assertEqual(result["opportunity"]["id"], 5001)
+        self.assertEqual(result["opportunity"]["stage"], "Target Identified")
+        self.assertEqual(result["opportunity"]["record"], "crm.lead,5001")
+        self.assertEqual(
+            result["opportunity"]["qualification_state"], "pending"
+        )
+        self.assertIn("ggd_save_qualification", result["next_step"])
+        payload = self._payload(client)
+        self.assertEqual(payload["type"], "opportunity")
+        self.assertEqual(payload["stage_id"], 6)
+
+    def test_the_documented_defaults_are_applied(self):
+        client = self._client()
+        connector.tool_create_lead(client, self._args())
+        payload = self._payload(client)
+        self.assertEqual(
+            payload["name"], "Fictional Fence Works GmbH opportunity"
+        )
+        self.assertEqual(payload["website"], "https://fence-works.invalid/home")
+        self.assertEqual(
+            payload["ggd_source_url"], "https://fence-works.invalid/home"
+        )
+        self.assertIn("Researched source:", payload["description"])
+
+    def test_supplied_values_reach_the_right_odoo_fields(self):
+        client = self._client()
+        connector.tool_create_lead(client, self._args(
+            opportunity_name="Fence Works - panel systems",
+            website="https://fence-works.invalid",
+            contact_name="A. Fictional", job_title="Head of Procurement",
+            email="Einkauf@Fence-Works.invalid", phone="+49 30 000000",
+            city="Berlin", country="Germany", industry="Fencing systems",
+            product_focus="Welded mesh panels.",
+            lead_source_note="Found at a fictional trade fair.",
+        ))
+        payload = self._payload(client)
+        self.assertEqual(payload["name"], "Fence Works - panel systems")
+        self.assertEqual(payload["partner_name"], "Fictional Fence Works GmbH")
+        self.assertEqual(payload["contact_name"], "A. Fictional")
+        self.assertEqual(payload["function"], "Head of Procurement")
+        self.assertEqual(payload["email_from"], "einkauf@fence-works.invalid")
+        self.assertEqual(payload["city"], "Berlin")
+        self.assertEqual(payload["country_id"], 57)
+        self.assertEqual(payload["ggd_industry"], "Fencing systems")
+        self.assertEqual(payload["ggd_product_focus"], "Welded mesh panels.")
+        self.assertIn("fictional trade fair", payload["description"])
+
+    def test_an_unknown_country_is_recorded_in_words_not_dropped(self):
+        client = self._client()
+        client.routes[("res.country", "search_read")] = []
+        result = connector.tool_create_lead(
+            client, self._args(country="Fictionalia")
+        )
+        payload = self._payload(client)
+        self.assertNotIn("country_id", payload)
+        self.assertIn("Fictionalia", payload["description"])
+        self.assertIn("country_note", result)
+
+    # -- 2. it does not duplicate ------------------------------------------
+
+    def test_an_existing_opportunity_blocks_the_create(self):
+        client = self._client(duplicates=[lead_row(
+            id=777, name="Fictional Fence Works GmbH opportunity",
+            partner_name="Fictional Fence Works GmbH",
+        )])
+        result = connector.tool_create_lead(client, self._args())
+        self.assertFalse(result["created"])
+        self.assertEqual(result["status"], "already_in_crm")
+        self.assertEqual(
+            [r["id"] for r in result["existing_opportunities"]], [777]
+        )
+        self.assertIn("ggd_save_qualification", result["next_step"])
+        self.assertEqual(
+            [c for c in client.calls if c[1] == "create"], [],
+            "nothing may be created once a match is found",
+        )
+
+    def test_the_duplicate_search_matches_name_host_and_email(self):
+        client = self._client()
+        connector.tool_create_lead(client, self._args(
+            website="https://www.fence-works.invalid/de/", email="a@b.invalid",
+        ))
+        domain = client.calls[0][2]["domain"]
+        leaves = [leaf for leaf in domain if leaf != "|"]
+        self.assertIn(["partner_name", "ilike", "Fictional Fence Works GmbH"], leaves)
+        # www. is stripped, so one company's pages match each other.
+        self.assertIn(["website", "ilike", "fence-works.invalid"], leaves)
+        self.assertIn(["email_from", "=ilike", "a@b.invalid"], leaves)
+
+    def test_a_contact_that_already_exists_is_reported_but_does_not_block(self):
+        client = self._client(partners=[{
+            "id": 90, "name": "Fictional Fence Works GmbH", "is_company": True,
+            "email": "info@fence-works.invalid", "display_name": "Fence Works",
+        }])
+        result = connector.tool_create_lead(client, self._args())
+        self.assertTrue(result["created"])
+        self.assertEqual([c["id"] for c in result["existing_contacts"]], [90])
+        self.assertIn("did not", result["contacts_note"])
+
+    # -- 3. bad input ------------------------------------------------------
+
+    def _rejects(self, args, fragment):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_create_lead(client, args)
+        self.assertIn(fragment, str(caught.exception))
+        self.assertEqual([c for c in client.calls if c[1] == "create"], [])
+
+    def test_a_source_url_that_is_not_a_web_address_is_refused(self):
+        for bad in ("fercelik.com", "file:///etc/passwd",
+                    "javascript:alert(1)", "https://"):
+            self._rejects(self._args(source_url=bad), "source_url")
+
+    def test_a_bad_website_is_refused(self):
+        self._rejects(self._args(website="ftp://fence-works.invalid"), "website")
+
+    def test_company_name_cannot_be_blank(self):
+        self._rejects(self._args(company_name="   "), "company_name")
+
+    def test_a_guessed_email_shaped_wrongly_is_refused(self):
+        for bad in ("einkauf", "einkauf@", "@fence-works.invalid",
+                    "a b@c.invalid"):
+            self._rejects(self._args(email=bad), "email")
+
+    def test_a_pasted_page_is_refused_rather_than_truncated(self):
+        self._rejects(
+            self._args(product_focus="x" * 1001), "the limit is 1000"
+        )
+        self._rejects(self._args(company_name="y" * 201), "the limit is 200")
+
+    def test_a_value_that_looks_like_a_credential_is_refused(self):
+        self._rejects(
+            self._args(lead_source_note="Portal login, api_key: abc123"),
+            "credential",
+        )
+        self._rejects(
+            self._args(product_focus="Password = hunter2"), "credential"
+        )
+
+    # -- 4. it cannot be widened -------------------------------------------
+
+    def test_extra_arguments_cannot_reach_the_create_payload(self):
+        client = self._client()
+        connector.tool_create_lead(client, self._args(**{
+            "ggd_outreach_approved": True,
+            "ggd_do_not_contact": True,
+            "ggd_draft_body": "Dear sir",
+            "ggd_last_send_key": "5001:deadbeef",
+            "ggd_fit_score": 99,
+            "user_id": 1,
+            "active": False,
+        }))
+        payload = self._payload(client)
+        self.assertEqual(
+            set(payload) & connector.CREATE_FORBIDDEN_FIELDS, set()
+        )
+        self.assertTrue(set(payload) <= connector.CREATE_VALUE_FIELDS)
+        self.assertNotIn("user_id", payload)
+        self.assertNotIn("deadbeef", json.dumps(payload))
+
+    def test_the_schema_admits_no_arbitrary_odoo_input(self):
+        tool = dict(
+            (t["name"], t) for t in connector.build_tools()
+        )["ggd_create_lead"]
+        schema = tool["inputSchema"]
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(sorted(schema["required"]),
+                         ["company_name", "source_url"])
+        self.assertEqual(
+            set(schema["properties"]),
+            {"company_name", "source_url", "opportunity_name", "website",
+             "contact_name", "job_title", "email", "phone", "city", "country",
+             "industry", "product_focus", "lead_source_note"},
+        )
+        for name in schema["properties"]:
+            self.assertNotIn("ggd_", name)
+
+    # -- 5. the outbound gate is shut on arrival ---------------------------
+
+    def test_a_new_lead_arrives_with_the_outbound_gate_shut(self):
+        client = self._client()
+        result = connector.tool_create_lead(client, self._args())
+        gate = result["outbound_gate"]
+        self.assertFalse(gate["outreach_approved"])
+        self.assertFalse(gate["has_draft"])
+        self.assertEqual(gate["draft_status"], "empty")
+        self.assertFalse(gate["has_send_key"])
+        self.assertFalse(gate["do_not_contact"])
+        self.assertIsNone(gate["delivery_status"])
+        self.assertIsNone(gate["contact_basis"])
+
+    def test_the_send_key_is_reported_as_a_boolean_never_as_a_value(self):
+        row = dict(self.GATE_ROW, ggd_last_send_key="5001:deadbeefcafe")
+        client = self._client(gate_row=row)
+        result = connector.tool_create_lead(client, self._args())
+        self.assertTrue(result["outbound_gate"]["has_send_key"])
+        self.assertNotIn("deadbeefcafe", json.dumps(result))
+
+
 class FailureTests(unittest.TestCase):
     def test_an_expired_key_fails_clearly_and_leaks_nothing(self):
         client = FakeOdoo(http_error=(401, {
@@ -595,6 +879,23 @@ class TextHandlingTests(unittest.TestCase):
     def test_empty_values_become_none(self):
         for value in (False, "", None, "<p></p>"):
             self.assertIsNone(connector.plain_text(value))
+
+    def test_boolean_flags_stay_boolean_rather_than_becoming_null(self):
+        row = lead_row(ggd_do_not_contact=False, ggd_outreach_approved=False,
+                       ggd_automation_needs_review=False)
+        ggd = connector.shape_lead(row, connector.LEAD_SUMMARY_FIELDS)["ggd"]
+        # null would read as "unknown"; the answer is "no".
+        self.assertIs(ggd["do_not_contact"], False)
+        self.assertIs(ggd["outreach_approved"], False)
+        self.assertIs(ggd["needs_review"], False)
+        row = lead_row(ggd_do_not_contact=True)
+        ggd = connector.shape_lead(row, connector.LEAD_SUMMARY_FIELDS)["ggd"]
+        self.assertIs(ggd["do_not_contact"], True)
+
+    def test_a_non_boolean_field_still_reads_as_none_when_unset(self):
+        row = lead_row(ggd_delivery_status=False)
+        ggd = connector.shape_lead(row, connector.LEAD_SUMMARY_FIELDS)["ggd"]
+        self.assertIsNone(ggd["delivery_status"])
 
     def test_odoo_false_reads_as_none(self):
         self.assertIsNone(connector.scalar(False))
