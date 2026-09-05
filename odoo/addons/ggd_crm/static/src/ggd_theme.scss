@@ -255,6 +255,70 @@ body,
     border-bottom: 1px solid var(--ggd-border-2) !important;
     color: var(--ggd-text) !important;
     box-shadow: none !important;
+    height: 52px !important;
+    padding: 0 10px 0 12px;
+    gap: 2px;
+
+    // the mark: a gradient tile that opens the apps menu
+    .o_navbar_apps_menu > .o-dropdown > button, .o_navbar_apps_menu button {
+        padding: 0 6px !important;
+        display: flex;
+        align-items: center;
+        height: 100%;
+    }
+    .ggd_mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--ggd-on-accent);
+        background: linear-gradient(135deg, var(--ggd-accent), var(--ggd-accent-2));
+        box-shadow: 0 4px 12px RGBA(var(--ggd-accent-rgb), 0.3);
+    }
+    .o_navbar_apps_menu button:hover .ggd_mark, .o_navbar_apps_menu button:focus-visible .ggd_mark { filter: brightness(1.08); }
+
+    // the wordmark, with the app name beside it outside the CRM
+    .o_menu_brand, .ggd_brand_static {
+        color: var(--ggd-text) !important;
+        text-decoration: none;
+        padding: 0 16px 0 6px !important;
+        gap: 8px;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        background: transparent !important;
+        &:hover { background: transparent !important; }
+    }
+    .ggd_appname {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ggd-faint);
+        &::before { content: "·"; margin-right: 8px; }
+    }
+
+    // sections as pills, the current one lit
+    .o_menu_sections {
+        gap: 2px;
+        align-items: center;
+        .o_nav_entry, .dropdown-toggle, > .o-dropdown > button, .o_menu_sections_more button {
+            height: 34px;
+            padding: 0 12px !important;
+            border-radius: var(--ggd-radius-sm) !important;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--ggd-muted) !important;
+            border: 1px solid transparent !important;
+            display: inline-flex;
+            align-items: center;
+        }
+        .ggd_current, .o-dropdown > button.ggd_current {
+            color: var(--ggd-text) !important;
+            background: var(--ggd-glass-2) !important;
+            border-color: var(--ggd-border) !important;
+        }
+    }
+    .o_menu_systray { gap: 2px; align-items: center; }
 
     .o_menu_brand,
     .o_nav_entry,
@@ -986,6 +1050,21 @@ body,
     .o_kanban_header .o_kanban_config i, .o_group_config i, .o_column_title i { color: var(--ggd-faint); }
 }
 
+// ------------------------------------------------- command palette (Ctrl+K)
+
+.o_web_client .o_command_palette, .o_command_palette {
+    background: var(--ggd-popover) !important;
+    border: 1px solid var(--ggd-border-2) !important;
+    border-radius: var(--ggd-radius-lg);
+    color: var(--ggd-text);
+    .o_command_palette_search, .o_command_palette_footer, .o_command_category { background: transparent !important; border-color: var(--ggd-border) !important; }
+    .o_command_category_name, .o_command_category > div:first-child { color: var(--ggd-faint) !important; }
+    .o_command { color: var(--ggd-text) !important; border-radius: var(--ggd-radius-sm); }
+    .o_command.focused, .o_command:hover { background: RGBA(var(--ggd-accent-rgb), 0.16) !important; color: var(--ggd-text) !important; }
+    .o_command_name, .o_command_name a { color: var(--ggd-text) !important; }
+    kbd { background: var(--ggd-glass-2) !important; color: var(--ggd-muted) !important; border: 1px solid var(--ggd-border) !important; border-radius: 6px; box-shadow: none !important; font-family: "IBM Plex Mono", Menlo, monospace; font-size: 11px; }
+}
+
 // ------------------------------------------------------------- misc
 
 .o_web_client .modal-content {
@@ -1012,7 +1091,8 @@ body,
 .o_web_client ::-webkit-scrollbar-thumb { background: var(--ggd-border-2); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
 .o_web_client ::-webkit-scrollbar-track { background: transparent; }
 
-// systray appearance menu
+// systray search and appearance buttons
+.o_ggd_search,
 .o_ggd_appearance {
     display: flex;
     align-items: center;

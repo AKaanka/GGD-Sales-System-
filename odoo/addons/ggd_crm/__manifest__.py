@@ -16,6 +16,8 @@
         "web.assets_backend": [
             "ggd_crm/static/src/ggd_fonts.scss",
             "ggd_crm/static/src/ggd_theme.scss",
+            "ggd_crm/static/src/ggd_navbar.js",
+            "ggd_crm/static/src/ggd_navbar.xml",
             "ggd_crm/static/src/appearance_menu.js",
             "ggd_crm/static/src/appearance_menu.xml",
             "ggd_crm/static/src/ggd_ring_field.js",

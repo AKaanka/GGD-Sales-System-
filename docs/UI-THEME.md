@@ -19,6 +19,22 @@ user settings: the scheme lives in the `color_scheme` cookie that
 `models/ir_http.py` already reads, the tone in `localStorage` under
 `ggd_tone`. A different browser starts from light Aurora.
 
+## The top bar
+
+The bar is Odoo's `NavBar` with two templates extended (`ggd_navbar.xml`)
+and a small patch (`ggd_navbar.js`):
+
+- The gradient mark on the left opens the apps menu, where Odoo's grid icon
+  was. The wordmark "Growth Desk" replaces the app name; outside the CRM the
+  app name follows it in grey, so Settings still says Settings.
+- The app's sections are pills, and the one the screen belongs to is lit.
+  "Belongs to" is decided from the action on screen, first by action id,
+  then by the action path Odoo 18+ puts in the URL (the CRM's own "My
+  Pipeline" menu runs a server action, so its id never matches). A page
+  opened by a bare action URL has no current app in Odoo, so it shows the
+  wordmark alone, as stock Odoo would show nothing.
+- The magnifier on the right opens the command palette (Ctrl+K), themed.
+
 ## The colour language
 
 Status pills use the same four colours everywhere: kanban cards, the review
@@ -44,6 +60,7 @@ All of it is in `odoo/addons/ggd_crm/static/src/`:
 | `ggd_theme.scss` | the whole theme. Palette first (custom properties per scheme and tone), then overrides grouped by area: navbar, dropdowns, buttons, control panel, kanban, list, form, chatter, badges, ring, strip. |
 | `ggd_fonts.scss` and `fonts/` | `@font-face` for the bundled Manrope and IBM Plex Mono, latin and latin-ext subsets. Nothing is fetched from Google at runtime. |
 | `appearance_menu.js` and `.xml` | the systray menu. Sets `data-ggd-scheme` and `data-ggd-tone` on `<html>` at module load and on every change. |
+| `ggd_navbar.js` and `.xml` | the top bar: mark, wordmark, lit section, search button. |
 | `ggd_ring_field.js` and `.xml` | the `ggd_ring` field widget: a conic-gradient ring for the fit score, 64px on the form, 30px with `options="{'size': 'sm'}"` on kanban cards and list rows. |
 
 The views that use the widgets:

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- The top bar from the Aurora design (#58): the Growth Desk mark on the
+         left opens the apps menu, the wordmark replaces the app name, the
+         sections are pills with the current one lit. -->
+
+    <t t-name="ggd_crm.NavBar.AppsMenu" t-inherit="web.NavBar.AppsMenu" t-inherit-mode="extension">
+        <xpath expr="//i[hasclass('oi-apps')]" position="replace">
+            <span class="ggd_mark" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 14l6-8 4 6 6-9"/>
+                    <path d="M4 20h16"/>
+                </svg>
+            </span>
+        </xpath>
+    </t>
+
+    <t t-name="ggd_crm.NavBar" t-inherit="web.NavBar" t-inherit-mode="extension">
+        <xpath expr="//DropdownItem[contains(@class, 'o_menu_brand')]" position="attributes">
+            <attribute name="t-esc"/>
+            <attribute name="class">'o_menu_brand d-flex align-items-baseline'</attribute>
+        </xpath>
+        <xpath expr="//DropdownItem[contains(@class, 'o_menu_brand')]" position="inside">
+            <span class="ggd_wordmark">Growth Desk</span>
+            <span t-if="ggdShowAppName" class="ggd_appname" t-esc="currentApp.name"/>
+        </xpath>
+        <!-- A page opened by its action URL has no current app yet, and Odoo
+             would show no brand at all. The product name stays. -->
+        <xpath expr="//DropdownItem[contains(@class, 'o_menu_brand')]" position="after">
+            <a t-if="!this.ui.isSmall and !currentApp" href="/odoo" class="o_menu_brand d-flex align-items-baseline ggd_brand_static">
+                <span class="ggd_wordmark">Growth Desk</span>
+            </a>
+        </xpath>
+    </t>
+
+    <t t-name="ggd_crm.NavBar.SectionsMenu" t-inherit="web.NavBar.SectionsMenu" t-inherit-mode="extension">
+        <xpath expr="//DropdownItem[contains(@class, 'o_nav_entry')]" position="attributes">
+            <attribute name="class">{ o_nav_entry: true, ggd_current: ggdIsCurrent(section) }</attribute>
+        </xpath>
+        <xpath expr="//Dropdown/button[@t-att-data-menu-xmlid]" position="attributes">
+            <attribute name="t-att-class">{ ggd_current: ggdIsCurrent(section) }</attribute>
+        </xpath>
+    </t>
+
+    <t t-name="ggd_crm.SearchButton">
+        <div class="o_menu_systray_item o_ggd_search">
+            <button title="Search (Ctrl+K)" aria-label="Search" t-on-click="() => this.open()">
+                <i class="fa fa-lg fa-search" role="img"/>
+            </button>
+        </div>
+    </t>
+
+</templates>
