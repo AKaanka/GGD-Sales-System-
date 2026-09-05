@@ -707,60 +707,107 @@ body,
         @extend %ggd-glass;
         display: flex !important;
         flex-direction: column;
-        padding: 0 10px 10px !important;
+        padding: 0 !important;
         margin: 0 !important;
         min-width: var(--ggd-col-width);
         width: var(--ggd-col-width);
         flex: 0 0 var(--ggd-col-width) !important;
         height: 100%;
         max-height: 100%;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        scrollbar-gutter: stable;
+        // The cards scroll in .ggd_col_body, not here, so the column keeps
+        // its own corners and the header has nothing passing behind it.
+        overflow: hidden !important;
 
         // Folded, a column keeps its full height and turns into a spine: the
-        // title runs up it, the count sits under the title, and the unfold
-        // control is the whole strip.
+        // title runs up the middle of it and the unfold control sits at the
+        // foot. Every part is centred on the strip's own axis, so nothing
+        // leans against an edge however narrow the strip is.
         &.o_column_folded {
             min-width: var(--ggd-col-folded-width) !important;
             width: var(--ggd-col-folded-width) !important;
             flex-basis: var(--ggd-col-folded-width) !important;
-            padding: 12px 0 !important;
-            align-items: center;
-            overflow: hidden !important;
+            padding: 0 !important;
+            .ggd_col_body { display: none !important; }
             .o_kanban_header {
-                position: static;
-                padding: 0 !important;
+                position: static !important;
+                height: 100%;
+                padding: 14px 0 10px !important;
                 margin: 0 !important;
                 background: transparent !important;
-                height: 100%;
+                border-radius: 0 !important;
             }
-            .o_kanban_header_title { height: 100%; flex-direction: column; align-items: center; }
+            .o_kanban_header_title {
+                height: 100%;
+                width: 100%;
+                flex-direction: column;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            // Odoo stands this title up by taking it out of the flow -
+            // position:absolute with top:1rem - and turning it a quarter
+            // clockwise about its bottom-left corner. Both have to go before
+            // it can be centred: left as it was, a half-turn about that same
+            // corner throws the title a full column's width to the left,
+            // where the column's own overflow then hides it. Back in the
+            // flow, vertical-rl stands its main axis up on its own, so
+            // justify-content centres it along the strip and align-items
+            // across it, and the half-turn only makes it read bottom to top.
             .o_column_title {
+                position: static !important;
+                inset: auto !important;
                 writing-mode: vertical-rl;
                 transform: rotate(180deg);
+                transform-origin: 50% 50% !important;
+                flex: 1 1 auto;
+                min-height: 0;
+                width: 100%;
+                justify-content: center;
+                align-items: center;
+                gap: 6px;
+                padding: 0 !important;
+                margin: 0 !important;
                 font-size: 13px;
                 font-weight: 800 !important;
-                padding: 8px 0;
                 white-space: nowrap;
+                overflow: hidden;
                 opacity: 1 !important;
-                flex: 1;
-                justify-content: flex-end;
             }
-            .o_column_unfold { flex: none; color: var(--ggd-faint) !important; }
+            .o_column_unfold {
+                flex: none;
+                width: 100%;
+                padding: 0 !important;
+                margin: 0 !important;
+                justify-content: center !important;
+                gap: 2px;
+                color: var(--ggd-faint) !important;
+            }
         }
     }
+    // The header sits outside the scrolled area now, so it needs neither
+    // stickiness nor a panel of its own to hide what passes behind it: it
+    // rests on the column's own glass, edge to edge, and the strip of a
+    // different tone beside it is gone with the scrollbar gutter that made it.
     .o_kanban_header {
-        position: sticky;
-        top: 0;
-        z-index: 2;
-        background: var(--ggd-panel) !important;
+        position: static !important;
+        flex: none;
+        background: transparent !important;
         border: 0 !important;
-        border-radius: var(--ggd-radius-lg) var(--ggd-radius-lg) 0 0;
-        padding: 12px 4px 6px !important;
-        margin: 0 -10px 4px !important;
-        padding-left: 14px !important;
-        padding-right: 12px !important;
+        border-radius: 0 !important;
+        padding: 12px 14px 6px !important;
+        margin: 0 !important;
+    }
+    // The cards, and the only thing on the board that scrolls up and down.
+    .ggd_col_body {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 10px 10px;
     }
     .o_kanban_header_title { align-items: center; gap: 8px; }
     .o_group_config { visibility: visible !important; }   // Odoo hides the gear until the header is hovered
