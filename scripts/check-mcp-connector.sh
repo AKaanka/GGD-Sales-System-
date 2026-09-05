@@ -57,6 +57,11 @@ Lead = env["crm.lead"].with_context(
 def get_or_create(name, values):
     found = Lead.with_context(active_test=False).search([("name", "=", name)], limit=1)
     if found:
+        # The teardown archives the fixtures, so a second run finds them
+        # archived. Un-archive on reuse, or the search check looks for a
+        # record that ggd_search_records is correctly declining to show.
+        if not found.active:
+            found.write({"active": True})
         return found
     payload = {"name": name, "type": "opportunity"}
     payload.update(values)
