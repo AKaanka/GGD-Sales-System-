@@ -35,6 +35,23 @@ and a small patch (`ggd_navbar.js`):
   wordmark alone, as stock Odoo would show nothing.
 - The magnifier on the right opens the command palette (Ctrl+K), themed.
 
+## The pipeline board
+
+The board fills the viewport and never scrolls as a page: each column hugs
+its cards, caps at the viewport, and scrolls on its own under a header that
+stays put, so a drag never moves a column's title. Columns are borderless
+glass, 276 px wide, 56 px when folded; the gear is always visible. The
+header counts records rather than summing revenue (this pipeline is about
+people to write to), and the line under the title is the accent pair with
+Odoo's activity segments drawn over it. The card shows the opportunity, the
+company as a subtitle, the fit ring, the industry and the outbound pills;
+the revenue line is hidden by the theme rather than removed from the
+template, because the CRM's forecast kanban inherits the same template.
+
+Cards cannot be reordered inside a column: `crm.lead` has no `sequence`
+field and Odoo orders the pipeline by priority, so stock Odoo refuses it
+too. Adding that would be a data-model change.
+
 ## The colour language
 
 Status pills use the same four colours everywhere: kanban cards, the review

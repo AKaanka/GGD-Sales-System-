@@ -191,6 +191,21 @@
         <field name="model">crm.lead</field>
         <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
         <field name="arch" type="xml">
+            <!-- The column header counts records rather than summing revenue:
+                 this pipeline is about people to write to, not money. -->
+            <xpath expr="//progressbar" position="attributes">
+                <attribute name="sum_field"/>
+                <attribute name="recurring_revenue_sum_field"/>
+            </xpath>
+            <!-- The revenue line is hidden by the theme, not removed here: the
+                 CRM's forecast kanban inherits this view and looks for the
+                 expected_revenue field with an xpath of its own. -->
+            <xpath expr="//field[@name='partner_name']" position="attributes">
+                <attribute name="class">ggd_kanban_sub</attribute>
+            </xpath>
+            <xpath expr="//field[@name='contact_name']" position="attributes">
+                <attribute name="class">ggd_kanban_sub</attribute>
+            </xpath>
             <xpath expr="//field[@name='tag_ids']" position="after">
                 <div class="ggd_kanban_row">
                     <field name="ggd_fit_score" widget="ggd_ring" options="{'size': 'sm'}"/>

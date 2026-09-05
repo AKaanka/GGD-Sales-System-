@@ -35,7 +35,8 @@
     --ggd-border: rgba(20, 24, 34, 0.08);
     --ggd-border-2: rgba(20, 24, 34, 0.14);
     --ggd-nav: #ffffff;
-    --ggd-input: rgba(255, 255, 255, 0.72);
+    --ggd-input: rgba(20, 24, 34, 0.05);
+    --ggd-panel: #f7f8fb;
     --ggd-text: #141826;
     --ggd-muted: #5b6478;
     --ggd-faint: #8a93a6;
@@ -71,7 +72,8 @@ html[data-ggd-scheme="dark"] {
     --ggd-border: rgba(255, 255, 255, 0.10);
     --ggd-border-2: rgba(255, 255, 255, 0.16);
     --ggd-nav: #0f1218;
-    --ggd-input: rgba(255, 255, 255, 0.05);
+    --ggd-input: rgba(255, 255, 255, 0.07);
+    --ggd-panel: #191c24;
     --ggd-text: #e9edf4;
     --ggd-muted: #9aa4b8;
     --ggd-faint: #6b7488;
@@ -94,6 +96,7 @@ html[data-ggd-tone="ember"] {
     --ggd-border: rgba(40, 28, 20, 0.08);
     --ggd-border-2: rgba(40, 28, 20, 0.14);
     --ggd-text: #211a15;
+    --ggd-panel: #faf6f1;
     --ggd-muted: #6e6259;
     --ggd-faint: #978a80;
     --ggd-accent-rgb: 240, 163, 92;
@@ -112,6 +115,7 @@ html[data-ggd-scheme="dark"][data-ggd-tone="ember"] {
     --ggd-border: rgba(255, 255, 255, 0.11);
     --ggd-border-2: rgba(255, 255, 255, 0.17);
     --ggd-nav: #171310;
+    --ggd-panel: #201b18;
     --ggd-text: #f2ebe4;
     --ggd-muted: #a89c92;
     --ggd-faint: #7a6f66;
@@ -129,6 +133,7 @@ html[data-ggd-tone="graphite"] {
     --ggd-border: rgba(20, 20, 24, 0.08);
     --ggd-border-2: rgba(20, 20, 24, 0.14);
     --ggd-text: #17181b;
+    --ggd-panel: #f8f8f9;
     --ggd-muted: #5d616a;
     --ggd-faint: #8b8f98;
     --ggd-accent-rgb: 198, 245, 66;
@@ -148,6 +153,7 @@ html[data-ggd-scheme="dark"][data-ggd-tone="graphite"] {
     --ggd-border: rgba(255, 255, 255, 0.10);
     --ggd-border-2: rgba(255, 255, 255, 0.16);
     --ggd-nav: #121316;
+    --ggd-panel: #1b1c1f;
     --ggd-text: #ecedef;
     --ggd-muted: #8d919a;
     --ggd-faint: #666a73;
@@ -223,7 +229,7 @@ body,
 // popovers and modals, which float over content, keep theirs.
 %ggd-glass {
     background: var(--ggd-glass) !important;
-    border: 1px solid var(--ggd-border) !important;
+    border: 0 !important;
     border-radius: var(--ggd-radius-lg);
     color: var(--ggd-text);
 }
@@ -252,7 +258,7 @@ body,
 
 .o_main_navbar {
     background: var(--ggd-nav) !important;
-    border-bottom: 1px solid var(--ggd-border-2) !important;
+    border: 0 !important;
     color: var(--ggd-text) !important;
     box-shadow: none !important;
     height: 52px !important;
@@ -378,7 +384,7 @@ body,
 .o_web_client .o_popover,
 .o_web_client .o-autocomplete--dropdown-menu {
     background: var(--ggd-popover) !important;
-    border: 1px solid var(--ggd-border-2) !important;
+    border: 0 !important;
     border-radius: var(--ggd-radius);
     box-shadow: var(--ggd-shadow);
     backdrop-filter: var(--ggd-blur);
@@ -420,10 +426,10 @@ body,
 .o_web_client .btn-outline-secondary,
 .o_web_client .btn-outline-primary,
 .o_web_client .o_button_generate_leads {
-    background: var(--ggd-glass) !important;
-    border: 1px solid var(--ggd-border) !important;
+    background: var(--ggd-glass-2) !important;
+    border: 1px solid transparent !important;
     color: var(--ggd-text) !important;
-    &:hover, &:focus { background: var(--ggd-glass-2) !important; border-color: var(--ggd-border-2) !important; }
+    &:hover, &:focus { background: var(--ggd-glass-2) !important; filter: brightness(1.12); }
 }
 .o_web_client .btn-link {
     color: var(--ggd-link) !important;
@@ -447,46 +453,67 @@ body,
         color: var(--ggd-faint) !important;
         font-weight: 600;
     }
+    // the search is one pill: icon, chips, input and the caret inside it
     .o_cp_searchview.input-group {
-        gap: 6px;
+        background: var(--ggd-input);
+        border-radius: 999px;
+        padding: 3px 4px 3px 12px;
+        min-height: 40px;
+        align-items: center;
+        gap: 4px;
+        transition: box-shadow 0.15s ease;
+        &:focus-within { box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.25); }
     }
     .o_searchview.form-control {
-        background: var(--ggd-input) !important;
-        border: 1px solid var(--ggd-border) !important;
-        border-radius: 12px !important;
-        min-height: 38px;
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        min-height: 0;
+        padding: 0 !important;
         box-shadow: none !important;
         color: var(--ggd-text) !important;
-        &:focus-within { border-color: RGBA(var(--ggd-accent-rgb), 0.6) !important; box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.15) !important; }
-        .o_searchview_icon, .btn { color: var(--ggd-faint) !important; background: transparent !important; }
-        .o_searchview_input { color: var(--ggd-text) !important; background: transparent !important; }
+        &:focus-within { box-shadow: none !important; }
+        .o_searchview_icon, > .btn { color: var(--ggd-faint) !important; background: transparent !important; border: 0 !important; box-shadow: none !important; }
+        .o_searchview_input { color: var(--ggd-text) !important; background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 4px 6px; }
         .o_searchview_input::placeholder { color: var(--ggd-faint); }
     }
     .o_searchview_facet {
         border-radius: 999px !important;
-        background: RGBA(var(--ggd-accent-rgb), 0.14) !important;
-        border: 1px solid RGBA(var(--ggd-accent-rgb), 0.45) !important;
+        background: RGBA(var(--ggd-accent-rgb), 0.16) !important;
+        border: 0 !important;
         color: var(--ggd-text) !important;
-        .o_searchview_facet_label { background: transparent !important; color: var(--ggd-text) !important; }
-        .o_facet_values, .o_facet_value { color: var(--ggd-text) !important; }
+        padding: 0 4px 0 6px;
+        align-items: center !important;
+        .o_searchview_facet_label { background: transparent !important; color: var(--ggd-accent) !important; border: 0 !important; box-shadow: none !important; padding: 0 2px !important; }
+        .o_searchview_facet_label.btn-primary { background: transparent !important; box-shadow: none !important; }
+        .o_facet_values, .o_facet_value { color: var(--ggd-text) !important; font-size: 12px; font-weight: 600; }
         .o_facet_remove { color: var(--ggd-muted) !important; }
+        > .position-absolute.bg-view { display: none !important; }
     }
     .o_searchview_dropdown_toggler {
-        border-radius: 12px !important;
-        min-height: 38px;
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 999px !important;
+        min-height: 0;
+        width: 32px;
+        height: 32px;
+        padding: 0 !important;
+        color: var(--ggd-muted) !important;
+        box-shadow: none !important;
+        &:hover, &.show { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; }
     }
     .o_cp_switch_buttons {
         background: var(--ggd-glass);
-        border: 1px solid var(--ggd-border);
+        border: 0;
         border-radius: 12px;
         padding: 3px;
         gap: 2px;
         .btn {
             background: transparent !important;
-            border: 1px solid transparent !important;
+            border: 0 !important;
             color: var(--ggd-faint) !important;
             border-radius: 9px !important;
-            &.active, &:hover { background: var(--ggd-glass-2) !important; border-color: var(--ggd-border) !important; color: var(--ggd-text) !important; }
+            &.active, &:hover { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; }
         }
     }
     .o_cp_pager .btn { background: transparent !important; border: 0 !important; color: var(--ggd-muted) !important; }
@@ -494,50 +521,111 @@ body,
 }
 
 // ------------------------------------------------------------- kanban
+// The board fills the viewport; each column scrolls on its own under a
+// header that stays put, so the page never scrolls and a drag never moves
+// the column's title.
 
+.o_kanban_view > .o_content, .o_kanban_view .o_content { overflow: hidden !important; }
 .o_kanban_renderer {
-    padding: 4px 22px 22px !important;
+    padding: 4px 22px 16px !important;
     gap: 14px;
+    height: 100%;
+    max-height: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    align-items: flex-start !important;
+    align-content: flex-start;
 
     .o_kanban_group {
         @extend %ggd-glass;
-        padding: 12px !important;
+        display: flex !important;
+        flex-direction: column;
+        padding: 0 10px 10px !important;
         margin: 0 !important;
-        min-width: 268px;
+        min-width: 276px;
+        width: 276px;
+        flex: 0 0 276px !important;
+        max-height: 100%;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        scrollbar-gutter: stable;
+        &.o_column_folded {
+            min-width: 56px !important;
+            width: 56px !important;
+            flex-basis: 56px !important;
+            padding: 12px 0 !important;
+            align-items: center;
+            .o_column_title { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 13px; padding: 8px 0; white-space: nowrap; }
+            .o_kanban_header { position: static; padding: 0 !important; }
+        }
     }
     .o_kanban_header {
-        background: transparent !important;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--ggd-panel) !important;
         border: 0 !important;
-        padding: 2px 4px 6px !important;
+        border-radius: var(--ggd-radius-lg) var(--ggd-radius-lg) 0 0;
+        padding: 12px 4px 6px !important;
+        margin: 0 -10px 4px !important;
+        padding-left: 14px !important;
+        padding-right: 12px !important;
     }
+    .o_kanban_header_title { align-items: center; }
+    .o_group_config { visibility: visible !important; }   // Odoo hides the gear until the header is hovered
+    .o_group_config .fa-gear, .o_group_config .btn, .o_kanban_quick_add, .o_kanban_quick_add .fa { opacity: 1 !important; color: var(--ggd-muted) !important; }
+    .o_group_config .btn:hover, .o_kanban_quick_add:hover { color: var(--ggd-text) !important; background: var(--ggd-glass-2) !important; border-radius: 8px; }
     .o_column_title, .o_kanban_header_title, .o_kanban_header b {
         font-size: 13px;
         font-weight: 800 !important;
         color: var(--ggd-text) !important;
     }
     .o_kanban_counter {
-        margin: 0 4px 8px !important;
-        .o_column_progress { height: 3px; border-radius: 999px; background: var(--ggd-glass-2); overflow: hidden; }
-        .o_animated_number, .o_kanban_counter_side { color: var(--ggd-muted) !important; font-weight: 700; font-size: 11px; }
+        margin: 0 4px 2px !important;
+        align-items: center;
+        // the coloured line under each column title: the accent pair as the
+        // track, Odoo's activity segments (planned, today, overdue) on top
+        .o_column_progress {
+            height: 4px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: linear-gradient(90deg, RGBA(var(--ggd-accent-rgb), 0.55), var(--ggd-accent-2)) !important;
+        }
+        .o_column_progress .progress-bar, .o_column_progress > div { border-radius: 999px; }
+        .o_kanban_counter_side {
+            color: var(--ggd-muted) !important;
+            font-weight: 700;
+            font-size: 11px;
+            background: var(--ggd-glass-2);
+            border-radius: 999px;
+            padding: 1px 8px;
+            margin-left: 8px;
+        }
+        .o_animated_number { color: var(--ggd-muted) !important; font-weight: 700; font-size: 11px; }
     }
     .o_kanban_quick_add, .o_group_config .btn, .o_kanban_config .btn { color: var(--ggd-faint) !important; background: transparent !important; }
 
     .o_kanban_record {
         background: var(--ggd-glass-2) !important;
-        border: 1px solid var(--ggd-border) !important;
+        border: 0 !important;
+        border-left: 0 !important;
         border-radius: var(--ggd-radius) !important;
-        padding: 13px 14px !important;
-        margin-bottom: 10px !important;
+        padding: 13px 14px 10px !important;
+        margin-bottom: 8px !important;
         box-shadow: none !important;
         color: var(--ggd-text) !important;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
-        &:hover {
-            border-color: RGBA(var(--ggd-accent-rgb), 0.5) !important;
-            box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.10), 0 10px 26px rgba(0, 0, 0, 0.12) !important;
-        }
-        .fs-5 { font-size: 13.5px !important; letter-spacing: -0.01em; }
-        .o_kanban_card_crm_lead_revenue, .o_field_monetary { color: var(--ggd-muted) !important; font-size: 12px; }
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+        &:hover { box-shadow: 0 0 0 2px RGBA(var(--ggd-accent-rgb), 0.45), 0 10px 26px rgba(0, 0, 0, 0.14) !important; }
+        .fs-5 { font-size: 13.5px !important; letter-spacing: -0.01em; line-height: 1.3; }
+        .ggd_kanban_sub { color: var(--ggd-muted); font-size: 12px; display: block; margin-top: 1px; }
+        .o_kanban_card_crm_lead_revenue { display: none !important; }
         .o_tag { border-radius: 999px; font-weight: 600; font-size: 11px; }
+        footer { padding-top: 4px !important; }
+        .o_priority .o_priority_star { font-size: 12px; color: var(--ggd-faint); }
+        .o_priority .o_priority_star.fa-star { color: var(--ggd-wait); }
+        .o-mail-ActivityButton { color: var(--ggd-faint); }
+        .o_m2o_avatar img, .o_avatar { width: 22px; height: 22px; border-radius: 7px; }
+        .o_dropdown_kanban .btn { color: var(--ggd-faint) !important; }
     }
     .o_column_quick_create {
         @extend %ggd-glass;
@@ -578,12 +666,14 @@ body,
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        border-bottom: 1px solid var(--ggd-border) !important;
+        border: 0 !important;
         padding-top: 12px !important;
         padding-bottom: 12px !important;
     }
+    tbody td, tbody tr, tfoot td, tfoot tr {
+        border: 0 !important;
+    }
     tbody td {
-        border-color: var(--ggd-border) !important;
         background: transparent !important;
         color: var(--ggd-text) !important;
         padding-top: 11px !important;
@@ -602,6 +692,7 @@ body,
     .o_form_sheet_bg { padding: 0 22px 22px !important; }
     .o_form_statusbar {
         @extend %ggd-glass;
+        border: 0 !important;
         border-radius: var(--ggd-radius) !important;
         margin: 0 0 14px !important;
         padding: 8px 12px !important;
@@ -656,7 +747,7 @@ body,
         margin-top: 14px;
         background: transparent !important;
         .o_notebook_headers {
-            border-bottom: 1px solid var(--ggd-border) !important;
+            border: 0 !important;
             .nav-tabs { gap: 18px; border: 0 !important; }
             .nav-item { border: 0 !important; }
             .nav-link {
@@ -678,10 +769,22 @@ body,
             row-gap: 14px;
             > .o_inner_group {
                 background: var(--ggd-glass-2);
-                border: 1px solid var(--ggd-border);
+                border: 0;
                 border-radius: var(--ggd-radius);
-                padding: 12px 14px;
+                padding: 14px 16px;
                 margin-bottom: 0;
+                // label above value, as the design's cards
+                grid-template-columns: minmax(0, 1fr) !important;
+                row-gap: 2px;
+                .o_cell.o_wrap_label { padding: 8px 0 0 !important; }
+                .o_cell.o_wrap_input { padding: 0 0 6px !important; margin-bottom: 0 !important; }
+                .o_form_label {
+                    font-size: 11px !important;
+                    font-weight: 700 !important;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: var(--ggd-faint) !important;
+                }
             }
             @media (min-width: 992px) {
                 > .o_inner_group.col-lg-6 { width: calc(50% - 7px); }
@@ -694,9 +797,9 @@ body,
 // inputs everywhere: a box, not Odoo's underline
 .o_web_client {
     .o_input, .o_field_widget input, .o_field_widget textarea, .o_field_widget select,
-    .form-control, .form-select, .o-mail-Composer-input, .o_searchview_input.o_input {
+    .form-control, .form-select, .o-mail-Composer-input {
         background: var(--ggd-input) !important;
-        border: 1px solid var(--ggd-border) !important;
+        border: 1px solid transparent !important;
         border-radius: var(--ggd-radius-sm) !important;
         color: var(--ggd-text) !important;
         box-shadow: none !important;
@@ -713,8 +816,10 @@ body,
         border-color: transparent !important;
         padding-left: 0;
     }
+    .o_field_widget .o_input_dropdown .o_dropdown_button { border: 0 !important; background: transparent !important; }
+    .o_field_many2one_selection .o_input, .o_field_many2one_selection input { border: 0 !important; }
     .o_field_many2one_selection .o_input_dropdown .o_dropdown_button { color: var(--ggd-faint); }
-    .form-check-input { border-color: var(--ggd-border-2); background-color: var(--ggd-input); }
+    .form-check-input { border: 1px solid var(--ggd-border-2); background-color: var(--ggd-input); }
     .form-check-input:checked { background-color: var(--ggd-accent); border-color: var(--ggd-accent); }
 }
 
@@ -728,6 +833,7 @@ body,
 }
 .o-mail-Chatter {
     @extend %ggd-glass;
+    border: 0 !important;
     padding: 12px 14px !important;
     .o-mail-Chatter-topbar {
         border: 0 !important;
@@ -799,7 +905,6 @@ body,
     gap: 20px;
     padding: 4px 0 16px;
     margin-bottom: 14px;
-    border-bottom: 1px solid var(--ggd-border);
     .ggd_strip_main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
     .ggd_strip_pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .ggd_strip_pills .o_field_widget { width: auto; }
@@ -828,7 +933,7 @@ body,
     }
     .o_calendar_container { padding: 0 22px 22px; gap: 14px; }
     .o_calendar_sidebar_container { padding: 12px; }
-    .fc .fc-scrollgrid, .fc td, .fc th, .table-bordered > :not(caption) > * > * {
+    .fc .fc-scrollgrid, .fc td, .fc th, .table-bordered > :not(caption) > * > *, .o_pivot .table > :not(caption) > * > *, .o_pivot tr, .o_activity_view .table > :not(caption) > * > * {
         border-color: var(--ggd-border) !important;
     }
     .fc .fc-col-header-cell-cushion, .fc .fc-daygrid-day-number, .fc .fc-timegrid-slot-label,
@@ -903,7 +1008,7 @@ body,
         color: var(--ggd-text);
         border-color: var(--ggd-border) !important;
     }
-    .settings_tab { @extend %ggd-glass; border-radius: 0 !important; border-width: 0 1px 0 0 !important; }
+    .settings_tab { @extend %ggd-glass; border-radius: 0 !important; border: 0 !important; }
     .settings_tab .tab { color: var(--ggd-text) !important; border-radius: 8px; }
     .settings_tab .tab.selected, .settings_tab .tab:hover { background: var(--ggd-glass-2) !important; }
     .settings h2 { background: var(--ggd-glass-2) !important; color: var(--ggd-text) !important; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
@@ -1044,7 +1149,7 @@ body,
     .dropdown-divider, hr { border-color: var(--ggd-border) !important; opacity: 1; }
     .o_kanban_renderer { border-top: 0 !important; }
     .o_list_sortable_icon { background: transparent !important; }
-    tr.o_data_row, .o_list_table tr, .o_list_table th, .o_list_table td { border-color: var(--ggd-border) !important; }
+    tr.o_data_row, .o_list_table tr, .o_list_table th, .o_list_table td { border: 0 !important; }
     .o_select_menu_caret::after, .o_dropdown_button::after { border-top-color: var(--ggd-muted) !important; }
     .bg-100, .bg-200, .bg-light { background-color: var(--ggd-glass-2) !important; }
     .o_kanban_header .o_kanban_config i, .o_group_config i, .o_column_title i { color: var(--ggd-faint); }
@@ -1069,16 +1174,20 @@ body,
 
 .o_web_client .modal-content {
     background: var(--ggd-popover) !important;
-    border: 1px solid var(--ggd-border-2) !important;
+    border: 0 !important;
     border-radius: var(--ggd-radius-lg);
     color: var(--ggd-text) !important;
+    box-shadow: var(--ggd-shadow);
     backdrop-filter: var(--ggd-blur);
     -webkit-backdrop-filter: var(--ggd-blur);
-    .modal-header, .modal-footer { border-color: var(--ggd-border) !important; background: transparent !important; }
+    .modal-header, .modal-footer { border: 0 !important; background: transparent !important; }
+    .modal-body, .o_form_renderer, .o_form_nosheet, .o_form_sheet_bg, .o_form_sheet, .o_content, .o_list_renderer, .o_list_view, .o_view_controller, .o_kanban_renderer, .o_searchview, .o_control_panel { background: transparent !important; }
+    .o_form_sheet { border: 0 !important; padding: 0 !important; }
 }
 .o_web_client .o_notification {
     background: var(--ggd-popover) !important;
-    border: 1px solid var(--ggd-border-2) !important;
+    border: 0 !important;
+    box-shadow: var(--ggd-shadow);
     border-radius: var(--ggd-radius);
     color: var(--ggd-text) !important;
 }
