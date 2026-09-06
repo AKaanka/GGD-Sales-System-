@@ -99,6 +99,17 @@
                         </group>
                     </group>
 
+                    <group string="Contact provenance" col="2">
+                        <group>
+                            <field name="ggd_contact_profile_url" widget="url"/>
+                            <field name="ggd_contact_researched_at" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="ggd_contact_source_urls" readonly="1"/>
+                            <field name="ggd_contact_confidence" readonly="1"/>
+                        </group>
+                    </group>
+
                     <group string="Reviewed outreach draft" col="2">
                         <group>
                             <field name="ggd_draft_subject"/>

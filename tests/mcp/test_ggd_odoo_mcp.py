@@ -157,7 +157,7 @@ class ProtocolTests(unittest.TestCase):
     def test_tools_are_marked_read_only_or_write_accurately(self):
         tools = connector.build_tools()
         names = [tool["name"] for tool in tools]
-        self.assertEqual(len(tools), 8)
+        self.assertEqual(len(tools), 10)
         self.assertEqual(sorted(names), sorted(connector.TOOL_HANDLERS))
         writers = set()
         for tool in tools:
@@ -170,14 +170,24 @@ class ProtocolTests(unittest.TestCase):
                 annotations["idempotentHint"],
                 "%s must not claim idempotence" % tool["name"],
             )
-        self.assertEqual(writers, {"ggd_create_lead", "ggd_save_qualification"})
+        self.assertEqual(writers, {"ggd_create_lead", "ggd_save_qualification",
+                                   "ggd_save_response_draft",
+                                   "ggd_opportunity_action"})
         by_name = dict((t["name"], t) for t in tools)
         # Overwriting an existing assessment is destructive; opening a new
         # opportunity changes nothing that was already there.
         self.assertTrue(
             by_name["ggd_save_qualification"]["annotations"]["destructiveHint"])
+        # Saving a reply draft replaces whatever Workflow 4 suggested, so it
+        # is destructive for the same reason.
+        self.assertTrue(
+            by_name["ggd_save_response_draft"]["annotations"]["destructiveHint"])
         self.assertFalse(
             by_name["ggd_create_lead"]["annotations"]["destructiveHint"])
+        # Every action either replaces a stored value, moves a record or
+        # consumes an approval, so the desktop app must prompt for all five.
+        self.assertTrue(
+            by_name["ggd_opportunity_action"]["annotations"]["destructiveHint"])
 
     def test_no_tool_accepts_a_domain_field_list_or_method(self):
         forbidden = {"domain", "fields", "method", "model", "sql", "context"}
@@ -208,7 +218,7 @@ class ProtocolTests(unittest.TestCase):
                    stdout.getvalue().strip().splitlines()]
         self.assertEqual(replies[0]["result"], {})
         self.assertEqual(replies[1]["error"]["code"], -32700)
-        self.assertEqual(len(replies[2]["result"]["tools"]), 8)
+        self.assertEqual(len(replies[2]["result"]["tools"]), 10)
 
 
 class AllowlistTests(unittest.TestCase):
@@ -231,13 +241,15 @@ class AllowlistTests(unittest.TestCase):
             self.assertEqual(caught.exception.kind, "not_allowed")
         self.assertEqual(client.calls, [], "no request may have been sent")
 
-    def test_the_allowlist_holds_only_reads_and_two_narrow_writes(self):
+    def test_the_allowlist_holds_only_reads_and_four_narrow_writes(self):
         writes = set(
             (model, method) for model, method in connector.ALLOWED_CALLS
             if method not in ("search_read", "search_count")
         )
         self.assertEqual(writes, {
             ("crm.lead", "ggd_apply_qualification"),
+            ("crm.lead", "ggd_save_response_draft"),
+            ("crm.lead", "ggd_opportunity_action"),
             ("crm.lead", "create"),
         })
 
@@ -544,6 +556,112 @@ class QualificationWriteTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, "not_found")
         self.assertEqual(
             [c for c in client.calls if c[1] == "ggd_apply_qualification"], []
+        )
+
+
+class ResponseDraftWriteTests(unittest.TestCase):
+    """ggd_save_response_draft: the third write, and the only one that puts
+    text a customer could eventually read onto a record."""
+
+    DRAFT = (
+        "Thank you for the quick reply. I can send the panel specification "
+        "on Monday and would be glad to arrange a short call that week."
+    )
+
+    def _client(self, stored=None, do_not_contact=False, category="interested"):
+        body_text = self.DRAFT if stored is None else stored
+        return FakeOdoo(routes={
+            ("crm.lead", "search_read"): lambda body: (
+                [{"id": 4242, "name": "[GGD-TEST] Fictional Panels GmbH",
+                  "type": "opportunity", "active": True}]
+                if body["fields"] == ["id", "name", "type", "active"] else
+                [{"id": 4242, "name": "[GGD-TEST] Fictional Panels GmbH",
+                  "ggd_response_draft": body_text,
+                  "ggd_reply_category": category,
+                  "ggd_last_reply_received_at": "2026-09-05 10:00:00",
+                  "ggd_do_not_contact": do_not_contact}]
+            ),
+            ("crm.lead", "ggd_save_response_draft"): {"saved": True},
+        })
+
+    def _args(self, **overrides):
+        args = {"opportunity_id": 4242, "draft": self.DRAFT}
+        args.update(overrides)
+        return args
+
+    def test_a_draft_is_saved_and_read_back(self):
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertTrue(result["saved"])
+        self.assertFalse(result["retry"])
+        self.assertEqual(result["status"], "saved")
+        self.assertEqual(result["stored"]["id"], 4242)
+        self.assertEqual(result["stored"]["reply_category"], "interested")
+
+    def test_the_round_trip_is_proved_by_length_not_by_the_echo(self):
+        """plain_text truncates, so the echoed body is not evidence. The two
+        character counts are, and they cost a handful of bytes."""
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertEqual(
+            result["stored"]["stored_characters"],
+            result["stored"]["sent_characters"],
+        )
+        self.assertEqual(result["stored"]["sent_characters"], len(self.DRAFT))
+
+    def test_it_sends_the_addon_method_exactly_the_arguments_it_declares(self):
+        client = self._client()
+        connector.tool_save_response_draft(client, self._args())
+        write = [c for c in client.calls
+                 if c[1] == "ggd_save_response_draft"][0]
+        body = write[2]
+        self.assertEqual(body["ids"], [4242])
+        self.assertEqual(sorted(body), sorted(["ids", "draft"]))
+        self.assertEqual(body["draft"], self.DRAFT)
+        self.assertNotIn("context", body)
+
+    def test_the_answer_says_plainly_that_nothing_was_sent(self):
+        """The tool stores a suggestion. A model that reports it as a sent
+        reply would leave Kaan believing a customer had been answered."""
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertIn("Nothing was sent", result["message"])
+        self.assertIn("no outreach was approved", result["message"])
+
+    def test_an_empty_draft_never_opens_a_socket(self):
+        client = self._client()
+        for empty in ("", "   ", "\n\t ", None, False):
+            with self.assertRaises(connector.InvalidArgument):
+                connector.tool_save_response_draft(
+                    client, self._args(draft=empty)
+                )
+        self.assertEqual(client.calls, [], "no request may have been sent")
+
+    def test_an_over_long_draft_is_refused_rather_than_truncated(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_save_response_draft(
+                client, self._args(draft="x" * (connector.TEXT_LIMITS["draft"] + 1))
+            )
+        self.assertIn("limit", str(caught.exception))
+        self.assertEqual(client.calls, [])
+
+    def test_a_draft_carrying_a_credential_is_refused(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_save_response_draft(
+                client,
+                self._args(draft="Here you go, api key: sk-not-a-real-secret"),
+            )
+        self.assertEqual(client.calls, [])
+
+    def test_a_missing_record_is_reported_before_anything_is_written(self):
+        client = FakeOdoo(routes={("crm.lead", "search_read"): []})
+        with self.assertRaises(connector.ConnectorError) as caught:
+            connector.tool_save_response_draft(client, self._args())
+        self.assertEqual(caught.exception.kind, "not_found")
+        self.assertEqual(
+            [c for c in client.calls if c[1] == "ggd_save_response_draft"], []
         )
 
 
@@ -940,9 +1058,21 @@ class PayloadSizeTests(unittest.TestCase):
         # once ggd_report, the fixed search filters and the opportunity
         # sections were added, which is one tool standing in for twelve
         # reports plus twenty filters that used to be impossible to ask for.
+        # 9821 once ggd_save_response_draft was added: 738 characters, most of
+        # it the description saying what the tool does NOT do - it does not
+        # send, does not approve, and is refused for a suppressed contact.
+        # That is the cheapest place to buy those three facts, because a model
+        # that has to infer them is one bad inference away from Kaan finding a
+        # reply he never wrote sitting on a lead.
+        # 12490 once ggd_opportunity_action was added: 2669 characters for one
+        # tool standing in for five writes. Five separate tools would have cost
+        # five descriptions and five schemas here, on every turn, used or not.
+        # Issue #65 set the ceiling at 12500 and this sits under it.
         # The ceiling sits just above the measurement so the next increase
         # has to be argued for rather than absorbed.
-        self.assertLess(size, 9500, "tools/list grew to %d characters" % size)
+        self.assertLessEqual(
+            size, 12500, "tools/list grew to %d characters" % size
+        )
 
 
 class TextHandlingTests(unittest.TestCase):
@@ -1587,6 +1717,7 @@ class OpportunitySectionTests(unittest.TestCase):
                 description="<p>Panel maker</p>",
                 ggd_fit_summary="Exports already",
                 ggd_draft_body="<p>Dear A. Fictional</p>",
+                ggd_response_draft="<p>Thank you, Monday works.</p>",
                 ggd_industry="Machinery",
             )],
             ("crm.lead", "search_count"): 1,
@@ -1649,6 +1780,12 @@ class OpportunitySectionTests(unittest.TestCase):
         full, _ = self.get(sections=["outreach"], detail_level="full")
         self.assertEqual(full["sections"]["outreach"]["text"]["ggd_draft_body"],
                          "Dear A. Fictional")
+
+        reply, _ = self.get(sections=["reply"], detail_level="full")
+        self.assertEqual(
+            reply["sections"]["reply"]["text"]["ggd_response_draft"],
+            "Thank you, Monday works.",
+        )
 
     def test_an_unknown_section_is_refused_and_lists_the_real_ones(self):
         payload, is_error = self.get(sections=["evidence"])
@@ -1726,3 +1863,425 @@ class Phase1PayloadSizeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpportunityActionTests(unittest.TestCase):
+    """ggd_opportunity_action: one tool, five fixed actions.
+
+    What these protect is the half of the boundary that lives here. The other
+    half is in the addon and is tested there, because a rule enforced only in
+    the connector is a rule anybody holding the API key can walk around: Odoo
+    decides, this file just refuses early and cheaply.
+    """
+
+    RECEIPT = {
+        "ok": True,
+        "action": "record_manual_contact",
+        "opportunity_id": 4242,
+        "stage": "Draft Prepared",
+        "write_date": "2026-09-06 12:00:00",
+        "contact_event_id": 7,
+    }
+
+    def _client(self, receipt=None):
+        return FakeOdoo(routes={
+            ("crm.lead", "ggd_opportunity_action"): receipt or self.RECEIPT,
+        })
+
+    def _sent(self, client):
+        """The (action, payload) the connector actually put on the wire."""
+        body = [c for c in client.calls
+                if c[1] == "ggd_opportunity_action"][0][2]
+        return body["action"], body["payload"]
+
+    def _manual_contact(self, **overrides):
+        args = {
+            "action": "record_manual_contact",
+            "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "channel": "call",
+            "occurred_at": "2026-09-06 10:30:00",
+            "summary": "Spoke to the fictional owner about panel exports.",
+            "idempotency_key": "call-2026-09-06-a",
+        }
+        args.update(overrides)
+        return args
+
+    def _enrich(self, **overrides):
+        args = {
+            "action": "enrich_contact",
+            "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "contact": {"email": "A.Fictional@example.invalid"},
+            "source_urls": ["https://fictional-panels.invalid/impressum"],
+            "researched_at": "2026-09-06 09:00:00",
+            "confidence": 0.9,
+        }
+        args.update(overrides)
+        return args
+
+    # -- dispatch and schema ------------------------------------------------
+
+    def test_the_five_actions_are_fixed_and_dispatched_explicitly(self):
+        self.assertEqual(
+            sorted(connector.OPPORTUNITY_ACTION_BUILDERS),
+            sorted(connector.OPPORTUNITY_ACTIONS),
+        )
+        self.assertEqual(
+            sorted(connector.ACTION_ARGUMENTS),
+            sorted(connector.OPPORTUNITY_ACTIONS),
+        )
+        tool = dict((t["name"], t) for t in connector.build_tools())[
+            "ggd_opportunity_action"
+        ]
+        self.assertEqual(
+            tool["inputSchema"]["properties"]["action"]["enum"],
+            list(connector.OPPORTUNITY_ACTIONS),
+        )
+
+    def test_an_unknown_action_never_reaches_odoo(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(
+                client, self._manual_contact(action="delete_opportunity")
+            )
+        self.assertIn("action must be one of", str(caught.exception))
+        self.assertEqual(client.calls, [])
+
+    def test_an_argument_from_another_action_is_refused_by_name(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(
+                client, self._manual_contact(target_stage="Contacted")
+            )
+        message = str(caught.exception)
+        self.assertIn("target_stage", message)
+        self.assertIn("does not take", message)
+        self.assertEqual(client.calls, [])
+
+    def test_a_missing_required_argument_is_named(self):
+        args = self._manual_contact()
+        del args["occurred_at"]
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(self._client(), args)
+        self.assertIn("occurred_at", str(caught.exception))
+
+    def test_expected_write_date_is_required_and_shaped(self):
+        args = self._manual_contact()
+        del args["expected_write_date"]
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(self._client(), args)
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(
+                self._client(), self._manual_contact(expected_write_date="yesterday")
+            )
+
+    def test_the_schema_offers_no_model_field_method_or_domain(self):
+        tool = dict((t["name"], t) for t in connector.build_tools())[
+            "ggd_opportunity_action"
+        ]
+        schema = tool["inputSchema"]
+        self.assertFalse(schema["additionalProperties"])
+        self.assertFalse(schema["properties"]["contact"]["additionalProperties"])
+        for forbidden in ("domain", "fields", "model", "method", "sql",
+                          "context", "user_id", "stage_id"):
+            self.assertNotIn(forbidden, schema["properties"])
+
+    def test_only_the_action_method_is_reachable(self):
+        client = self._client()
+        connector.tool_opportunity_action(client, self._manual_contact())
+        self.assertEqual(
+            [(c[0], c[1]) for c in client.calls],
+            [("crm.lead", "ggd_opportunity_action")],
+        )
+
+    # -- per-action validation ---------------------------------------------
+
+    def test_enrichment_refuses_a_field_the_allowlist_does_not_hold(self):
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(
+                self._client(),
+                self._enrich(contact={"ggd_do_not_contact": "true"}),
+            )
+        self.assertIn("ggd_do_not_contact", str(caught.exception))
+
+    def test_enrichment_refuses_to_clear_a_stored_value(self):
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(
+                self._client(), self._enrich(contact={"phone": "   "})
+            )
+        self.assertIn("cannot clear", str(caught.exception))
+
+    def test_enrichment_needs_a_source_a_time_and_a_confidence(self):
+        for missing in ("source_urls", "researched_at", "confidence"):
+            args = self._enrich()
+            del args[missing]
+            with self.assertRaises(connector.InvalidArgument):
+                connector.tool_opportunity_action(self._client(), args)
+
+    def test_a_source_must_be_a_public_http_url(self):
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(
+                self._client(), self._enrich(source_urls=["file:///etc/passwd"])
+            )
+
+    def test_a_guessed_looking_email_shape_is_refused(self):
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(
+                self._client(), self._enrich(contact={"email": "not an address"})
+            )
+
+    def test_overwrite_defaults_to_false_on_the_wire(self):
+        client = self._client()
+        connector.tool_opportunity_action(client, self._enrich())
+        _action, payload = self._sent(client)
+        self.assertFalse(payload["overwrite"])
+        self.assertEqual(payload["contact"]["email"], "a.fictional@example.invalid")
+
+    def test_a_terminal_stage_cannot_even_be_named(self):
+        for stage in ("Won", "Lost", "Reply Received", "Do Not Contact"):
+            self.assertNotIn(stage, connector.ACTION_STAGES)
+            with self.assertRaises(connector.InvalidArgument):
+                connector.tool_opportunity_action(self._client(), {
+                    "action": "transition_stage", "opportunity_id": 4242,
+                    "expected_write_date": "2026-09-06 11:00:00",
+                    "target_stage": stage, "expected_stage": "Qualified",
+                })
+
+    def test_an_activity_type_outside_todo_and_call_is_refused(self):
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(self._client(), {
+                "action": "schedule_activity", "opportunity_id": 4242,
+                "expected_write_date": "2026-09-06 11:00:00",
+                "activity_type": "email", "summary": "Chase the sample",
+                "deadline": "2026-09-20", "idempotency_key": "act-1",
+            })
+
+    def test_a_deadline_must_be_a_date(self):
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_opportunity_action(self._client(), {
+                "action": "schedule_activity", "opportunity_id": 4242,
+                "expected_write_date": "2026-09-06 11:00:00",
+                "activity_type": "todo", "summary": "Chase the sample",
+                "deadline": "next Friday", "idempotency_key": "act-1",
+            })
+
+    def test_a_draft_needs_subject_body_language_and_a_key(self):
+        base = {
+            "action": "save_outreach_draft", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "subject": "Panel export support", "body": "Hello, ...",
+            "language": "de", "idempotency_key": "draft-1",
+        }
+        client = self._client({"ok": True, "action": "save_outreach_draft",
+                               "opportunity_id": 4242,
+                               "write_date": "2026-09-06 12:00:00",
+                               "draft_version": "abc", "draft_status": "ready",
+                               "approved_draft_version": False,
+                               "approved_matches_draft": False})
+        connector.tool_opportunity_action(client, base)
+        for missing in ("subject", "body", "language", "idempotency_key"):
+            args = dict(base)
+            del args[missing]
+            with self.assertRaises(connector.InvalidArgument):
+                connector.tool_opportunity_action(self._client(), args)
+
+    def test_a_pasted_credential_is_refused_before_it_is_stored(self):
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_opportunity_action(
+                self._client(),
+                self._manual_contact(summary="They sent api_key: abc123"),
+            )
+        self.assertIn("credential", str(caught.exception))
+
+    # -- what comes back ----------------------------------------------------
+
+    def test_a_receipt_is_passed_through_an_allowlist(self):
+        client = self._client({
+            "ok": True, "action": "enrich_contact", "opportunity_id": 4242,
+            "stage": "Qualified", "write_date": "2026-09-06 12:00:00",
+            "changed_fields": ["email"],
+            # None of these may ever leave the process, whatever a future
+            # edit to the addon's receipt decides to add.
+            "ggd_last_send_key": "SEND-KEY-0001",
+            "ggd_draft_body": "the whole outreach body",
+        })
+        result = connector.tool_opportunity_action(client, self._enrich())
+        self.assertEqual(sorted(result), [
+            "action", "changed_fields", "ok", "opportunity_id", "stage",
+            "write_date",
+        ])
+
+    def test_a_successful_action_returns_the_next_concurrency_value(self):
+        client = self._client()
+        result = connector.tool_opportunity_action(client, self._manual_contact())
+        self.assertEqual(result["write_date"], "2026-09-06 12:00:00")
+        # One call, so the next guarded write needs no follow-up read.
+        self.assertEqual(len(client.calls), 1)
+
+    def test_a_stale_write_date_comes_back_as_a_reason_code(self):
+        client = self._client({
+            "ok": False, "action": "transition_stage", "opportunity_id": 4242,
+            "reason_code": "stale_record", "message": "The record changed.",
+            "stage": "Contacted", "write_date": "2026-09-06 13:00:00",
+        })
+        result = connector.tool_opportunity_action(client, {
+            "action": "transition_stage", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "target_stage": "Meeting Proposed", "expected_stage": "Contacted",
+        })
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "stale_record")
+        self.assertEqual(result["write_date"], "2026-09-06 13:00:00")
+
+    def test_a_stale_stage_comes_back_as_its_own_reason_code(self):
+        client = self._client({
+            "ok": False, "action": "transition_stage", "opportunity_id": 4242,
+            "reason_code": "stale_stage", "message": "Moved already.",
+            "stage": "Contacted", "write_date": "2026-09-06 12:00:00",
+        })
+        result = connector.tool_opportunity_action(client, {
+            "action": "transition_stage", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "target_stage": "Meeting Proposed", "expected_stage": "Qualified",
+        })
+        self.assertEqual(result["reason_code"], "stale_stage")
+
+    def test_a_contact_conflict_names_the_fields_and_not_their_values(self):
+        client = self._client({
+            "ok": False, "action": "enrich_contact", "opportunity_id": 4242,
+            "reason_code": "conflict", "message": "A different value is stored.",
+            "conflicts": ["email"], "stage": "Qualified",
+            "write_date": "2026-09-06 11:00:00",
+        })
+        result = connector.tool_opportunity_action(client, self._enrich())
+        self.assertEqual(result["conflicts"], ["email"])
+        self.assertNotIn("contact", result)
+
+    def test_a_recipient_change_on_an_approved_record_is_refused(self):
+        client = self._client({
+            "ok": False, "action": "enrich_contact", "opportunity_id": 4242,
+            "reason_code": "approval_locked",
+            "message": "Outreach is approved; revoke it in Odoo first.",
+            "stage": "Waiting for Approval",
+            "write_date": "2026-09-06 11:00:00",
+        })
+        result = connector.tool_opportunity_action(client, self._enrich())
+        self.assertEqual(result["reason_code"], "approval_locked")
+
+    def test_contacted_without_evidence_comes_back_refused(self):
+        client = self._client({
+            "ok": False, "action": "transition_stage", "opportunity_id": 4242,
+            "reason_code": "contact_not_evidenced",
+            "message": "A saved draft is not contact.",
+            "stage": "Draft Prepared", "write_date": "2026-09-06 11:00:00",
+        })
+        result = connector.tool_opportunity_action(client, {
+            "action": "transition_stage", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "target_stage": "Contacted", "expected_stage": "Draft Prepared",
+        })
+        self.assertEqual(result["reason_code"], "contact_not_evidenced")
+
+    def test_a_retried_manual_contact_says_already_recorded(self):
+        client = self._client({
+            "ok": True, "action": "record_manual_contact",
+            "opportunity_id": 4242, "status": "already_recorded",
+            "contact_event_id": 7, "stage": "Draft Prepared",
+            "write_date": "2026-09-06 12:00:00",
+        })
+        first = connector.tool_opportunity_action(client, self._manual_contact())
+        second = connector.tool_opportunity_action(client, self._manual_contact())
+        self.assertEqual(first["contact_event_id"], second["contact_event_id"])
+        self.assertEqual(second["status"], "already_recorded")
+        # The key the addon deduplicates on is what was sent, unchanged.
+        keys = [c[2]["payload"]["idempotency_key"] for c in client.calls]
+        self.assertEqual(keys, ["call-2026-09-06-a", "call-2026-09-06-a"])
+
+    def test_a_retried_activity_returns_the_first_activity_id(self):
+        client = self._client({
+            "ok": True, "action": "schedule_activity", "opportunity_id": 4242,
+            "status": "already_scheduled", "activity_id": 31,
+            "stage": "Contacted", "write_date": "2026-09-06 12:00:00",
+        })
+        result = connector.tool_opportunity_action(client, {
+            "action": "schedule_activity", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "activity_type": "call", "summary": "Call back about samples",
+            "deadline": "2026-09-20", "idempotency_key": "act-1",
+        })
+        self.assertEqual(result["activity_id"], 31)
+        self.assertEqual(result["status"], "already_scheduled")
+
+    def test_a_saved_draft_is_never_reported_as_approved(self):
+        client = self._client({
+            "ok": True, "action": "save_outreach_draft", "opportunity_id": 4242,
+            "draft_version": "5f2c", "approved_draft_version": False,
+            "approved_matches_draft": False, "draft_status": "ready",
+            "stage": "Draft Prepared", "write_date": "2026-09-06 12:00:00",
+        })
+        result = connector.tool_opportunity_action(client, {
+            "action": "save_outreach_draft", "opportunity_id": 4242,
+            "expected_write_date": "2026-09-06 11:00:00",
+            "subject": "Panel export support", "body": "Hello, ...",
+            "language": "de", "idempotency_key": "draft-1",
+        })
+        self.assertEqual(result["draft_version"], "5f2c")
+        self.assertFalse(result["approved_matches_draft"])
+        self.assertFalse(result["approved_draft_version"])
+        self.assertNotIn("body", result)
+
+    def test_a_receipt_stays_small_and_omits_empty_values(self):
+        client = self._client()
+        result = connector.tool_opportunity_action(client, self._manual_contact())
+        serialised = json.dumps(
+            connector.prune(result), separators=(",", ":"), default=str
+        )
+        self.assertNotIn("null", serialised)
+        self.assertLess(len(serialised), 250, serialised)
+
+    # -- boundaries ---------------------------------------------------------
+
+    def test_a_read_only_user_is_refused_by_odoo_and_told_why(self):
+        client = FakeOdoo(http_error=(403, {
+            "name": "odoo.exceptions.AccessError",
+            "message": "You are not allowed to modify 'Lead/Opportunity'.",
+        }))
+        with self.assertRaises(connector.ConnectorError) as caught:
+            connector.tool_opportunity_action(client, self._manual_contact())
+        self.assertEqual(caught.exception.kind, "access_denied")
+
+    def test_an_odoo_failure_carries_no_api_key(self):
+        client = FakeOdoo(http_error=(400, {
+            "name": "odoo.exceptions.ValidationError",
+            "message": "Rejected while holding %s" % SENTINEL_KEY,
+        }))
+        result = connector.call_tool(
+            "ggd_opportunity_action", self._manual_contact(), client
+        )
+        text = result["content"][0]["text"]
+        self.assertTrue(result["isError"])
+        self.assertNotIn(SENTINEL_KEY, text)
+        self.assertIn("<redacted>", text)
+
+    def test_a_receipt_that_is_not_a_receipt_is_not_reported_as_success(self):
+        client = self._client(receipt=["surprise"])
+        with self.assertRaises(connector.ConnectorError) as caught:
+            connector.tool_opportunity_action(client, self._manual_contact())
+        self.assertEqual(caught.exception.kind, "bad_response")
+
+    def test_no_action_can_reach_a_send_or_approval_method(self):
+        """The queue and the gate are untouched because nothing here can name
+        the methods that move them."""
+        for method in ("action_ggd_approve_outreach", "ggd_claim_send_key",
+                       "ggd_finalize_send", "write", "unlink"):
+            self.assertNotIn(("crm.lead", method), connector.ALLOWED_CALLS)
+        self.assertNotIn(("mail.mail", "send"), connector.ALLOWED_CALLS)
+        for action in connector.OPPORTUNITY_ACTIONS:
+            required, optional = connector.ACTION_ARGUMENTS[action]
+            for name in required + optional:
+                self.assertNotIn(
+                    name,
+                    ("ggd_outreach_approved", "ggd_do_not_contact",
+                     "send_key", "active"),
+                )

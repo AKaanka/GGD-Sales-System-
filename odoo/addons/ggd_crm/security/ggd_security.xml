@@ -28,4 +28,25 @@
         <field name="comment">May approve outreach for a lead and may clear the Do not contact flag. The n8n service user must never be in this group.</field>
         <field name="user_ids" eval="[(4, ref('base.user_admin'))]"/>
     </record>
+
+    <!--
+        Guarded-action log.
+
+        Every internal user may read and append; nobody may edit or delete a
+        row through the ORM, including the administrator. The log is what
+        makes a retried action idempotent and what proves a manual contact
+        happened before an opportunity moved to Contacted, and both
+        guarantees are worth exactly as much as the rows are hard to rewrite.
+        The superuser is exempt from access rules as always, which is the
+        escape hatch for a genuine repair done deliberately from the shell.
+    -->
+    <record id="access_ggd_opportunity_action_log_user" model="ir.model.access">
+        <field name="name">ggd.opportunity.action.log: read and append</field>
+        <field name="model_id" ref="model_ggd_opportunity_action_log"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_write" eval="0"/>
+        <field name="perm_unlink" eval="0"/>
+    </record>
 </odoo>

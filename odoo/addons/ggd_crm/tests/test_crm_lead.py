@@ -2288,3 +2288,641 @@ class TestGgdBoardChipCounts(TransactionCase):
             "ggd_chip_replies",
         ):
             self.assertIn('name="%s"' % name, arch)
+
+
+@tagged("post_install", "-at_install")
+class TestGgdSaveResponseDraft(TransactionCase):
+    """ggd_save_response_draft: the reply draft the ChatGPT connector writes.
+
+    The field it writes is a suggestion a human reads, not something that can
+    be sent, so these tests are mostly about keeping it that way: the method
+    must not become a second door into the outbound gate, and it must not
+    become the one path that puts a reply draft on a suppressed contact.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def _lead(self, **values):
+        base = {
+            "name": "Response draft QA",
+            "type": "opportunity",
+            "email_from": "reply-qa@ggd-qa.invalid",
+        }
+        base.update(values)
+        return self.Lead.create(base)
+
+    def test_a_draft_is_stored_and_noted_in_the_chatter(self):
+        lead = self._lead()
+        before = len(lead.message_ids)
+        result = lead.ggd_save_response_draft("Thank you, Monday works.")
+        self.assertEqual(result, {"saved": True})
+        self.assertEqual(lead.ggd_response_draft, "Thank you, Monday works.")
+        self.assertGreater(len(lead.message_ids), before)
+
+    def test_it_returns_a_dict_not_a_bare_scalar(self):
+        """Defect 13: a top-level JSON scalar is legal but some clients refuse
+        to parse it, and the write has already happened by then."""
+        lead = self._lead()
+        self.assertIsInstance(lead.ggd_save_response_draft("Fine by me."), dict)
+
+    def test_surrounding_whitespace_is_stripped(self):
+        lead = self._lead()
+        lead.ggd_save_response_draft("  Monday suits us.\n\n")
+        self.assertEqual(lead.ggd_response_draft, "Monday suits us.")
+
+    def test_an_empty_draft_is_refused(self):
+        lead = self._lead(ggd_response_draft="An earlier suggestion.")
+        for empty in ("", "   ", "\n\t ", False, None):
+            with self.assertRaises(ValidationError):
+                lead.ggd_save_response_draft(empty)
+        self.assertEqual(lead.ggd_response_draft, "An earlier suggestion.")
+
+    def test_an_over_long_draft_is_refused_rather_than_truncated(self):
+        lead = self._lead()
+        too_long = "x" * (self.Lead.GGD_RESPONSE_DRAFT_MAX_LENGTH + 1)
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft(too_long)
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_the_maximum_length_itself_is_accepted(self):
+        lead = self._lead()
+        at_limit = "x" * self.Lead.GGD_RESPONSE_DRAFT_MAX_LENGTH
+        lead.ggd_save_response_draft(at_limit)
+        self.assertEqual(len(lead.ggd_response_draft), len(at_limit))
+
+    def test_a_suppressed_contact_gets_no_draft(self):
+        """ggd_record_reply stores no draft for a suppressed contact. A
+        hand-written one must not be the way around that."""
+        lead = self._lead(ggd_do_not_contact=True)
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft("Following up as promised.")
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_an_unsubscribed_contact_gets_no_draft(self):
+        lead = self._lead(ggd_reply_category="unsubscribe")
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft("Following up as promised.")
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_it_leaves_the_outbound_gate_exactly_as_it_found_it(self):
+        """The regression that would actually matter."""
+        lead = self._lead(
+            ggd_draft_subject="A reviewed fictional outreach subject",
+            ggd_draft_body="A reviewed fictional outreach draft body.",
+            ggd_draft_version="qa-draft-v1",
+            ggd_draft_status="ready",
+        )
+        watched = [
+            "ggd_outreach_approved",
+            "ggd_do_not_contact",
+            "ggd_draft_status",
+            "ggd_draft_subject",
+            "ggd_draft_body",
+            "ggd_draft_version",
+            "ggd_approved_draft_version",
+            "ggd_last_send_key",
+            "ggd_last_sent_at",
+            "ggd_delivery_status",
+        ]
+        before = {name: lead[name] for name in watched}
+        lead.ggd_save_response_draft("A reply for Kaan to read.")
+        after = {name: lead[name] for name in watched}
+        self.assertEqual(before, after)
+
+    def test_it_overwrites_the_suggestion_workflow_four_left(self):
+        lead = self._lead(ggd_response_draft="The suggestion from Workflow 4.")
+        lead.ggd_save_response_draft("The one Kaan wrote instead.")
+        self.assertEqual(lead.ggd_response_draft, "The one Kaan wrote instead.")
+
+    def test_it_refuses_more_than_one_lead_at_a_time(self):
+        leads = self._lead() | self._lead()
+        with self.assertRaises(ValueError):
+            leads.ggd_save_response_draft("Ambiguous.")
+
+
+@tagged("post_install", "-at_install")
+class TestGgdOpportunityAction(TransactionCase):
+    """The guarded actions the ChatGPT connector reaches for (issue #65).
+
+    Every rule these check is enforced here, in the addon, and not only in the
+    connector. That is the point of the split: the connector's validation
+    saves a round trip, but anybody holding the API key can call this method
+    directly, so a rule that lives only in Python on Kaan's Mac is not a rule.
+
+    Nothing in this class may send email. Each test that writes counts
+    mail.mail before and after, because this database has a real outgoing
+    server configured in normal operation and "nothing was queued" is a claim
+    worth checking rather than assuming.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+        cls.Log = cls.env["ggd.opportunity.action.log"]
+        Stage = cls.env["crm.stage"]
+        cls.stages = {}
+        for sequence, name in enumerate(cls.Lead.GGD_ACTION_STAGES, start=1):
+            found = Stage.search([("name", "=ilike", name)], limit=1)
+            cls.stages[name] = found or Stage.create(
+                {"name": name, "sequence": sequence * 10}
+            )
+        cls.reply_stage = Stage.search([("name", "=ilike", "Reply Received")], limit=1)
+        if not cls.reply_stage:
+            cls.reply_stage = Stage.create({"name": "Reply Received", "sequence": 600})
+
+    def _lead(self, **values):
+        base = {
+            "name": "QA guarded-action fixture",
+            "type": "opportunity",
+            "email_from": "action-test@ggd-qa.invalid",
+            "stage_id": self.stages["Qualified"].id,
+        }
+        base.update(values)
+        return self.Lead.with_context(
+            mail_create_nosubscribe=True, mail_create_nolog=True, mail_notrack=True
+        ).create(base)
+
+    @staticmethod
+    def _stamp(lead):
+        return fields.Datetime.to_string(lead.write_date)
+
+    def _act(self, lead, action, **payload):
+        payload.setdefault("expected_write_date", self._stamp(lead))
+        return lead.ggd_opportunity_action(action, payload)
+
+    def _mail_count(self):
+        return self.env["mail.mail"].sudo().search_count([])
+
+    def _enrich_payload(self, **payload):
+        base = {
+            "contact": {"phone": "+49 30 000000"},
+            "source_urls": ["https://fictional-panels.invalid/impressum"],
+            "researched_at": "2026-09-06 09:00:00",
+            "confidence": 0.9,
+        }
+        base.update(payload)
+        return base
+
+    # -- the shared preflight ----------------------------------------------
+
+    def test_an_unknown_action_is_refused(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            lead.ggd_opportunity_action(
+                "unlink_opportunity", {"expected_write_date": self._stamp(lead)}
+            )
+
+    def test_expected_write_date_is_required(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            lead.ggd_opportunity_action("record_manual_contact", {})
+
+    def test_a_stale_write_date_writes_nothing_at_all(self):
+        lead = self._lead()
+        stale = "2020-01-01 00:00:00"
+        before = self._mail_count()
+        result = lead.ggd_opportunity_action(
+            "enrich_contact",
+            dict(self._enrich_payload(), expected_write_date=stale),
+        )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "stale_record")
+        self.assertFalse(lead.phone)
+        self.assertFalse(lead.ggd_contact_researched_at)
+        # The current stamp comes back, so a retry needs no extra read.
+        self.assertEqual(result["write_date"], self._stamp(lead))
+        self.assertEqual(self._mail_count(), before)
+
+    def test_a_suppressed_opportunity_refuses_every_action(self):
+        lead = self._lead(ggd_do_not_contact=True)
+        for action, payload in (
+            ("enrich_contact", self._enrich_payload()),
+            ("record_manual_contact", {
+                "channel": "call", "occurred_at": "2026-09-06 09:00:00",
+                "summary": "Called", "idempotency_key": "k1"}),
+            ("transition_stage", {
+                "target_stage": "Draft Prepared", "expected_stage": "Qualified"}),
+        ):
+            result = self._act(lead, action, **payload)
+            self.assertEqual(result["reason_code"], "suppressed", action)
+
+    def test_an_archived_opportunity_refuses_every_action(self):
+        lead = self._lead()
+        lead.write({"active": False})
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Draft Prepared", expected_stage="Qualified",
+        )
+        self.assertEqual(result["reason_code"], "archived")
+
+    def test_a_user_without_write_access_is_refused(self):
+        """A reporting identity gains no write capability from this method."""
+        reader = self.env["res.users"].with_context(no_reset_password=True).create(
+            {
+                "name": "GGD reporting-shaped user",
+                "login": "ggd-reporting-shaped@ggd-qa.invalid",
+                "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
+            }
+        )
+        lead = self._lead()
+        stamp = self._stamp(lead)
+        with self.assertRaises(AccessError):
+            lead.with_user(reader).ggd_opportunity_action(
+                "record_manual_contact",
+                {
+                    "expected_write_date": stamp, "channel": "call",
+                    "occurred_at": "2026-09-06 09:00:00",
+                    "summary": "Called", "idempotency_key": "k1",
+                },
+            )
+
+    # -- contact enrichment -------------------------------------------------
+
+    def test_enrichment_writes_only_allowlisted_fields(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            self._act(
+                lead, "enrich_contact",
+                **self._enrich_payload(contact={"ggd_outreach_approved": True})
+            )
+        self.assertFalse(lead.ggd_outreach_approved)
+
+    def test_enrichment_refuses_to_clear_a_value(self):
+        lead = self._lead(phone="+49 30 111111")
+        with self.assertRaises(ValidationError):
+            self._act(lead, "enrich_contact", **self._enrich_payload(
+                contact={"phone": "   "}
+            ))
+        self.assertEqual(lead.phone, "+49 30 111111")
+
+    def test_enrichment_needs_a_source_and_a_research_time(self):
+        lead = self._lead()
+        payload = self._enrich_payload()
+        del payload["source_urls"]
+        with self.assertRaises(ValidationError):
+            self._act(lead, "enrich_contact", **payload)
+        payload = self._enrich_payload(researched_at=False)
+        with self.assertRaises(ValidationError):
+            self._act(lead, "enrich_contact", **payload)
+
+    def test_enrichment_stores_the_value_and_its_provenance(self):
+        lead = self._lead()
+        before = self._mail_count()
+        result = self._act(lead, "enrich_contact", **self._enrich_payload(
+            contact={"contact_name": "A. Fictional", "job_title": "Export lead"}
+        ))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["changed_fields"], ["contact_name", "job_title"])
+        self.assertEqual(lead.contact_name, "A. Fictional")
+        self.assertEqual(lead.function, "Export lead")
+        self.assertEqual(
+            lead.ggd_contact_source_urls,
+            "https://fictional-panels.invalid/impressum",
+        )
+        self.assertAlmostEqual(lead.ggd_contact_confidence, 0.9, places=2)
+        self.assertTrue(lead.ggd_contact_researched_at)
+        self.assertEqual(self._mail_count(), before)
+
+    def test_a_different_stored_value_is_a_conflict_not_an_overwrite(self):
+        lead = self._lead(phone="+49 30 111111")
+        result = self._act(lead, "enrich_contact", **self._enrich_payload())
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "conflict")
+        self.assertEqual(result["conflicts"], ["phone"])
+        self.assertEqual(lead.phone, "+49 30 111111")
+        # Nothing at all was written, provenance included.
+        self.assertFalse(lead.ggd_contact_researched_at)
+
+    def test_an_explicit_overwrite_replaces_the_value(self):
+        lead = self._lead(phone="+49 30 111111")
+        result = self._act(
+            lead, "enrich_contact", **self._enrich_payload(overwrite=True)
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(lead.phone, "+49 30 000000")
+
+    def test_the_same_value_again_is_unchanged_and_writes_nothing(self):
+        lead = self._lead(phone="+49 30 000000")
+        stamp = self._stamp(lead)
+        result = self._act(lead, "enrich_contact", **self._enrich_payload())
+        self.assertEqual(result["status"], "unchanged")
+        self.assertEqual(result["write_date"], stamp)
+
+    def test_a_recipient_change_is_refused_while_outreach_is_approved(self):
+        lead = self._lead(
+            ggd_draft_subject=VALID_DRAFT_SUBJECT,
+            ggd_draft_body=VALID_DRAFT_BODY,
+            ggd_draft_version=VALID_DRAFT_VERSION,
+            ggd_draft_status="ready",
+        )
+        lead.action_ggd_approve_outreach()
+        approved_recipient = lead.ggd_approved_recipient
+        result = self._act(lead, "enrich_contact", **self._enrich_payload(
+            contact={"email": "someone-else@ggd-qa.invalid"}
+        ))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "approval_locked")
+        self.assertEqual(lead.email_from, "action-test@ggd-qa.invalid")
+        self.assertEqual(lead.ggd_approved_recipient, approved_recipient)
+        self.assertTrue(lead.ggd_outreach_approved)
+        # overwrite is not a way around it. It answers "replace a researched
+        # value", not "redirect an approved email".
+        forced = self._act(lead, "enrich_contact", **self._enrich_payload(
+            contact={"email": "someone-else@ggd-qa.invalid"}, overwrite=True
+        ))
+        self.assertEqual(forced["reason_code"], "approval_locked")
+        self.assertEqual(lead.email_from, "action-test@ggd-qa.invalid")
+
+    def test_a_recipient_change_on_an_unapproved_record_goes_through_write(self):
+        """It must take the ordinary write path, so every guard there runs."""
+        lead = self._lead(email_from=False)
+        result = self._act(lead, "enrich_contact", **self._enrich_payload(
+            contact={"email": "New.Contact@ggd-qa.invalid"}
+        ))
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["recipient_changed"])
+        self.assertEqual(lead.email_from, "new.contact@ggd-qa.invalid")
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_recipient)
+
+    # -- manual contact -----------------------------------------------------
+
+    def test_a_manual_contact_is_recorded_once_per_key(self):
+        lead = self._lead()
+        before = self._mail_count()
+        payload = {
+            "channel": "call", "occurred_at": "2026-09-06 09:00:00",
+            "summary": "Called the fictional owner about panel exports.",
+            "idempotency_key": "call-a",
+        }
+        first = self._act(lead, "record_manual_contact", **payload)
+        second = self._act(lead, "record_manual_contact", **payload)
+        self.assertTrue(first["ok"])
+        self.assertEqual(second["status"], "already_recorded")
+        self.assertEqual(first["contact_event_id"], second["contact_event_id"])
+        self.assertEqual(
+            self.Log.search_count([
+                ("lead_id", "=", lead.id), ("action", "=", "record_manual_contact"),
+            ]),
+            1,
+        )
+        self.assertEqual(self._mail_count(), before)
+
+    def test_a_channel_outside_the_fixed_list_is_refused(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            self._act(
+                lead, "record_manual_contact", channel="carrier_pigeon",
+                occurred_at="2026-09-06 09:00:00", summary="Sent a bird",
+                idempotency_key="k1",
+            )
+
+    def test_a_manual_contact_cannot_be_recorded_in_the_future(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            self._act(
+                lead, "record_manual_contact", channel="meeting",
+                occurred_at=fields.Datetime.to_string(
+                    fields.Datetime.now() + timedelta(days=2)
+                ),
+                summary="Meeting we have not had yet",
+                idempotency_key="k1",
+            )
+
+    # -- stage transitions --------------------------------------------------
+
+    def test_only_documented_non_terminal_stages_can_be_named(self):
+        lead = self._lead()
+        for stage in ("Won", "Lost", "Reply Received", "Do Not Contact"):
+            self.assertNotIn(stage, lead.GGD_ACTION_STAGES)
+            with self.assertRaises(ValidationError):
+                self._act(
+                    lead, "transition_stage",
+                    target_stage=stage, expected_stage="Qualified",
+                )
+        self.assertEqual(lead.stage_id, self.stages["Qualified"])
+
+    def test_a_stale_expected_stage_stops_the_move(self):
+        lead = self._lead()
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Draft Prepared", expected_stage="Target Identified",
+        )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "stale_stage")
+        self.assertEqual(result["stage"], "Qualified")
+        self.assertEqual(lead.stage_id, self.stages["Qualified"])
+
+    def test_an_allowed_move_is_applied_and_reported(self):
+        lead = self._lead()
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Draft Prepared", expected_stage="Qualified",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stage"], "Draft Prepared")
+        self.assertEqual(result["previous_stage"], "Qualified")
+        self.assertEqual(lead.stage_id, self.stages["Draft Prepared"])
+
+    def test_a_saved_draft_alone_cannot_reach_contacted(self):
+        lead = self._lead(stage_id=self.stages["Draft Prepared"].id)
+        lead.ggd_prepare_draft(VALID_DRAFT_SUBJECT, VALID_DRAFT_BODY)
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Contacted", expected_stage="Draft Prepared",
+        )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "contact_not_evidenced")
+        self.assertEqual(lead.stage_id, self.stages["Draft Prepared"])
+
+    def test_a_recorded_manual_contact_earns_contacted(self):
+        lead = self._lead(stage_id=self.stages["Draft Prepared"].id)
+        self._act(
+            lead, "record_manual_contact", channel="call",
+            occurred_at="2026-09-06 09:00:00", summary="Spoke to the owner.",
+            idempotency_key="call-a",
+        )
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Contacted", expected_stage="Draft Prepared",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(lead.stage_id, self.stages["Contacted"])
+
+    def test_a_confirmed_send_earns_contacted(self):
+        lead = self._lead(stage_id=self.stages["Draft Prepared"].id)
+        lead.write({
+            "ggd_send_confirmed_at": fields.Datetime.now(),
+            "ggd_last_confirmed_send_key": "qa-confirmed-key",
+        })
+        result = self._act(
+            lead, "transition_stage",
+            target_stage="Contacted", expected_stage="Draft Prepared",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(lead.stage_id, self.stages["Contacted"])
+
+    # -- follow-up activities ----------------------------------------------
+
+    def test_an_activity_is_created_once_per_key_for_the_salesperson(self):
+        salesperson = self.env["res.users"].with_context(
+            no_reset_password=True
+        ).create({
+            "name": "GGD fictional salesperson",
+            "login": "ggd-action-salesperson@ggd-qa.invalid",
+            "group_ids": [(6, 0, [
+                self.env.ref("base.group_user").id,
+                self.env.ref("sales_team.group_sale_salesman_all_leads").id,
+            ])],
+        })
+        lead = self._lead(user_id=salesperson.id)
+        before = self._mail_count()
+        payload = {
+            "activity_type": "call",
+            "summary": "Call back about the sample request",
+            "deadline": fields.Date.to_string(
+                fields.Date.context_today(lead) + timedelta(days=7)
+            ),
+            "idempotency_key": "act-a",
+        }
+        first = self._act(lead, "schedule_activity", **payload)
+        second = self._act(lead, "schedule_activity", **payload)
+        self.assertTrue(first["ok"])
+        self.assertEqual(second["status"], "already_scheduled")
+        self.assertEqual(first["activity_id"], second["activity_id"])
+        activities = self.env["mail.activity"].search([
+            ("res_model", "=", "crm.lead"), ("res_id", "=", lead.id),
+        ])
+        self.assertEqual(len(activities), 1)
+        self.assertEqual(activities.user_id, salesperson)
+        # Assigning work to somebody else must not put mail in the queue.
+        self.assertEqual(self._mail_count(), before)
+
+    def test_an_activity_falls_back_to_the_acting_user(self):
+        lead = self._lead(user_id=False)
+        result = self._act(
+            lead, "schedule_activity", activity_type="todo",
+            summary="Research the buyer role",
+            deadline=fields.Date.to_string(
+                fields.Date.context_today(lead) + timedelta(days=3)
+            ),
+            idempotency_key="act-b",
+        )
+        activity = self.env["mail.activity"].browse(result["activity_id"])
+        self.assertEqual(activity.user_id, self.env.user)
+
+    def test_a_past_deadline_is_refused(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            self._act(
+                lead, "schedule_activity", activity_type="todo",
+                summary="Yesterday's follow-up",
+                deadline=fields.Date.to_string(
+                    fields.Date.context_today(lead) - timedelta(days=1)
+                ),
+                idempotency_key="act-c",
+            )
+
+    def test_an_activity_type_outside_todo_and_call_is_refused(self):
+        lead = self._lead()
+        with self.assertRaises(ValidationError):
+            self._act(
+                lead, "schedule_activity", activity_type="upload_document",
+                summary="Attach the brochure",
+                deadline=fields.Date.to_string(
+                    fields.Date.context_today(lead) + timedelta(days=3)
+                ),
+                idempotency_key="act-d",
+            )
+
+    # -- outreach drafts ----------------------------------------------------
+
+    def test_saving_a_draft_never_approves_or_queues_it(self):
+        lead = self._lead()
+        before = self._mail_count()
+        result = self._act(
+            lead, "save_outreach_draft", subject="Panel export support",
+            body="Hello, a fictional outreach body for testing.",
+            language="de", idempotency_key="draft-a",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["draft_version"], lead.ggd_draft_version)
+        self.assertFalse(result["approved_draft_version"])
+        self.assertFalse(result["approved_matches_draft"])
+        self.assertEqual(result["draft_status"], "ready")
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_last_send_key)
+        self.assertFalse(lead.ggd_send_confirmed_at)
+        self.assertEqual(lead.ggd_delivery_status, "none")
+        self.assertEqual(self._mail_count(), before)
+
+    def test_a_retried_draft_does_not_mint_a_second_version(self):
+        lead = self._lead()
+        payload = {
+            "subject": "Panel export support",
+            "body": "Hello, a fictional outreach body for testing.",
+            "language": "de", "idempotency_key": "draft-a",
+        }
+        first = self._act(lead, "save_outreach_draft", **payload)
+        second = self._act(lead, "save_outreach_draft", **payload)
+        self.assertEqual(second["status"], "already_saved")
+        self.assertEqual(first["draft_version"], second["draft_version"])
+        self.assertEqual(lead.ggd_draft_version, first["draft_version"])
+
+    def test_saving_a_draft_consumes_an_older_approval(self):
+        lead = self._lead(
+            ggd_draft_subject=VALID_DRAFT_SUBJECT,
+            ggd_draft_body=VALID_DRAFT_BODY,
+            ggd_draft_version=VALID_DRAFT_VERSION,
+            ggd_draft_status="ready",
+        )
+        lead.action_ggd_approve_outreach()
+        self.assertTrue(lead.ggd_outreach_approved)
+        result = self._act(
+            lead, "save_outreach_draft", subject="A newer fictional subject",
+            body="A newer fictional body.", language="en",
+            idempotency_key="draft-b",
+        )
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["approved_matches_draft"])
+        self.assertFalse(lead.ggd_outreach_approved)
+        self.assertFalse(lead.ggd_approved_draft_version)
+
+    def test_a_draft_needs_a_recipient(self):
+        lead = self._lead(email_from=False)
+        result = self._act(
+            lead, "save_outreach_draft", subject="Panel export support",
+            body="Hello.", language="de", idempotency_key="draft-c",
+        )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], "recipient_missing")
+        self.assertFalse(lead.ggd_draft_version)
+
+    # -- the log itself -----------------------------------------------------
+
+    def test_the_action_log_cannot_be_rewritten_or_deleted(self):
+        salesperson = self.env["res.users"].with_context(
+            no_reset_password=True
+        ).create({
+            "name": "GGD log-probe user",
+            "login": "ggd-log-probe@ggd-qa.invalid",
+            "group_ids": [(6, 0, [
+                self.env.ref("base.group_user").id,
+                self.env.ref("sales_team.group_sale_salesman_all_leads").id,
+            ])],
+        })
+        lead = self._lead()
+        self._act(
+            lead, "record_manual_contact", channel="email",
+            occurred_at="2026-09-06 09:00:00", summary="Wrote by hand.",
+            idempotency_key="log-a",
+        )
+        row = self.Log.search([("lead_id", "=", lead.id)], limit=1)
+        with self.assertRaises(AccessError):
+            row.with_user(salesperson).write({"summary": "Rewritten"})
+        with self.assertRaises(AccessError):
+            row.with_user(salesperson).unlink()

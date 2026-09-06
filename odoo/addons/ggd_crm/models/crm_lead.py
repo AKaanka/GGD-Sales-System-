@@ -57,6 +57,13 @@ class CrmLead(models.Model):
     # stop "ok" and "yes" from passing as evidence.
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH = 20
 
+    # Length ceiling for a reply draft handed over by the ChatGPT connector.
+    # A reply is sentences; a pasted thread or a whole document is a storage
+    # accident. Over-long input is refused rather than truncated, for the
+    # reason the connector's own CREATE_LIMITS gives: a half-sentence left
+    # behind by truncation looks deliberate to whoever reads it next.
+    GGD_RESPONSE_DRAFT_MAX_LENGTH = 5000
+
     # Every column the outbound claim guard must re-read under its row lock.
     # The workflow decides whether a send is allowed from a snapshot taken
     # several RPCs before the claim; anything in that snapshot can be changed
@@ -100,9 +107,99 @@ class CrmLead(models.Model):
         "unclear",
     )
 
+    # ------------------------------------------------------------------
+    # Guarded opportunity actions (issue #65)
+    #
+    # ggd_opportunity_action() is the single public entry point the ChatGPT
+    # connector reaches for. Everything it is allowed to do is named here, in
+    # module constants, so widening it is an edit to this file and a test run
+    # rather than something a caller can talk its way into.
+    # ------------------------------------------------------------------
+
+    # Target stages this path may set. Deliberately a subset of the pipeline
+    # in docs/ODOO-SETUP.md: Reply Received belongs to the reply workflow,
+    # Won and Lost are commercial outcomes a human decides, and Do Not Contact
+    # is a suppression that has its own one-way route. None of the four can be
+    # reached from here at all.
+    GGD_ACTION_STAGES = (
+        "Target Identified",
+        "Qualified",
+        "Draft Prepared",
+        "Waiting for Approval",
+        "Contacted",
+        "Meeting Proposed",
+        "Meeting Booked",
+        "Meeting Held",
+        "Active Opportunity",
+    )
+    GGD_ACTION_STAGE_CONTACTED = "Contacted"
+
+    # Contact fields the enrichment action may fill, as public name -> Odoo
+    # field. Nothing else on crm.lead is reachable, and no value may be
+    # emptied: clearing a researched contact detail is not enrichment.
+    GGD_ACTION_CONTACT_FIELDS = {
+        "contact_name": "contact_name",
+        "job_title": "function",
+        "email": "email_from",
+        "phone": "phone",
+        "contact_url": "ggd_contact_profile_url",
+    }
+
+    GGD_ACTION_ACTIVITY_TYPES = {
+        "todo": "mail.mail_activity_data_todo",
+        "call": "mail.mail_activity_data_call",
+    }
+
+    # Bounds for everything a caller hands over. Over-long input is refused
+    # rather than truncated, for the reason ggd_save_response_draft gives: a
+    # half sentence left behind by truncation looks deliberate to the next
+    # person who reads it.
+    GGD_ACTION_SUMMARY_MAX_LENGTH = 500
+    GGD_ACTION_NOTE_MAX_LENGTH = 2000
+    GGD_ACTION_URL_MAX_LENGTH = 500
+    GGD_ACTION_MAX_SOURCE_URLS = 5
+    GGD_ACTION_KEY_MAX_LENGTH = 100
+    GGD_ACTION_TEXT_MAX_LENGTH = 200
+    GGD_ACTION_DRAFT_SUBJECT_MAX_LENGTH = 300
+    GGD_ACTION_DRAFT_BODY_MAX_LENGTH = 10000
+    # A follow-up further out than a year is a reminder nobody will honour,
+    # and is far more likely to be a mistyped year than a plan.
+    GGD_ACTION_MAX_DEADLINE_DAYS = 365
+
     ggd_industry = fields.Char(string="Industry")
     ggd_product_focus = fields.Text(string="Product / capability focus")
     ggd_source_url = fields.Char(string="Research source URL")
+
+    # Contact provenance. Odoo already has somewhere to put a contact's name,
+    # role, address and number; what it has nowhere to put is where those came
+    # from and when. Without that, an address read off a public page and an
+    # address guessed from a naming pattern look identical on the record, and
+    # only one of the two is safe to write to. These four are written together
+    # by the guarded enrichment action and by nothing else.
+    ggd_contact_profile_url = fields.Char(
+        string="Contact profile URL",
+        help=(
+            "Public profile or company contact page for the named contact, "
+            "typically LinkedIn. Evidence, not a sending address."
+        ),
+    )
+    ggd_contact_source_urls = fields.Text(
+        string="Contact source URLs",
+        copy=False,
+        help="Public pages the stored contact details were read from, one per line.",
+    )
+    ggd_contact_researched_at = fields.Datetime(
+        string="Contact researched at",
+        copy=False,
+        help="When the stored contact details were last read from their sources.",
+    )
+    ggd_contact_confidence = fields.Float(
+        string="Contact confidence",
+        digits=(3, 2),
+        copy=False,
+        help="0.00-1.00 confidence in the stored contact details, as researched.",
+    )
+
     # Hand order inside a pipeline column. Odoo orders crm.lead by priority
     # and id and resequences a kanban only through a field named "sequence",
     # so without this the board refused to let a card be moved within its
@@ -1591,6 +1688,778 @@ class CrmLead(models.Model):
             )
         )
         return not needs_review
+
+    def ggd_save_response_draft(self, draft):
+        """Store one hand-written reply draft. Returns {"saved": True}.
+
+        The ChatGPT connector calls this when Kaan has written the reply there
+        instead of taking the one Workflow 4 suggested. It writes exactly one
+        field. ggd_response_draft is a suggestion for a human to read: nothing
+        sends it, and it is not the gated outreach draft, so this method is
+        outside the outbound gate rather than a second door into it.
+
+        Suppression is honoured exactly as ggd_record_reply honours it. That
+        method stores no draft when the contact is suppressed, so a
+        hand-written one must not become the way around it - otherwise this
+        would be the single path that puts a reply draft on a lead that asked
+        not to be contacted.
+
+        Returns a dict rather than a bare bool or string for the reason
+        ggd_prepare_draft documents at length: a top-level JSON scalar is legal
+        but some HTTP clients refuse to parse it, and a caller that cannot read
+        the result of a write it has already made is the shape defect 13 took.
+        """
+        self.ensure_one()
+        draft = (draft or "").strip()
+        if not draft:
+            raise ValidationError(_("A reply draft cannot be empty. Nothing was saved."))
+        if len(draft) > self.GGD_RESPONSE_DRAFT_MAX_LENGTH:
+            raise ValidationError(
+                _(
+                    "The reply draft is %(length)s characters and the maximum "
+                    "is %(maximum)s. Nothing was saved.",
+                    length=len(draft),
+                    maximum=self.GGD_RESPONSE_DRAFT_MAX_LENGTH,
+                )
+            )
+        if self.ggd_do_not_contact or self.ggd_reply_category == "unsubscribe":
+            raise ValidationError(
+                _(
+                    "This contact is suppressed, so no reply draft may be "
+                    "stored for it. Nothing was saved."
+                )
+            )
+        self.write({"ggd_response_draft": draft})
+        self.message_post(
+            body=_("Reply draft written by hand and saved. Nothing was sent.")
+        )
+        return {"saved": True}
+
+    # ------------------------------------------------------------------
+    # Guarded opportunity actions (issue #65)
+    # ------------------------------------------------------------------
+
+    def _ggd_action_state(self):
+        """The two values a caller needs to make its next call without a read.
+
+        Returned on success and on every rejection that got far enough to read
+        the record. A rejected optimistic write is the case that matters: the
+        caller's snapshot is stale, and handing back the current stage and
+        write timestamp turns "read it again, then retry" into just "retry".
+        """
+        self.env.flush_all()
+        self.invalidate_recordset(["write_date", "stage_id"])
+        return {
+            "stage": self.stage_id.name or False,
+            "write_date": fields.Datetime.to_string(self.write_date),
+        }
+
+    def _ggd_action_receipt(self, action, **extra):
+        """A successful action, as small as it can honestly be.
+
+        No draft body, no evidence text, no request payload and no chatter:
+        every one of those is something the caller already has or can ask for,
+        and all of them are paid for again on every later turn of the
+        conversation that carries this result.
+        """
+        receipt = {"ok": True, "action": action, "opportunity_id": self.id}
+        receipt.update(self._ggd_action_state())
+        receipt.update(extra)
+        return receipt
+
+    def _ggd_action_reject(self, action, reason_code, message, with_state=True, **extra):
+        """A refusal, with a stable code the caller can branch on.
+
+        Business refusals come back as a result rather than as an exception on
+        purpose. An exception crossing JSON-2 arrives as an HTTP error carrying
+        prose, which a model can only pattern-match on; a reason code survives
+        translation, rewording and a language change. Genuinely malformed input
+        still raises - that is a caller bug, not a state a retry can resolve.
+        """
+        rejection = {
+            "ok": False,
+            "action": action,
+            "opportunity_id": self.id,
+            "reason_code": reason_code,
+            "message": message,
+        }
+        if with_state:
+            rejection.update(self._ggd_action_state())
+        rejection.update(extra)
+        return rejection
+
+    def _ggd_action_text(self, value, label, maximum, required=True):
+        """Trimmed text within a documented bound, or a refusal."""
+        if value is None or value is False:
+            text = ""
+        elif isinstance(value, str):
+            text = value
+        else:
+            raise ValidationError(
+                _("%(field)s must be a single piece of text.", field=label)
+            )
+        text = text.strip()
+        if not text:
+            if required:
+                raise ValidationError(
+                    _("%(field)s is required and cannot be empty.", field=label)
+                )
+            return False
+        if len(text) > maximum:
+            raise ValidationError(
+                _(
+                    "%(field)s is %(length)s characters and the maximum is "
+                    "%(maximum)s. Summarise it rather than pasting the page.",
+                    field=label,
+                    length=len(text),
+                    maximum=maximum,
+                )
+            )
+        return text
+
+    def _ggd_action_url(self, value, label):
+        url = self._ggd_action_text(value, label, self.GGD_ACTION_URL_MAX_LENGTH)
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValidationError(
+                _(
+                    "%(field)s must be a public web address starting with "
+                    "http:// or https://.",
+                    field=label,
+                )
+            )
+        return url
+
+    @staticmethod
+    def _ggd_action_confidence(value):
+        if isinstance(value, bool) or value is None:
+            raise ValidationError(_("confidence must be a number between 0.00 and 1.00."))
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                _("confidence must be a number between 0.00 and 1.00.")
+            ) from exc
+        if not 0 <= confidence <= 1:
+            raise ValidationError(_("confidence must be between 0.00 and 1.00."))
+        return confidence
+
+    def _ggd_action_past_moment(self, value, label):
+        """An ISO timestamp that has already happened."""
+        moment = self._ggd_parse_workflow_datetime(value, label)
+        if not moment:
+            raise ValidationError(_("%(field)s is required.", field=label))
+        if moment > fields.Datetime.now() + timedelta(minutes=5):
+            raise ValidationError(
+                _(
+                    "%(field)s is in the future. Record what happened, not what "
+                    "is planned.",
+                    field=label,
+                )
+            )
+        return moment
+
+    def _ggd_action_key(self, payload):
+        return self._ggd_action_text(
+            payload.get("idempotency_key"),
+            "idempotency_key",
+            self.GGD_ACTION_KEY_MAX_LENGTH,
+        )
+
+    def _ggd_action_log(self, action, key):
+        """The row an earlier identical call left behind, if there is one."""
+        return self.env["ggd.opportunity.action.log"].search(
+            [
+                ("lead_id", "=", self.id),
+                ("action", "=", action),
+                ("idempotency_key", "=", key),
+            ],
+            limit=1,
+        )
+
+    def _ggd_action_record(self, action, key, **values):
+        payload = {"lead_id": self.id, "action": action, "idempotency_key": key}
+        payload.update(values)
+        return self.env["ggd.opportunity.action.log"].create(payload)
+
+    def _ggd_action_check_write_date(self, action, expected_write_date):
+        """None when the caller's snapshot is current; a rejection when not.
+
+        Odoo serialises a datetime to whole seconds, so the value a caller read
+        back has no microseconds and the stored one does. Both sides are
+        truncated before comparison; comparing them raw would make every write
+        stale.
+        """
+        expected = self._ggd_parse_workflow_datetime(
+            expected_write_date, _("expected_write_date")
+        )
+        if not expected:
+            raise ValidationError(
+                _(
+                    "expected_write_date is required. Read the opportunity, then "
+                    "send back the write timestamp the change was based on."
+                )
+            )
+        current = self.write_date
+        if current and current.replace(microsecond=0) != expected.replace(microsecond=0):
+            return self._ggd_action_reject(
+                action,
+                "stale_record",
+                _(
+                    "The opportunity changed after you read it, so nothing was "
+                    "written. Retry with the write_date returned here."
+                ),
+            )
+        return None
+
+    def ggd_opportunity_action(self, action, payload=None):
+        """One guarded change to one opportunity. Returns a compact receipt.
+
+        This is the single public method the ChatGPT connector reaches for, and
+        it is deliberately one method with a fixed action name rather than five
+        public methods. JSON-2 exposes every public method on a model to
+        whoever holds the API key, so each one is a door; one door with a
+        bolted list of five things behind it is a smaller surface than five
+        doors, and it is the only way to make the checks below - access,
+        existence, optimistic concurrency, archiving, suppression - run
+        identically for all five instead of five times over.
+
+        Dispatch is an explicit map of names to bound methods. No getattr, so
+        a caller cannot name a method; adding an action is an edit here.
+
+        What this method cannot do, in any action: send email, approve
+        outreach, claim or finalise a send key, clear Do not contact, archive
+        or delete a record, or set Reply Received, Won, Lost or Do Not Contact.
+        Those stay where they are - with a person, in Odoo.
+        """
+        self.ensure_one()
+        if not isinstance(payload, dict):
+            payload = {}
+        handlers = {
+            "enrich_contact": self._ggd_action_enrich_contact,
+            "record_manual_contact": self._ggd_action_record_manual_contact,
+            "transition_stage": self._ggd_action_transition_stage,
+            "schedule_activity": self._ggd_action_schedule_activity,
+            "save_outreach_draft": self._ggd_action_save_outreach_draft,
+        }
+        handler = handlers.get(action) if isinstance(action, str) else None
+        if handler is None:
+            raise ValidationError(
+                _(
+                    "Unknown opportunity action. This method performs only: "
+                    "%(actions)s.",
+                    actions=", ".join(sorted(handlers)),
+                )
+            )
+        if not self.exists():
+            return self._ggd_action_reject(
+                action,
+                "not_found",
+                _("No opportunity with this id exists."),
+                with_state=False,
+            )
+        # Odoo's own access rights and record rules decide first, before any
+        # state is read or reported. A user who may not write these records
+        # gets an AccessError here rather than a rejection describing the
+        # record, and a reporting identity therefore gains nothing from this
+        # method that it did not already have.
+        self._ggd_check_claim_access()
+        stale = self._ggd_action_check_write_date(
+            action, payload.get("expected_write_date")
+        )
+        if stale is not None:
+            return stale
+        if not self.active:
+            return self._ggd_action_reject(
+                action,
+                "archived",
+                _("This opportunity is archived. Restore it in Odoo first."),
+            )
+        if self.ggd_do_not_contact:
+            return self._ggd_action_reject(
+                action,
+                "suppressed",
+                _(
+                    "This opportunity is marked Do not contact, so the assistant "
+                    "may not write to it."
+                ),
+            )
+        return handler(payload)
+
+    def _ggd_action_enrich_contact(self, payload):
+        """Add source-backed contact details. Never invents, never clears."""
+        action = "enrich_contact"
+        contact = payload.get("contact")
+        if not isinstance(contact, dict) or not contact:
+            raise ValidationError(
+                _("enrich_contact needs a contact object with at least one field.")
+            )
+        unknown = sorted(set(contact) - set(self.GGD_ACTION_CONTACT_FIELDS))
+        if unknown:
+            raise ValidationError(
+                _(
+                    "enrich_contact cannot write %(fields)s. It writes only: "
+                    "%(allowed)s.",
+                    fields=", ".join(unknown),
+                    allowed=", ".join(sorted(self.GGD_ACTION_CONTACT_FIELDS)),
+                )
+            )
+        sources = payload.get("source_urls")
+        if isinstance(sources, str):
+            sources = [sources]
+        if not isinstance(sources, (list, tuple)) or not sources:
+            raise ValidationError(
+                _(
+                    "enrich_contact needs at least one public source URL. A "
+                    "contact detail with no source is a guess."
+                )
+            )
+        if len(sources) > self.GGD_ACTION_MAX_SOURCE_URLS:
+            raise ValidationError(
+                _(
+                    "enrich_contact takes at most %(maximum)s source URLs.",
+                    maximum=self.GGD_ACTION_MAX_SOURCE_URLS,
+                )
+            )
+        source_urls = [self._ggd_action_url(url, "source_urls") for url in sources]
+        researched_at = self._ggd_action_past_moment(
+            payload.get("researched_at"), "researched_at"
+        )
+        confidence = self._ggd_action_confidence(payload.get("confidence"))
+        overwrite = bool(payload.get("overwrite"))
+
+        proposed = {}
+        for name in sorted(contact):
+            value = contact[name]
+            if isinstance(value, str) and not value.strip():
+                raise ValidationError(
+                    _(
+                        "enrich_contact cannot clear %(field)s. Leave it out of "
+                        "the request instead.",
+                        field=name,
+                    )
+                )
+            maximum = (
+                self.GGD_ACTION_URL_MAX_LENGTH
+                if name == "contact_url"
+                else self.GGD_ACTION_TEXT_MAX_LENGTH
+            )
+            text = self._ggd_action_text(value, name, maximum)
+            if name == "email":
+                normalized = email_normalize(text)
+                if not normalized:
+                    raise ValidationError(
+                        _(
+                            "email is not a usable address. Leave it out rather "
+                            "than guessing one from a naming pattern."
+                        )
+                    )
+                text = normalized
+            elif name == "contact_url":
+                text = self._ggd_action_url(text, name)
+            proposed[name] = text
+
+        changed = {}
+        changed_names = []
+        conflicts = []
+        recipient_would_change = False
+        for name in sorted(proposed):
+            field_name = self.GGD_ACTION_CONTACT_FIELDS[name]
+            text = proposed[name]
+            current = self[field_name] or ""
+            current = current.strip() if isinstance(current, str) else ""
+            if name == "email":
+                same = (email_normalize(current) or current.lower()) == text
+            else:
+                same = current.lower() == text.lower()
+            if current and same:
+                continue
+            if name == "email":
+                recipient_would_change = True
+            if current and not overwrite:
+                conflicts.append(name)
+                continue
+            changed[field_name] = text
+            changed_names.append(name)
+
+        if recipient_would_change and self.ggd_outreach_approved:
+            # Checked ahead of the conflict below, and regardless of
+            # overwrite, because it is the reason that actually matters here.
+            # The addon re-points an approval at an edited recipient, which is
+            # right for a person editing in Odoo and wrong from here: it would
+            # let the assistant redirect an email a human already approved to
+            # an address that human never saw. Revoke the approval first.
+            return self._ggd_action_reject(
+                action,
+                "approval_locked",
+                _(
+                    "Outreach is approved for this opportunity, so the assistant "
+                    "may not change the recipient. Revoke the approval in Odoo "
+                    "first."
+                ),
+            )
+        if conflicts:
+            # Reported before anything is written, so a partly-applied
+            # enrichment is not a state this method can produce.
+            return self._ggd_action_reject(
+                action,
+                "conflict",
+                _(
+                    "A different value is already stored. Nothing was written. "
+                    "Ask Kaan before replacing researched contact details."
+                ),
+                conflicts=conflicts,
+            )
+        if not changed:
+            return self._ggd_action_receipt(action, status="unchanged")
+
+        values = dict(changed)
+        values.update(
+            {
+                "ggd_contact_source_urls": "\n".join(source_urls),
+                "ggd_contact_researched_at": researched_at,
+                "ggd_contact_confidence": confidence,
+            }
+        )
+        self.write(values)
+        self.message_post(
+            body=Markup("<p>%s</p><p>%s</p>")
+            % (
+                escape(
+                    _(
+                        "GGD contact details enriched from research: %(fields)s.",
+                        fields=", ".join(changed_names),
+                    )
+                ),
+                escape(
+                    _(
+                        "Sources: %(sources)s. Read %(at)s, confidence %(confidence).2f.",
+                        sources=" ".join(source_urls),
+                        at=fields.Datetime.to_string(researched_at),
+                        confidence=confidence,
+                    )
+                ),
+            )
+        )
+        return self._ggd_action_receipt(
+            action,
+            changed_fields=changed_names,
+            recipient_changed=True if "email_from" in changed else None,
+        )
+
+    def _ggd_action_record_manual_contact(self, payload):
+        """Record that a person really did make contact, once per key."""
+        action = "record_manual_contact"
+        key = self._ggd_action_key(payload)
+        Log = self.env["ggd.opportunity.action.log"]
+        channels = [code for code, _label in Log.CHANNELS]
+        channel = payload.get("channel")
+        if channel not in channels:
+            raise ValidationError(
+                _(
+                    "channel must be one of: %(channels)s.",
+                    channels=", ".join(channels),
+                )
+            )
+        occurred_at = self._ggd_action_past_moment(
+            payload.get("occurred_at"), "occurred_at"
+        )
+        summary = self._ggd_action_text(
+            payload.get("summary"), "summary", self.GGD_ACTION_SUMMARY_MAX_LENGTH
+        )
+
+        existing = self._ggd_action_log(action, key)
+        if existing:
+            return self._ggd_action_receipt(
+                action, status="already_recorded", contact_event_id=existing.id
+            )
+        event = self._ggd_action_record(
+            action,
+            key,
+            channel=channel,
+            occurred_at=occurred_at,
+            summary=summary,
+        )
+        self.message_post(
+            body=Markup("<p>%s</p><p>%s</p>")
+            % (
+                escape(
+                    _(
+                        "Manual contact recorded by the assistant: %(channel)s on "
+                        "%(at)s.",
+                        channel=channel,
+                        at=fields.Datetime.to_string(occurred_at),
+                    )
+                ),
+                escape(summary),
+            )
+        )
+        return self._ggd_action_receipt(action, contact_event_id=event.id)
+
+    def _ggd_action_contacted_blocked(self):
+        """None when Contacted is earned, a rejection when it is only claimed.
+
+        Two things count: a send Odoo itself confirmed, and a manual contact
+        somebody recorded. A prepared draft counts for nothing, which is the
+        whole point - a draft is a message that has not been sent, and letting
+        it move a record to Contacted would make the pipeline report outreach
+        that never left the building.
+        """
+        if self.ggd_send_confirmed_at and self.ggd_last_confirmed_send_key:
+            return None
+        if self.env["ggd.opportunity.action.log"].search_count(
+            [("lead_id", "=", self.id), ("action", "=", "record_manual_contact")]
+        ):
+            return None
+        return self._ggd_action_reject(
+            "transition_stage",
+            "contact_not_evidenced",
+            _(
+                "Contacted needs an Odoo-confirmed send or a recorded manual "
+                "contact. A saved draft is not contact."
+            ),
+        )
+
+    def _ggd_action_transition_stage(self, payload):
+        """Move between documented non-terminal stages, and nowhere else."""
+        action = "transition_stage"
+        target = payload.get("target_stage")
+        if target not in self.GGD_ACTION_STAGES:
+            raise ValidationError(
+                _(
+                    "transition_stage may set only: %(stages)s. Reply Received, "
+                    "Won, Lost and Do Not Contact are a person's decision.",
+                    stages=", ".join(self.GGD_ACTION_STAGES),
+                )
+            )
+        expected = self._ggd_action_text(
+            payload.get("expected_stage"),
+            "expected_stage",
+            self.GGD_ACTION_TEXT_MAX_LENGTH,
+        )
+        current = self.stage_id.name or ""
+        if expected.lower() != current.strip().lower():
+            return self._ggd_action_reject(
+                action,
+                "stale_stage",
+                _(
+                    "The opportunity is no longer in the stage you read, so "
+                    "nothing was written. Retry against the stage returned here."
+                ),
+            )
+        if target.lower() == current.strip().lower():
+            return self._ggd_action_receipt(action, status="unchanged")
+        stage = self.env["crm.stage"].search([("name", "=ilike", target)], limit=1)
+        if not stage:
+            return self._ggd_action_reject(
+                action,
+                "stage_not_configured",
+                _(
+                    "This database has no '%(stage)s' stage. Create the GGD "
+                    "pipeline from docs/ODOO-SETUP.md first.",
+                    stage=target,
+                ),
+            )
+        if stage.is_won:
+            return self._ggd_action_reject(
+                action,
+                "not_allowed",
+                _(
+                    "'%(stage)s' is configured as a won stage, and a commercial "
+                    "outcome is a person's decision.",
+                    stage=target,
+                ),
+            )
+        if target == self.GGD_ACTION_STAGE_CONTACTED:
+            blocked = self._ggd_action_contacted_blocked()
+            if blocked is not None:
+                return blocked
+        previous = current or _("no stage")
+        self.write({"stage_id": stage.id})
+        self.message_post(
+            body=_(
+                "GGD stage moved from %(previous)s to %(stage)s by the assistant.",
+                previous=previous,
+                stage=stage.name,
+            )
+        )
+        return self._ggd_action_receipt(action, previous_stage=current or False)
+
+    def _ggd_action_schedule_activity(self, payload):
+        """One To-Do or Call on this opportunity, once per key.
+
+        The assignee is not a caller input. It is the opportunity's own
+        salesperson when there is an active internal one, and otherwise the
+        user whose API key made the call. That rule is the whole of it: there
+        is no way to schedule work in a third person's name from here.
+        """
+        action = "schedule_activity"
+        key = self._ggd_action_key(payload)
+        activity_type = payload.get("activity_type")
+        if activity_type not in self.GGD_ACTION_ACTIVITY_TYPES:
+            raise ValidationError(
+                _(
+                    "activity_type must be one of: %(types)s.",
+                    types=", ".join(sorted(self.GGD_ACTION_ACTIVITY_TYPES)),
+                )
+            )
+        summary = self._ggd_action_text(
+            payload.get("summary"), "summary", self.GGD_ACTION_SUMMARY_MAX_LENGTH
+        )
+        note = self._ggd_action_text(
+            payload.get("note"),
+            "note",
+            self.GGD_ACTION_NOTE_MAX_LENGTH,
+            required=False,
+        )
+        try:
+            deadline = fields.Date.to_date(payload.get("deadline"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                _("deadline must be a date written as YYYY-MM-DD.")
+            ) from exc
+        if not deadline:
+            raise ValidationError(
+                _("schedule_activity needs a deadline written as YYYY-MM-DD.")
+            )
+        today = fields.Date.context_today(self)
+        if deadline < today:
+            raise ValidationError(
+                _("deadline is in the past. Follow-ups are scheduled forward.")
+            )
+        if deadline > today + timedelta(days=self.GGD_ACTION_MAX_DEADLINE_DAYS):
+            raise ValidationError(
+                _(
+                    "deadline is more than %(days)s days away, which is more "
+                    "likely a mistyped year than a plan.",
+                    days=self.GGD_ACTION_MAX_DEADLINE_DAYS,
+                )
+            )
+
+        existing = self._ggd_action_log(action, key)
+        if existing:
+            activity_id = int(existing.result_ref) if existing.result_ref else False
+            return self._ggd_action_receipt(
+                action, status="already_scheduled", activity_id=activity_id or None
+            )
+        salesperson = self.user_id
+        assignee = (
+            salesperson
+            if salesperson and salesperson.active and not salesperson.share
+            else self.env.user
+        )
+        # Posted before the activity is created, not after. Creating one
+        # subscribes its assignee to the record, and a note posted afterwards
+        # would notify somebody this same call had just signed up. The
+        # transaction covers both, so a refused create takes the note with it.
+        self.message_post(
+            body=_(
+                "GGD follow-up scheduled by the assistant: %(type)s due "
+                "%(deadline)s for %(user)s.",
+                type=activity_type,
+                deadline=fields.Date.to_string(deadline),
+                user=assignee.name,
+            )
+        )
+        activity = (
+            self.env["mail.activity"]
+            # Assigning work to somebody else emails them, and this connector
+            # must not put anything at all in the outgoing mail queue. The
+            # activity still appears in their Odoo inbox and on the record.
+            .with_context(mail_activity_quick_update=True)
+            .create(
+                {
+                    "res_model_id": self.env["ir.model"]._get_id("crm.lead"),
+                    "res_id": self.id,
+                    "activity_type_id": self.env.ref(
+                        self.GGD_ACTION_ACTIVITY_TYPES[activity_type]
+                    ).id,
+                    "summary": summary,
+                    "note": Markup("<p>%s</p>") % escape(note) if note else False,
+                    "date_deadline": deadline,
+                    "user_id": assignee.id,
+                }
+            )
+        )
+        self._ggd_action_record(
+            action, key, summary=summary, result_ref=str(activity.id)
+        )
+        return self._ggd_action_receipt(
+            action, activity_id=activity.id, assigned_to=assignee.name
+        )
+
+    def _ggd_action_draft_receipt(self, action, **extra):
+        version = self.ggd_draft_version or False
+        approved = self.ggd_approved_draft_version or False
+        return self._ggd_action_receipt(
+            action,
+            draft_version=version,
+            approved_draft_version=approved,
+            # Saving a draft consumes any older approval, so this is normally
+            # false straight after a save. It is returned rather than implied
+            # because "saved" and "approved" are the two words that must never
+            # be allowed to blur into each other.
+            approved_matches_draft=bool(version) and version == approved,
+            draft_status=self.ggd_draft_status,
+            **extra,
+        )
+
+    def _ggd_action_save_outreach_draft(self, payload):
+        """Store one initial outreach draft through the guarded draft path.
+
+        Nothing here approves, queues, claims, finalises or sends. It calls the
+        same ggd_prepare_draft the drafting workflow calls, which clears any
+        approval the record was carrying: a human approved a specific version,
+        and this is not that version.
+        """
+        action = "save_outreach_draft"
+        key = self._ggd_action_key(payload)
+        subject = self._ggd_action_text(
+            payload.get("subject"),
+            "subject",
+            self.GGD_ACTION_DRAFT_SUBJECT_MAX_LENGTH,
+        )
+        body = self._ggd_action_text(
+            payload.get("body"), "body", self.GGD_ACTION_DRAFT_BODY_MAX_LENGTH
+        )
+        language = self._ggd_action_text(
+            payload.get("language"), "language", 16, required=False
+        )
+
+        existing = self._ggd_action_log(action, key)
+        if existing:
+            return self._ggd_action_draft_receipt(action, status="already_saved")
+        if not (self.email_from or "").strip():
+            return self._ggd_action_reject(
+                action,
+                "recipient_missing",
+                _(
+                    "This opportunity has no recipient address, so no outreach "
+                    "draft can be prepared for it."
+                ),
+            )
+        if (
+            self.ggd_delivery_status == "claimed"
+            and self.ggd_last_send_key != self.ggd_last_confirmed_send_key
+        ):
+            return self._ggd_action_reject(
+                action,
+                "send_claim_unresolved",
+                _(
+                    "A previous send outcome is unresolved on this opportunity. "
+                    "Resolve it in Odoo before preparing another draft."
+                ),
+            )
+        prepared = self.ggd_prepare_draft(subject, body, language or None)
+        self._ggd_action_record(
+            action, key, summary=subject, result_ref=prepared["draft_version"]
+        )
+        self.message_post(
+            body=_(
+                "Outreach draft saved by the assistant for human review. It is "
+                "not approved, not queued and not sent."
+            )
+        )
+        return self._ggd_action_draft_receipt(action)
 
     def ggd_record_bounce(self, message_id, summary, hard_bounce=True):
         """Record a delivery failure and suppress hard-bounce recipients."""

@@ -1,8 +1,9 @@
 # ChatGPT desktop -> Odoo CRM connector
 
 A local MCP connector that lets the ChatGPT desktop app read the Germany
-Growth Desk CRM and, only when you ask for it, save one qualification
-assessment. Ticket #59.
+Growth Desk CRM and, only when you ask for it, create researched leads, save
+qualification assessments, save reply drafts, and make one of five guarded
+changes to an existing opportunity. Tickets #59 and #65.
 
 Nothing about it is public. Odoo, n8n and both databases stay bound to
 `127.0.0.1` exactly as they are today, the connector runs on your Mac as a
@@ -71,11 +72,34 @@ Ask in plain language. Some prompts that work:
 - "Save this assessment on opportunity 42: fit score 74, confidence 0.85,
   summary …, angle …, source https://…"
 
-The desktop app asks before running either write, provided your tool-approval
-setting is not `auto`. Check it under **Settings** in the desktop app; the
-`writes` mode prompts for anything not marked read-only, and this connector
-marks six tools read-only and two — `ggd_create_lead` and
-`ggd_save_qualification` — as writes.
+**Replying**
+
+- "Show me opportunity 42's latest reply, then draft an answer and save it."
+- "Save this as the reply draft on opportunity 42: …"
+
+Saving a draft stores it on the opportunity for you to read; it never sends
+it and never approves outreach. Odoo refuses the write outright if the
+contact is suppressed by Do not contact or has unsubscribed, and it replaces
+whatever draft Workflow 4 last suggested on that record.
+
+**Working an opportunity (writes to Odoo — only when you ask)**
+
+- "Add the contact details you just found to opportunity 42, with the pages
+  you read them from."
+- "I called them this morning — record that on opportunity 42, then move it to
+  Contacted."
+- "Schedule a call on opportunity 42 for next Tuesday."
+- "Draft the first outreach email for opportunity 42 in German and save it."
+
+All four go through `ggd_opportunity_action`; see *Working an opportunity*
+below for what each one requires and what it refuses.
+
+The desktop app asks before running any of the writes, provided your
+tool-approval setting is not `auto`. Check it under **Settings** in the desktop
+app; the `writes` mode prompts for anything not marked read-only, and this
+connector marks six tools read-only and four — `ggd_create_lead`,
+`ggd_save_qualification`, `ggd_save_response_draft` and
+`ggd_opportunity_action` — as writes.
 
 ### Reading the answers honestly
 
@@ -118,7 +142,7 @@ answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
 
 ---
 
-## The eight tools
+## The ten tools
 
 | Tool | Reads or writes | What it is for |
 | --- | --- | --- |
@@ -130,6 +154,8 @@ answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
 | `ggd_followup_report` | read | Overdue Odoo activities, most overdue first. |
 | `ggd_create_lead` | **write** | Opens one new Target Identified opportunity from a company you researched. Refuses duplicates. |
 | `ggd_save_qualification` | **write** | Saves a fit assessment through the addon's own audited method. |
+| `ggd_save_response_draft` | **write** | Saves one reply draft onto an opportunity for you to read in Odoo. It does not send it. |
+| `ggd_opportunity_action` | **write** | One of five guarded changes to an existing opportunity: contact enrichment, a recorded manual contact, a stage move, a follow-up activity, an outreach draft. |
 
 ### The reports
 
@@ -279,6 +305,91 @@ later reply analysis on the same opportunity overwrites the confidence a
 qualification stored. That is the current schema; ticket #59 deliberately does
 not redesign it or add a second scoring scheme.
 
+### Working an opportunity
+
+`ggd_opportunity_action` (ticket #65) is one tool with a fixed `action`, not
+five tools. Five would have cost five descriptions and five schemas in the
+tool list on every turn of every conversation, whether used or not, and would
+still have needed the same checks behind them.
+
+Every action needs three things: `opportunity_id`, the `action` name, and
+`expected_write_date` — the `last_change` value from the record as you read
+it. If the record changed in between, the write is refused whole, with the
+current `last_change` in the answer so a retry needs no second read. Arguments
+belonging to another action are refused by name rather than ignored.
+
+| Action | Also needs | What it does |
+| --- | --- | --- |
+| `enrich_contact` | `contact`, `source_urls`, `researched_at`, `confidence` | Fills contact name, job title, email, phone or contact URL from research you can point at. |
+| `record_manual_contact` | `channel`, `occurred_at`, `summary`, `idempotency_key` | Records that a person really did make contact: `email`, `call`, `linkedin`, `meeting` or `other`. |
+| `transition_stage` | `target_stage`, `expected_stage` | Moves the opportunity between documented non-terminal stages. |
+| `schedule_activity` | `activity_type`, `summary`, `deadline`, `idempotency_key` | Creates one Odoo To-Do or Call. |
+| `save_outreach_draft` | `subject`, `body`, `language`, `idempotency_key` | Saves an initial outreach draft for you to approve later in Odoo. |
+
+**Contact enrichment never guesses and never clears.** At least one public
+source URL, a research time and a confidence are required, and they are stored
+on the record next to the details themselves. An empty value is refused: this
+tool cannot be used to remove a contact detail. If a *different* value is
+already stored the answer is `conflict`, naming the fields and writing
+nothing; replacing it needs `overwrite: true`, which is a thing to ask for
+rather than a default. Changing the recipient address while outreach is
+approved is refused outright (`approval_locked`) even with `overwrite`,
+because Odoo would otherwise re-point the approval at an address you never
+saw. Revoke the approval in Odoo first.
+
+**Stages it can reach.** Target Identified, Qualified, Draft Prepared, Waiting
+for Approval, Contacted, Meeting Proposed, Meeting Booked, Meeting Held and
+Active Opportunity. Reply Received, Won, Lost and Do Not Contact cannot be
+named at all: the first belongs to the reply workflow and the other three are
+your decision, in Odoo.
+
+**Contacted has to be earned.** It needs either a send Odoo itself confirmed,
+or a manual contact recorded through `record_manual_contact`. A saved draft
+counts for nothing — a draft is a message that has not been sent, and letting
+it move a record to Contacted would make the pipeline report outreach that
+never left the building.
+
+**Activities are assigned by rule, not by request.** The opportunity's own
+salesperson gets it when there is an active internal one; otherwise the
+reporting user does. There is no way to schedule work in a third person's
+name. Deadlines must be today or later and within a year.
+
+**Saving a draft is not approving one.** It goes through the same
+`ggd_prepare_draft` the drafting workflow uses, which consumes any older
+approval — a human approved one specific version, and this is not that
+version. The answer carries `draft_version`, `approved_draft_version` and
+`approved_matches_draft`, and straight after a save the last of those is
+`false`. Nothing here approves, queues, claims, finalises or sends.
+
+**Retries are safe where a key is required.** `record_manual_contact`,
+`schedule_activity` and `save_outreach_draft` each take an
+`idempotency_key` you choose. Repeating a call with the same key returns the
+first result — `already_recorded`, `already_scheduled`, `already_saved` — and
+creates nothing new.
+
+**Refusals come back as codes**, not just prose, so a repeat attempt can be
+decided on rather than guessed at:
+
+| `reason_code` | Meaning |
+| --- | --- |
+| `stale_record` | The record changed after you read it. Retry with the `write_date` in the answer. |
+| `stale_stage` | It is no longer in the stage you read. |
+| `conflict` | A different value is already stored in a contact field. |
+| `approval_locked` | Outreach is approved; the recipient may not be changed from here. |
+| `contact_not_evidenced` | Contacted was asked for with no confirmed send and no recorded manual contact. |
+| `suppressed` | The opportunity is marked Do not contact. |
+| `archived` | The opportunity is archived. |
+| `recipient_missing` | No address to draft to. |
+| `send_claim_unresolved` | A previous send outcome is still open on the record. |
+| `stage_not_configured` | This database has no stage by that name. |
+| `not_found` | No opportunity with that id. |
+
+Every successful action is recorded in the opportunity's chatter, and the
+three keyed ones also leave a row in `ggd.opportunity.action.log`, which no
+one can edit or delete through Odoo. That log is what makes a retry
+idempotent, and its manual-contact rows are the evidence a Contacted
+transition looks for.
+
 ---
 
 ## What it cannot do
@@ -286,11 +397,13 @@ not redesign it or add a second scoring scheme.
 Two independent boundaries, both tested by
 `./scripts/check-mcp-connector.sh`.
 
-**The connector's allowlist.** It can call exactly twelve Odoo operations:
+**The connector's allowlist.** It can call exactly fourteen Odoo operations:
 `search_read` and `search_count` on `crm.lead`, `res.partner`, `mail.message`
-and `mail.activity`, `search_read` on `crm.stage` and `res.country`, and two
-writes — `crm.lead.ggd_apply_qualification` and `crm.lead.create`. No tool
-accepts a model name, a method name, a domain, a field list or SQL.
+and `mail.activity`, `search_read` on `crm.stage` and `res.country`, and four
+writes — `crm.lead.ggd_apply_qualification`,
+`crm.lead.ggd_save_response_draft`, `crm.lead.ggd_opportunity_action` and
+`crm.lead.create`. No tool accepts a model name, a method name, a domain, a
+field list or SQL.
 
 The **only** create path is `ggd_create_lead`, and it can create nothing but a
 `crm.lead`: `create` on any other model is refused, as is `write`, `unlink`,
@@ -383,7 +496,7 @@ cp ~/.codex/config.toml ~/.codex/config.toml.bak-$(date +%Y%m%d)
 ```
 
 Only non-secret settings are stored there. Restart the ChatGPT desktop app,
-then check **Settings > MCP servers**: `ggd_odoo` should be listed with eight
+then check **Settings > MCP servers**: `ggd_odoo` should be listed with nine
 tools.
 
 ### 5. Prove it
@@ -467,4 +580,6 @@ the lead's chatter, so the audit trail names it.
 | `tests/mcp/test_ggd_odoo_mcp.py` | Offline tests. No Odoo, no key, no network. Run by `./scripts/validate-project.sh`. |
 | `scripts/check-mcp-connector.sh` | The live end-to-end check. Needs the key in the Keychain. |
 | `scripts/mcp_live_check.py` | The driver that check-mcp-connector.sh runs. |
+| `odoo/addons/ggd_crm/models/crm_lead.py` | `ggd_opportunity_action` and the rules behind it. Odoo decides, not the connector. |
+| `odoo/addons/ggd_crm/models/ggd_opportunity_action_log.py` | The append-only log that makes retries idempotent and evidences a manual contact. |
 | `~/.codex/config.toml` | Outside this repository. Holds the `[mcp_servers.ggd_odoo]` entry and no secret. |

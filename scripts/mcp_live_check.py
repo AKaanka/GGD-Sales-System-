@@ -160,12 +160,17 @@ def main():
           json.dumps(init)[:200])
     tools = server.request("tools/list")["result"]["tools"]
     names = sorted(t["name"] for t in tools)
-    check("eight tools are advertised", len(tools) == 8, ", ".join(names))
+    check("ten tools are advertised", len(tools) == 10, ", ".join(names))
     writes = [t["name"] for t in tools
               if not t["annotations"].get("readOnlyHint")]
-    check("exactly two tools are marked as writes",
-          sorted(writes) == ["ggd_create_lead", "ggd_save_qualification"],
+    check("exactly four tools are marked as writes",
+          sorted(writes) == ["ggd_create_lead", "ggd_opportunity_action",
+                             "ggd_save_qualification",
+                             "ggd_save_response_draft"],
           str(writes))
+    check("the tool declarations stay inside the #65 budget",
+          len(json.dumps(tools, separators=(",", ":"))) <= 12500,
+          "%d characters" % len(json.dumps(tools, separators=(",", ":"))))
 
     section("2. Authentication")
     status, is_error = server.call("ggd_connection_status")
@@ -469,7 +474,212 @@ def main():
           is_error and bad.get("error") == "invalid_argument",
           json.dumps(bad)[:200])
 
-    section("8. Operations the connector does not offer")
+    section("8. Saving a reply draft (fictional record only)")
+    reply_draft = (
+        "Thank you for the fictional reply. Monday works for a short call."
+    )
+    saved, is_error = server.call("ggd_save_response_draft", {
+        "opportunity_id": lead_id,
+        "draft": reply_draft,
+    })
+    stored = saved.get("stored") or {}
+    check("a reply draft is saved and read back",
+          not is_error and saved.get("status") == "saved"
+          and stored.get("stored_characters") == len(reply_draft)
+          and stored.get("sent_characters") == len(reply_draft),
+          json.dumps(saved)[:300])
+    check("the write says plainly that it sent nothing",
+          "Nothing was sent" in saved.get("message", ""),
+          saved.get("message", ""))
+
+    reply_view, is_error = server.call("ggd_get_opportunity", {
+        "opportunity_id": lead_id,
+        "sections": ["reply"],
+        "detail_level": "full",
+    })
+    reply_text = (
+        ((reply_view.get("sections") or {}).get("reply") or {})
+        .get("text", {}).get("ggd_response_draft")
+    )
+    check("a later opportunity read still returns the saved draft",
+          not is_error and reply_text == reply_draft,
+          json.dumps(reply_view)[:300])
+
+    section("9. Guarded opportunity actions (fictional record only)")
+    # Every action below runs against the same fictional [GGD-MCP-TEST]
+    # record, and each one is chained off the write_date the previous receipt
+    # returned. That is deliberate: if a successful action did not hand back
+    # the next concurrency value, this section could not be written without a
+    # read between every step, and the whole sequence would fail here.
+    run_key = "live-%d" % int(time.time())
+    view, _err = server.call("ggd_get_opportunity", {
+        "opportunity_id": lead_id, "sections": ["identity"],
+        "history_limit": 0,
+    })
+    identity = (view.get("sections") or {}).get("identity") or {}
+    stamp = identity.get("last_change")
+    current_stage = identity.get("stage")
+    check("the record read back carries a concurrency value",
+          isinstance(stamp, str) and stamp,
+          json.dumps(identity)[:200])
+
+    def act(action, **arguments):
+        arguments.update({
+            "action": action, "opportunity_id": lead_id,
+            "expected_write_date": arguments.pop("stamp"),
+        })
+        return server.call("ggd_opportunity_action", arguments)
+
+    SOURCE = "https://fictional-panels.ggd-mcp-test.invalid/impressum"
+    URL_A = "https://fictional-panels.ggd-mcp-test.invalid/contact-a"
+    URL_B = "https://fictional-panels.ggd-mcp-test.invalid/contact-b"
+
+    def enrich(url, stamp, overwrite=False):
+        return act(
+            "enrich_contact", stamp=stamp, contact={"contact_url": url},
+            source_urls=[SOURCE], researched_at="2026-01-02 09:00:00",
+            confidence=0.9, overwrite=overwrite,
+        )
+
+    receipt, is_error = enrich(URL_A, stamp)
+    ok = check("source-backed contact enrichment is applied",
+               not is_error and receipt.get("ok") is True,
+               json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+
+    receipt, is_error = enrich(URL_A, stamp)
+    check("the same value again is reported as unchanged",
+          not is_error and receipt.get("status") == "unchanged",
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+
+    receipt, is_error = enrich(URL_B, stamp)
+    check("a different stored value is a conflict, not an overwrite",
+          receipt.get("ok") is False
+          and receipt.get("reason_code") == "conflict"
+          and receipt.get("conflicts") == ["contact_url"],
+          json.dumps(receipt)[:300])
+
+    receipt, is_error = enrich(URL_B, stamp, overwrite=True)
+    check("an explicit overwrite replaces it", receipt.get("ok") is True,
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+    # Put the fixture back where this run found it, so the next run starts
+    # from the same state rather than from whatever the last one left.
+    receipt, is_error = enrich(URL_A, stamp, overwrite=True)
+    stamp = receipt.get("write_date") or stamp
+
+    receipt, is_error = enrich(URL_A, "2020-01-01 00:00:00")
+    check("a stale write timestamp is refused whole",
+          receipt.get("ok") is False
+          and receipt.get("reason_code") == "stale_record"
+          and receipt.get("write_date") == stamp,
+          json.dumps(receipt)[:300])
+
+    receipt, is_error = act(
+        "enrich_contact", stamp=stamp, contact={"ggd_do_not_contact": True},
+        source_urls=[SOURCE], researched_at="2026-01-02 09:00:00",
+        confidence=0.9,
+    )
+    check("a field outside the contact allowlist is refused",
+          is_error and receipt.get("error") == "invalid_argument",
+          json.dumps(receipt)[:200])
+
+    contact_args = {
+        "channel": "call", "occurred_at": "2026-01-02 10:00:00",
+        "summary": "Fictional call with the fixture company.",
+        "idempotency_key": "%s-contact" % run_key,
+    }
+    receipt, is_error = act("record_manual_contact", stamp=stamp, **contact_args)
+    first_event = receipt.get("contact_event_id")
+    check("a manual contact is recorded",
+          not is_error and receipt.get("ok") is True and first_event,
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+    receipt, is_error = act("record_manual_contact", stamp=stamp, **contact_args)
+    check("repeating it with the same key creates nothing new",
+          receipt.get("status") == "already_recorded"
+          and receipt.get("contact_event_id") == first_event,
+          json.dumps(receipt)[:300])
+
+    activity_args = {
+        "activity_type": "todo",
+        "summary": "Fictional follow-up from the MCP live check",
+        "deadline": "2026-12-31",
+        "idempotency_key": "%s-activity" % run_key,
+    }
+    receipt, is_error = act("schedule_activity", stamp=stamp, **activity_args)
+    first_activity = receipt.get("activity_id")
+    check("a follow-up activity is scheduled",
+          not is_error and receipt.get("ok") is True and first_activity,
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+    receipt, is_error = act("schedule_activity", stamp=stamp, **activity_args)
+    check("repeating it with the same key returns the first activity",
+          receipt.get("status") == "already_scheduled"
+          and receipt.get("activity_id") == first_activity,
+          json.dumps(receipt)[:300])
+
+    draft_args = {
+        "subject": "Fictional outreach subject (MCP live check)",
+        "body": "A fictional outreach body written for the live check only.",
+        "language": "de",
+        "idempotency_key": "%s-draft" % run_key,
+    }
+    receipt, is_error = act("save_outreach_draft", stamp=stamp, **draft_args)
+    first_version = receipt.get("draft_version")
+    check("an outreach draft is saved but not approved",
+          not is_error and receipt.get("ok") is True and first_version
+          and receipt.get("approved_matches_draft") is False
+          and receipt.get("approved_draft_version") is False,
+          json.dumps(receipt)[:300])
+    check("the receipt carries no draft body",
+          "body" not in receipt and draft_args["body"] not in json.dumps(receipt),
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+    receipt, is_error = act("save_outreach_draft", stamp=stamp, **draft_args)
+    check("repeating it with the same key mints no second version",
+          receipt.get("status") == "already_saved"
+          and receipt.get("draft_version") == first_version,
+          json.dumps(receipt)[:300])
+    stamp = receipt.get("write_date") or stamp
+
+    receipt, is_error = act(
+        "transition_stage", stamp=stamp, target_stage="Qualified",
+        expected_stage="A stage this record is not in",
+    )
+    check("a stale expected stage stops the move",
+          receipt.get("ok") is False
+          and receipt.get("reason_code") == "stale_stage",
+          json.dumps(receipt)[:300])
+
+    receipt, is_error = act(
+        "transition_stage", stamp=stamp, target_stage="Won",
+        expected_stage=current_stage or "New",
+    )
+    check("a terminal stage cannot even be named",
+          is_error and receipt.get("error") == "invalid_argument",
+          json.dumps(receipt)[:200])
+
+    # The suppressed fixture proves the same method refuses to touch a record
+    # marked Do not contact, whatever is asked of it.
+    dnc_view, _err = server.call("ggd_get_opportunity", {
+        "opportunity_id": dnc_id, "sections": ["identity"], "history_limit": 0,
+    })
+    dnc_identity = (dnc_view.get("sections") or {}).get("identity") or {}
+    suppressed, is_error = server.call("ggd_opportunity_action", {
+        "action": "record_manual_contact", "opportunity_id": dnc_id,
+        "expected_write_date": dnc_identity.get("last_change"),
+        "channel": "email", "occurred_at": "2026-01-02 10:00:00",
+        "summary": "This must not be recorded.",
+        "idempotency_key": "%s-suppressed" % run_key,
+    })
+    check("a Do-not-contact record refuses every action",
+          suppressed.get("ok") is False
+          and suppressed.get("reason_code") == "suppressed",
+          json.dumps(suppressed)[:300])
+
+    section("10. Operations the connector does not offer")
     unknown = server.request("tools/call", {
         "name": "ggd_send_email", "arguments": {}
     })
@@ -493,7 +703,7 @@ def main():
             check("the connector refuses %s.%s" % (model, method),
                   exc.kind == "not_allowed", exc.message[:120])
 
-    section("9. Operations Odoo itself refuses for this user")
+    section("11. Operations Odoo itself refuses for this user")
     refused(client, "approve outreach", "crm.lead",
             "action_ggd_approve_outreach", {"ids": [lead_id]},
             403, "Outreach approver")
@@ -508,7 +718,7 @@ def main():
     refused(client, "delete an opportunity", "crm.lead", "unlink",
             {"ids": [doomed_id]}, 403, "not allowed to delete")
 
-    section("10. A missing or expired key")
+    section("12. A missing or expired key")
     absent = Server({"GGD_KEYCHAIN_SERVICE": "ggd-odoo-mcp-does-not-exist"})
     absent.request("initialize", {"protocolVersion": "2025-06-18",
                                   "capabilities": {},
