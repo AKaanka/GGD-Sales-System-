@@ -2288,3 +2288,116 @@ class TestGgdBoardChipCounts(TransactionCase):
             "ggd_chip_replies",
         ):
             self.assertIn('name="%s"' % name, arch)
+
+
+@tagged("post_install", "-at_install")
+class TestGgdSaveResponseDraft(TransactionCase):
+    """ggd_save_response_draft: the reply draft the ChatGPT connector writes.
+
+    The field it writes is a suggestion a human reads, not something that can
+    be sent, so these tests are mostly about keeping it that way: the method
+    must not become a second door into the outbound gate, and it must not
+    become the one path that puts a reply draft on a suppressed contact.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def _lead(self, **values):
+        base = {
+            "name": "Response draft QA",
+            "type": "opportunity",
+            "email_from": "reply-qa@ggd-qa.invalid",
+        }
+        base.update(values)
+        return self.Lead.create(base)
+
+    def test_a_draft_is_stored_and_noted_in_the_chatter(self):
+        lead = self._lead()
+        before = len(lead.message_ids)
+        result = lead.ggd_save_response_draft("Thank you, Monday works.")
+        self.assertEqual(result, {"saved": True})
+        self.assertEqual(lead.ggd_response_draft, "Thank you, Monday works.")
+        self.assertGreater(len(lead.message_ids), before)
+
+    def test_it_returns_a_dict_not_a_bare_scalar(self):
+        """Defect 13: a top-level JSON scalar is legal but some clients refuse
+        to parse it, and the write has already happened by then."""
+        lead = self._lead()
+        self.assertIsInstance(lead.ggd_save_response_draft("Fine by me."), dict)
+
+    def test_surrounding_whitespace_is_stripped(self):
+        lead = self._lead()
+        lead.ggd_save_response_draft("  Monday suits us.\n\n")
+        self.assertEqual(lead.ggd_response_draft, "Monday suits us.")
+
+    def test_an_empty_draft_is_refused(self):
+        lead = self._lead(ggd_response_draft="An earlier suggestion.")
+        for empty in ("", "   ", "\n\t ", False, None):
+            with self.assertRaises(ValidationError):
+                lead.ggd_save_response_draft(empty)
+        self.assertEqual(lead.ggd_response_draft, "An earlier suggestion.")
+
+    def test_an_over_long_draft_is_refused_rather_than_truncated(self):
+        lead = self._lead()
+        too_long = "x" * (self.Lead.GGD_RESPONSE_DRAFT_MAX_LENGTH + 1)
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft(too_long)
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_the_maximum_length_itself_is_accepted(self):
+        lead = self._lead()
+        at_limit = "x" * self.Lead.GGD_RESPONSE_DRAFT_MAX_LENGTH
+        lead.ggd_save_response_draft(at_limit)
+        self.assertEqual(len(lead.ggd_response_draft), len(at_limit))
+
+    def test_a_suppressed_contact_gets_no_draft(self):
+        """ggd_record_reply stores no draft for a suppressed contact. A
+        hand-written one must not be the way around that."""
+        lead = self._lead(ggd_do_not_contact=True)
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft("Following up as promised.")
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_an_unsubscribed_contact_gets_no_draft(self):
+        lead = self._lead(ggd_reply_category="unsubscribe")
+        with self.assertRaises(ValidationError):
+            lead.ggd_save_response_draft("Following up as promised.")
+        self.assertFalse(lead.ggd_response_draft)
+
+    def test_it_leaves_the_outbound_gate_exactly_as_it_found_it(self):
+        """The regression that would actually matter."""
+        lead = self._lead(
+            ggd_draft_subject="A reviewed fictional outreach subject",
+            ggd_draft_body="A reviewed fictional outreach draft body.",
+            ggd_draft_version="qa-draft-v1",
+            ggd_draft_status="ready",
+        )
+        watched = [
+            "ggd_outreach_approved",
+            "ggd_do_not_contact",
+            "ggd_draft_status",
+            "ggd_draft_subject",
+            "ggd_draft_body",
+            "ggd_draft_version",
+            "ggd_approved_draft_version",
+            "ggd_last_send_key",
+            "ggd_last_sent_at",
+            "ggd_delivery_status",
+        ]
+        before = {name: lead[name] for name in watched}
+        lead.ggd_save_response_draft("A reply for Kaan to read.")
+        after = {name: lead[name] for name in watched}
+        self.assertEqual(before, after)
+
+    def test_it_overwrites_the_suggestion_workflow_four_left(self):
+        lead = self._lead(ggd_response_draft="The suggestion from Workflow 4.")
+        lead.ggd_save_response_draft("The one Kaan wrote instead.")
+        self.assertEqual(lead.ggd_response_draft, "The one Kaan wrote instead.")
+
+    def test_it_refuses_more_than_one_lead_at_a_time(self):
+        leads = self._lead() | self._lead()
+        with self.assertRaises(ValueError):
+            leads.ggd_save_response_draft("Ambiguous.")

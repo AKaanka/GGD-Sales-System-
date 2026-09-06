@@ -1,8 +1,8 @@
 # ChatGPT desktop -> Odoo CRM connector
 
 A local MCP connector that lets the ChatGPT desktop app read the Germany
-Growth Desk CRM and, only when you ask for it, save one qualification
-assessment. Ticket #59.
+Growth Desk CRM and, only when you ask for it, create researched leads, save
+qualification assessments, and save reply drafts. Ticket #59.
 
 Nothing about it is public. Odoo, n8n and both databases stay bound to
 `127.0.0.1` exactly as they are today, the connector runs on your Mac as a
@@ -71,11 +71,21 @@ Ask in plain language. Some prompts that work:
 - "Save this assessment on opportunity 42: fit score 74, confidence 0.85,
   summary …, angle …, source https://…"
 
-The desktop app asks before running either write, provided your tool-approval
-setting is not `auto`. Check it under **Settings** in the desktop app; the
-`writes` mode prompts for anything not marked read-only, and this connector
-marks six tools read-only and two — `ggd_create_lead` and
-`ggd_save_qualification` — as writes.
+**Replying**
+
+- "Show me opportunity 42's latest reply, then draft an answer and save it."
+- "Save this as the reply draft on opportunity 42: …"
+
+Saving a draft stores it on the opportunity for you to read; it never sends
+it and never approves outreach. Odoo refuses the write outright if the
+contact is suppressed by Do not contact or has unsubscribed, and it replaces
+whatever draft Workflow 4 last suggested on that record.
+
+The desktop app asks before running any of the writes, provided your
+tool-approval setting is not `auto`. Check it under **Settings** in the desktop
+app; the `writes` mode prompts for anything not marked read-only, and this
+connector marks six tools read-only and three — `ggd_create_lead`,
+`ggd_save_qualification` and `ggd_save_response_draft` — as writes.
 
 ### Reading the answers honestly
 
@@ -118,7 +128,7 @@ answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
 
 ---
 
-## The eight tools
+## The nine tools
 
 | Tool | Reads or writes | What it is for |
 | --- | --- | --- |
@@ -130,6 +140,7 @@ answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
 | `ggd_followup_report` | read | Overdue Odoo activities, most overdue first. |
 | `ggd_create_lead` | **write** | Opens one new Target Identified opportunity from a company you researched. Refuses duplicates. |
 | `ggd_save_qualification` | **write** | Saves a fit assessment through the addon's own audited method. |
+| `ggd_save_response_draft` | **write** | Saves one reply draft onto an opportunity for you to read in Odoo. It does not send it. |
 
 ### The reports
 
@@ -286,7 +297,7 @@ not redesign it or add a second scoring scheme.
 Two independent boundaries, both tested by
 `./scripts/check-mcp-connector.sh`.
 
-**The connector's allowlist.** It can call exactly twelve Odoo operations:
+**The connector's allowlist.** It can call exactly thirteen Odoo operations:
 `search_read` and `search_count` on `crm.lead`, `res.partner`, `mail.message`
 and `mail.activity`, `search_read` on `crm.stage` and `res.country`, and two
 writes — `crm.lead.ggd_apply_qualification` and `crm.lead.create`. No tool
@@ -383,7 +394,7 @@ cp ~/.codex/config.toml ~/.codex/config.toml.bak-$(date +%Y%m%d)
 ```
 
 Only non-secret settings are stored there. Restart the ChatGPT desktop app,
-then check **Settings > MCP servers**: `ggd_odoo` should be listed with eight
+then check **Settings > MCP servers**: `ggd_odoo` should be listed with nine
 tools.
 
 ### 5. Prove it

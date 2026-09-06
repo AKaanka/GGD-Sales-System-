@@ -57,6 +57,13 @@ class CrmLead(models.Model):
     # stop "ok" and "yes" from passing as evidence.
     GGD_CONTACT_BASIS_NOTE_MIN_LENGTH = 20
 
+    # Length ceiling for a reply draft handed over by the ChatGPT connector.
+    # A reply is sentences; a pasted thread or a whole document is a storage
+    # accident. Over-long input is refused rather than truncated, for the
+    # reason the connector's own CREATE_LIMITS gives: a half-sentence left
+    # behind by truncation looks deliberate to whoever reads it next.
+    GGD_RESPONSE_DRAFT_MAX_LENGTH = 5000
+
     # Every column the outbound claim guard must re-read under its row lock.
     # The workflow decides whether a send is allowed from a snapshot taken
     # several RPCs before the claim; anything in that snapshot can be changed
@@ -1591,6 +1598,52 @@ class CrmLead(models.Model):
             )
         )
         return not needs_review
+
+    def ggd_save_response_draft(self, draft):
+        """Store one hand-written reply draft. Returns {"saved": True}.
+
+        The ChatGPT connector calls this when Kaan has written the reply there
+        instead of taking the one Workflow 4 suggested. It writes exactly one
+        field. ggd_response_draft is a suggestion for a human to read: nothing
+        sends it, and it is not the gated outreach draft, so this method is
+        outside the outbound gate rather than a second door into it.
+
+        Suppression is honoured exactly as ggd_record_reply honours it. That
+        method stores no draft when the contact is suppressed, so a
+        hand-written one must not become the way around it - otherwise this
+        would be the single path that puts a reply draft on a lead that asked
+        not to be contacted.
+
+        Returns a dict rather than a bare bool or string for the reason
+        ggd_prepare_draft documents at length: a top-level JSON scalar is legal
+        but some HTTP clients refuse to parse it, and a caller that cannot read
+        the result of a write it has already made is the shape defect 13 took.
+        """
+        self.ensure_one()
+        draft = (draft or "").strip()
+        if not draft:
+            raise ValidationError(_("A reply draft cannot be empty. Nothing was saved."))
+        if len(draft) > self.GGD_RESPONSE_DRAFT_MAX_LENGTH:
+            raise ValidationError(
+                _(
+                    "The reply draft is %(length)s characters and the maximum "
+                    "is %(maximum)s. Nothing was saved.",
+                    length=len(draft),
+                    maximum=self.GGD_RESPONSE_DRAFT_MAX_LENGTH,
+                )
+            )
+        if self.ggd_do_not_contact or self.ggd_reply_category == "unsubscribe":
+            raise ValidationError(
+                _(
+                    "This contact is suppressed, so no reply draft may be "
+                    "stored for it. Nothing was saved."
+                )
+            )
+        self.write({"ggd_response_draft": draft})
+        self.message_post(
+            body=_("Reply draft written by hand and saved. Nothing was sent.")
+        )
+        return {"saved": True}
 
     def ggd_record_bounce(self, message_id, summary, hard_bounce=True):
         """Record a delivery failure and suppress hard-bounce recipients."""

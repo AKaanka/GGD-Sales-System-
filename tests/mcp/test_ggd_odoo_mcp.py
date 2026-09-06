@@ -157,7 +157,7 @@ class ProtocolTests(unittest.TestCase):
     def test_tools_are_marked_read_only_or_write_accurately(self):
         tools = connector.build_tools()
         names = [tool["name"] for tool in tools]
-        self.assertEqual(len(tools), 8)
+        self.assertEqual(len(tools), 9)
         self.assertEqual(sorted(names), sorted(connector.TOOL_HANDLERS))
         writers = set()
         for tool in tools:
@@ -170,12 +170,17 @@ class ProtocolTests(unittest.TestCase):
                 annotations["idempotentHint"],
                 "%s must not claim idempotence" % tool["name"],
             )
-        self.assertEqual(writers, {"ggd_create_lead", "ggd_save_qualification"})
+        self.assertEqual(writers, {"ggd_create_lead", "ggd_save_qualification",
+                                   "ggd_save_response_draft"})
         by_name = dict((t["name"], t) for t in tools)
         # Overwriting an existing assessment is destructive; opening a new
         # opportunity changes nothing that was already there.
         self.assertTrue(
             by_name["ggd_save_qualification"]["annotations"]["destructiveHint"])
+        # Saving a reply draft replaces whatever Workflow 4 suggested, so it
+        # is destructive for the same reason.
+        self.assertTrue(
+            by_name["ggd_save_response_draft"]["annotations"]["destructiveHint"])
         self.assertFalse(
             by_name["ggd_create_lead"]["annotations"]["destructiveHint"])
 
@@ -208,7 +213,7 @@ class ProtocolTests(unittest.TestCase):
                    stdout.getvalue().strip().splitlines()]
         self.assertEqual(replies[0]["result"], {})
         self.assertEqual(replies[1]["error"]["code"], -32700)
-        self.assertEqual(len(replies[2]["result"]["tools"]), 8)
+        self.assertEqual(len(replies[2]["result"]["tools"]), 9)
 
 
 class AllowlistTests(unittest.TestCase):
@@ -231,13 +236,14 @@ class AllowlistTests(unittest.TestCase):
             self.assertEqual(caught.exception.kind, "not_allowed")
         self.assertEqual(client.calls, [], "no request may have been sent")
 
-    def test_the_allowlist_holds_only_reads_and_two_narrow_writes(self):
+    def test_the_allowlist_holds_only_reads_and_three_narrow_writes(self):
         writes = set(
             (model, method) for model, method in connector.ALLOWED_CALLS
             if method not in ("search_read", "search_count")
         )
         self.assertEqual(writes, {
             ("crm.lead", "ggd_apply_qualification"),
+            ("crm.lead", "ggd_save_response_draft"),
             ("crm.lead", "create"),
         })
 
@@ -544,6 +550,112 @@ class QualificationWriteTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, "not_found")
         self.assertEqual(
             [c for c in client.calls if c[1] == "ggd_apply_qualification"], []
+        )
+
+
+class ResponseDraftWriteTests(unittest.TestCase):
+    """ggd_save_response_draft: the third write, and the only one that puts
+    text a customer could eventually read onto a record."""
+
+    DRAFT = (
+        "Thank you for the quick reply. I can send the panel specification "
+        "on Monday and would be glad to arrange a short call that week."
+    )
+
+    def _client(self, stored=None, do_not_contact=False, category="interested"):
+        body_text = self.DRAFT if stored is None else stored
+        return FakeOdoo(routes={
+            ("crm.lead", "search_read"): lambda body: (
+                [{"id": 4242, "name": "[GGD-TEST] Fictional Panels GmbH",
+                  "type": "opportunity", "active": True}]
+                if body["fields"] == ["id", "name", "type", "active"] else
+                [{"id": 4242, "name": "[GGD-TEST] Fictional Panels GmbH",
+                  "ggd_response_draft": body_text,
+                  "ggd_reply_category": category,
+                  "ggd_last_reply_received_at": "2026-09-05 10:00:00",
+                  "ggd_do_not_contact": do_not_contact}]
+            ),
+            ("crm.lead", "ggd_save_response_draft"): {"saved": True},
+        })
+
+    def _args(self, **overrides):
+        args = {"opportunity_id": 4242, "draft": self.DRAFT}
+        args.update(overrides)
+        return args
+
+    def test_a_draft_is_saved_and_read_back(self):
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertTrue(result["saved"])
+        self.assertFalse(result["retry"])
+        self.assertEqual(result["status"], "saved")
+        self.assertEqual(result["stored"]["id"], 4242)
+        self.assertEqual(result["stored"]["reply_category"], "interested")
+
+    def test_the_round_trip_is_proved_by_length_not_by_the_echo(self):
+        """plain_text truncates, so the echoed body is not evidence. The two
+        character counts are, and they cost a handful of bytes."""
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertEqual(
+            result["stored"]["stored_characters"],
+            result["stored"]["sent_characters"],
+        )
+        self.assertEqual(result["stored"]["sent_characters"], len(self.DRAFT))
+
+    def test_it_sends_the_addon_method_exactly_the_arguments_it_declares(self):
+        client = self._client()
+        connector.tool_save_response_draft(client, self._args())
+        write = [c for c in client.calls
+                 if c[1] == "ggd_save_response_draft"][0]
+        body = write[2]
+        self.assertEqual(body["ids"], [4242])
+        self.assertEqual(sorted(body), sorted(["ids", "draft"]))
+        self.assertEqual(body["draft"], self.DRAFT)
+        self.assertNotIn("context", body)
+
+    def test_the_answer_says_plainly_that_nothing_was_sent(self):
+        """The tool stores a suggestion. A model that reports it as a sent
+        reply would leave Kaan believing a customer had been answered."""
+        client = self._client()
+        result = connector.tool_save_response_draft(client, self._args())
+        self.assertIn("Nothing was sent", result["message"])
+        self.assertIn("no outreach was approved", result["message"])
+
+    def test_an_empty_draft_never_opens_a_socket(self):
+        client = self._client()
+        for empty in ("", "   ", "\n\t ", None, False):
+            with self.assertRaises(connector.InvalidArgument):
+                connector.tool_save_response_draft(
+                    client, self._args(draft=empty)
+                )
+        self.assertEqual(client.calls, [], "no request may have been sent")
+
+    def test_an_over_long_draft_is_refused_rather_than_truncated(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument) as caught:
+            connector.tool_save_response_draft(
+                client, self._args(draft="x" * (connector.TEXT_LIMITS["draft"] + 1))
+            )
+        self.assertIn("limit", str(caught.exception))
+        self.assertEqual(client.calls, [])
+
+    def test_a_draft_carrying_a_credential_is_refused(self):
+        client = self._client()
+        with self.assertRaises(connector.InvalidArgument):
+            connector.tool_save_response_draft(
+                client,
+                self._args(draft="Here you go, api key: sk-not-a-real-secret"),
+            )
+        self.assertEqual(client.calls, [])
+
+    def test_a_missing_record_is_reported_before_anything_is_written(self):
+        client = FakeOdoo(routes={("crm.lead", "search_read"): []})
+        with self.assertRaises(connector.ConnectorError) as caught:
+            connector.tool_save_response_draft(client, self._args())
+        self.assertEqual(caught.exception.kind, "not_found")
+        self.assertEqual(
+            [c for c in client.calls if c[1] == "ggd_save_response_draft"], []
         )
 
 
@@ -940,9 +1052,15 @@ class PayloadSizeTests(unittest.TestCase):
         # once ggd_report, the fixed search filters and the opportunity
         # sections were added, which is one tool standing in for twelve
         # reports plus twenty filters that used to be impossible to ask for.
+        # 9821 once ggd_save_response_draft was added: 738 characters, most of
+        # it the description saying what the tool does NOT do - it does not
+        # send, does not approve, and is refused for a suppressed contact.
+        # That is the cheapest place to buy those three facts, because a model
+        # that has to infer them is one bad inference away from Kaan finding a
+        # reply he never wrote sitting on a lead.
         # The ceiling sits just above the measurement so the next increase
         # has to be argued for rather than absorbed.
-        self.assertLess(size, 9500, "tools/list grew to %d characters" % size)
+        self.assertLess(size, 9900, "tools/list grew to %d characters" % size)
 
 
 class TextHandlingTests(unittest.TestCase):
@@ -1587,6 +1705,7 @@ class OpportunitySectionTests(unittest.TestCase):
                 description="<p>Panel maker</p>",
                 ggd_fit_summary="Exports already",
                 ggd_draft_body="<p>Dear A. Fictional</p>",
+                ggd_response_draft="<p>Thank you, Monday works.</p>",
                 ggd_industry="Machinery",
             )],
             ("crm.lead", "search_count"): 1,
@@ -1649,6 +1768,12 @@ class OpportunitySectionTests(unittest.TestCase):
         full, _ = self.get(sections=["outreach"], detail_level="full")
         self.assertEqual(full["sections"]["outreach"]["text"]["ggd_draft_body"],
                          "Dear A. Fictional")
+
+        reply, _ = self.get(sections=["reply"], detail_level="full")
+        self.assertEqual(
+            reply["sections"]["reply"]["text"]["ggd_response_draft"],
+            "Thank you, Monday works.",
+        )
 
     def test_an_unknown_section_is_refused_and_lists_the_real_ones(self):
         payload, is_error = self.get(sections=["evidence"])

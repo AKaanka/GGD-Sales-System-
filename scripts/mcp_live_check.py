@@ -160,11 +160,12 @@ def main():
           json.dumps(init)[:200])
     tools = server.request("tools/list")["result"]["tools"]
     names = sorted(t["name"] for t in tools)
-    check("eight tools are advertised", len(tools) == 8, ", ".join(names))
+    check("nine tools are advertised", len(tools) == 9, ", ".join(names))
     writes = [t["name"] for t in tools
               if not t["annotations"].get("readOnlyHint")]
-    check("exactly two tools are marked as writes",
-          sorted(writes) == ["ggd_create_lead", "ggd_save_qualification"],
+    check("exactly three tools are marked as writes",
+          sorted(writes) == ["ggd_create_lead", "ggd_save_qualification",
+                             "ggd_save_response_draft"],
           str(writes))
 
     section("2. Authentication")
@@ -469,7 +470,38 @@ def main():
           is_error and bad.get("error") == "invalid_argument",
           json.dumps(bad)[:200])
 
-    section("8. Operations the connector does not offer")
+    section("8. Saving a reply draft (fictional record only)")
+    reply_draft = (
+        "Thank you for the fictional reply. Monday works for a short call."
+    )
+    saved, is_error = server.call("ggd_save_response_draft", {
+        "opportunity_id": lead_id,
+        "draft": reply_draft,
+    })
+    stored = saved.get("stored") or {}
+    check("a reply draft is saved and read back",
+          not is_error and saved.get("status") == "saved"
+          and stored.get("stored_characters") == len(reply_draft)
+          and stored.get("sent_characters") == len(reply_draft),
+          json.dumps(saved)[:300])
+    check("the write says plainly that it sent nothing",
+          "Nothing was sent" in saved.get("message", ""),
+          saved.get("message", ""))
+
+    reply_view, is_error = server.call("ggd_get_opportunity", {
+        "opportunity_id": lead_id,
+        "sections": ["reply"],
+        "detail_level": "full",
+    })
+    reply_text = (
+        ((reply_view.get("sections") or {}).get("reply") or {})
+        .get("text", {}).get("ggd_response_draft")
+    )
+    check("a later opportunity read still returns the saved draft",
+          not is_error and reply_text == reply_draft,
+          json.dumps(reply_view)[:300])
+
+    section("9. Operations the connector does not offer")
     unknown = server.request("tools/call", {
         "name": "ggd_send_email", "arguments": {}
     })
@@ -493,7 +525,7 @@ def main():
             check("the connector refuses %s.%s" % (model, method),
                   exc.kind == "not_allowed", exc.message[:120])
 
-    section("9. Operations Odoo itself refuses for this user")
+    section("10. Operations Odoo itself refuses for this user")
     refused(client, "approve outreach", "crm.lead",
             "action_ggd_approve_outreach", {"ids": [lead_id]},
             403, "Outreach approver")
@@ -508,7 +540,7 @@ def main():
     refused(client, "delete an opportunity", "crm.lead", "unlink",
             {"ids": [doomed_id]}, 403, "not allowed to delete")
 
-    section("10. A missing or expired key")
+    section("11. A missing or expired key")
     absent = Server({"GGD_KEYCHAIN_SERVICE": "ggd-odoo-mcp-does-not-exist"})
     absent.request("initialize", {"protocolVersion": "2025-06-18",
                                   "capabilities": {},
