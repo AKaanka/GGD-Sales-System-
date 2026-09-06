@@ -150,6 +150,17 @@ GitHub runs the same validation automatically after each push and pull request.
 It also checks all six workflow graphs and runs the offline reply-matching
 decision suite.
 
+## Reports from the ChatGPT desktop app
+
+The ChatGPT desktop app can read this CRM and produce customer, pipeline and
+follow-up reports through a local connector that talks to Odoo over
+`127.0.0.1`. Nothing is published and no OpenAI API billing is involved. Setup,
+example prompts, and key renewal: `docs/CHATGPT-MCP-CONNECTOR.md`.
+
+```bash
+./scripts/check-mcp-connector.sh
+```
+
 ## Backup
 
 After the `ggd` Odoo database exists:

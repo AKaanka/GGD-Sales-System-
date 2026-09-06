@@ -166,6 +166,26 @@ Disable the account the moment the automation is retired, and review the lead
 chatter periodically: every automated write is attributed to this user, so the
 audit trail names it.
 
+## Reporting user for the ChatGPT desktop app
+
+The ChatGPT/Codex desktop app reads this CRM through a local MCP connector
+(ticket #59). It authenticates as a **second** dedicated user, entirely
+separate from the n8n one above: `GGD Reporting (ChatGPT)`, login
+`chatgpt@ggd.local`, with Sales = `User: All Documents` and nothing else. Like
+the automation user it is deliberately **not** in `Outreach approver`, so it
+can report and qualify but can neither approve outreach nor clear
+`Do not contact`, and `crm.lead` unlink is a Sales Administrator right it does
+not hold either.
+
+Its key is created and rotated exactly as the automation key is, with the same
+expiry caveat - Odoo offers a persistent key only to Settings users - and lives
+in the macOS login Keychain rather than in an n8n credential. The n8n user, its
+key and its credential are untouched by that setup.
+
+Both users appear in `./scripts/check-odoo-api-keys.sh` and
+`./scripts/check-odoo-automation-user.sh`. Full procedure, daily prompts,
+renewal and revocation: `docs/CHATGPT-MCP-CONNECTOR.md`.
+
 ## First test record
 
 Create a fictional company and move it through the pipeline. Verify:
