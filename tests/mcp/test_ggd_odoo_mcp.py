@@ -15,6 +15,7 @@ What they are actually protecting:
 * that no error path echoes the API key.
 """
 
+import datetime
 import importlib.util
 import io
 import json
@@ -156,7 +157,7 @@ class ProtocolTests(unittest.TestCase):
     def test_tools_are_marked_read_only_or_write_accurately(self):
         tools = connector.build_tools()
         names = [tool["name"] for tool in tools]
-        self.assertEqual(len(tools), 7)
+        self.assertEqual(len(tools), 8)
         self.assertEqual(sorted(names), sorted(connector.TOOL_HANDLERS))
         writers = set()
         for tool in tools:
@@ -180,10 +181,19 @@ class ProtocolTests(unittest.TestCase):
 
     def test_no_tool_accepts_a_domain_field_list_or_method(self):
         forbidden = {"domain", "fields", "method", "model", "sql", "context"}
+
+        def check(schema, where):
+            properties = schema.get("properties") or {}
+            self.assertEqual(set(properties) & forbidden, set(), where)
+            self.assertFalse(schema["additionalProperties"], where)
+            # ggd_report nests a filters object; a closed outer schema would
+            # not stop a domain smuggled one level down.
+            for name, child in properties.items():
+                if child.get("type") == "object":
+                    check(child, "%s.%s" % (where, name))
+
         for tool in connector.build_tools():
-            properties = set(tool["inputSchema"].get("properties") or {})
-            self.assertEqual(properties & forbidden, set(), tool["name"])
-            self.assertFalse(tool["inputSchema"]["additionalProperties"])
+            check(tool["inputSchema"], tool["name"])
 
     def test_serve_answers_line_by_line(self):
         stdin = io.StringIO(
@@ -198,7 +208,7 @@ class ProtocolTests(unittest.TestCase):
                    stdout.getvalue().strip().splitlines()]
         self.assertEqual(replies[0]["result"], {})
         self.assertEqual(replies[1]["error"]["code"], -32700)
-        self.assertEqual(len(replies[2]["result"]["tools"]), 7)
+        self.assertEqual(len(replies[2]["result"]["tools"]), 8)
 
 
 class AllowlistTests(unittest.TestCase):
@@ -926,7 +936,13 @@ class PayloadSizeTests(unittest.TestCase):
         not. A regression here is paid for continuously and silently, so it
         gets a number rather than good intentions."""
         size = len(json.dumps(connector.build_tools(), separators=(",", ":")))
-        self.assertLess(size, 7000, "tools/list grew to %d characters" % size)
+        # Measured, not guessed. 5834 with the original seven tools; 9083
+        # once ggd_report, the fixed search filters and the opportunity
+        # sections were added, which is one tool standing in for twelve
+        # reports plus twenty filters that used to be impossible to ask for.
+        # The ceiling sits just above the measurement so the next increase
+        # has to be argued for rather than absorbed.
+        self.assertLess(size, 9500, "tools/list grew to %d characters" % size)
 
 
 class TextHandlingTests(unittest.TestCase):
@@ -964,6 +980,748 @@ class TextHandlingTests(unittest.TestCase):
     def test_many2one_pairs_become_readable(self):
         self.assertEqual(connector.m2o([7, "Kaan"]), {"id": 7, "name": "Kaan"})
         self.assertIsNone(connector.m2o(False))
+
+
+# --------------------------------------------------------------------------
+# Phase 1: compact retrieval and read-only reporting
+# --------------------------------------------------------------------------
+
+def report_row(**overrides):
+    """One scanned opportunity, shaped as REPORT_SCAN_FIELDS asks for it.
+
+    Fictional throughout, on .invalid hosts, so nothing here can be mistaken
+    for a real company or reach one.
+    """
+    row = {
+        "id": 5001,
+        "partner_name": "Fictional Panels GmbH",
+        "contact_name": "A. Fictional",
+        "email_from": "fx@example.invalid",
+        "phone": False,
+        "website": "https://fictional-panels.invalid",
+        "city": "Hannover",
+        "country_id": [57, "Germany"],
+        "user_id": [2, "Kaan"],
+        "stage_id": [2, "Qualified"],
+        "expected_revenue": 10000.0,
+        "probability": 40.0,
+        "create_date": "2026-09-01 09:00:00",
+        "activity_date_deadline": False,
+        "ggd_industry": "Machinery",
+        "ggd_source_url": "https://fictional-panels.invalid/about",
+        "ggd_fit_score": 74,
+        "ggd_ai_confidence": 0.86,
+        "ggd_qualification_state": "ready",
+        "ggd_contact_basis": False,
+        "ggd_do_not_contact": False,
+        "ggd_outreach_approved": False,
+        "ggd_draft_status": "empty",
+        "ggd_draft_version": False,
+        "ggd_approved_draft_version": False,
+        "ggd_delivery_status": "none",
+        "ggd_send_confirmed_at": False,
+        "ggd_last_sent_recipient": False,
+        "ggd_reply_category": False,
+        "ggd_last_reply_received_at": False,
+    }
+    for field in connector.REVIEW_FLAG_FIELDS:
+        row[field] = False
+    row.update(overrides)
+    return row
+
+
+def activity_row(**overrides):
+    row = {
+        "id": 900,
+        "res_id": 5001,
+        "res_model": "crm.lead",
+        "summary": "Call back",
+        "note": False,
+        "activity_type_id": [1, "Call"],
+        "date_deadline": "2026-09-01",
+        "user_id": [2, "Kaan"],
+        "state": "overdue",
+        "create_date": "2026-08-01 09:00:00",
+    }
+    row.update(overrides)
+    return row
+
+
+def report_client(rows=None, total=None, activities=None, **extra):
+    rows = [] if rows is None else rows
+    activities = [] if activities is None else activities
+    routes = {
+        ("crm.lead", "search_count"): len(rows) if total is None else total,
+        ("crm.lead", "search_read"): rows,
+        ("crm.stage", "search_read"): [
+            {"id": 1, "name": "Target Identified", "sequence": 1,
+             "is_won": False, "fold": False},
+            {"id": 2, "name": "Qualified", "sequence": 2,
+             "is_won": False, "fold": False},
+        ],
+        ("mail.activity", "search_count"): len(activities),
+        ("mail.activity", "search_read"): activities,
+    }
+    routes.update(extra)
+    return FakeOdoo(routes=routes)
+
+
+def run_report(client, **args):
+    result = connector.call_tool("ggd_report", args, client)
+    return json.loads(result["content"][0]["text"]), result["isError"]
+
+
+AS_OF = "2026-09-06"
+
+
+def leaves(client, index=0):
+    """The domain of one recorded call, with its leaves back as tuples: JSON
+    has no tuple, so everything crossing the fake wire arrives as a list."""
+    domain = client.calls[index][2]["domain"]
+    return [tuple(leaf) if isinstance(leaf, list) else leaf for leaf in domain]
+
+
+class ReportEnvelopeTests(unittest.TestCase):
+    """Every report answers in the same envelope, and the envelope is what
+    stops a page or a capped scan being read as the whole truth."""
+
+    def test_every_report_type_answers_in_the_common_envelope(self):
+        for report_type in connector.REPORT_TYPES:
+            client = report_client([report_row()], activities=[activity_row()])
+            payload, is_error = run_report(
+                client, report_type=report_type, as_of=AS_OF
+            )
+            self.assertFalse(is_error, report_type)
+            self.assertEqual(payload["report_type"], report_type)
+            self.assertEqual(payload["as_of"], AS_OF)
+            self.assertEqual(payload["timezone"], connector.REPORT_TIMEZONE)
+            self.assertIn("complete", payload, report_type)
+            # Present even when empty: a missing warnings list reads as
+            # "nothing to say", which is a claim a report must not make by
+            # accident.
+            self.assertIn("warnings", payload, report_type)
+
+    def test_a_capped_scan_is_never_reported_as_complete(self):
+        client = report_client([report_row(id=n) for n in range(3)], total=900)
+        payload, _ = run_report(client, report_type="dashboard", as_of=AS_OF)
+        self.assertIs(payload["complete"], False)
+        self.assertEqual(payload["scanned"], 3)
+        self.assertEqual(payload["total_matching"], 900)
+        self.assertIn("only the first 3 of 900", payload["warnings"][0])
+
+    def test_a_whole_scan_is_complete_and_says_nothing(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(client, report_type="dashboard", as_of=AS_OF)
+        self.assertIs(payload["complete"], True)
+        self.assertEqual(payload["warnings"], [])
+
+    def test_rows_are_paginated_against_a_denominator(self):
+        rows = [report_row(id=n, ggd_qualification_state="pending")
+                for n in range(1, 8)]
+        client = report_client(rows)
+        payload, _ = run_report(
+            client, report_type="daily_action", as_of=AS_OF, limit=3, offset=0,
+        )
+        self.assertEqual(payload["returned"], 3)
+        self.assertEqual(payload["matching_rows"], 7)
+        self.assertIs(payload["has_more"], True)
+        self.assertEqual(payload["next_page_offset"], 3)
+
+    def test_applied_filters_are_reported_and_the_request_is_not_echoed(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(
+            client, report_type="dashboard", as_of=AS_OF,
+            filters={"city": "Hannover", "min_fit_score": 70},
+        )
+        self.assertEqual(
+            payload["filters_applied"], {"city": "Hannover", "min_fit_score": 70}
+        )
+        self.assertNotIn("filters", payload)
+        self.assertNotIn("detail_level", payload)
+
+    def test_the_date_window_becomes_a_bounded_create_date_domain(self):
+        client = report_client([report_row()])
+        run_report(client, report_type="dashboard",
+                   date_from="2026-09-01", date_to="2026-09-30")
+        domain = leaves(client)
+        self.assertIn(("create_date", ">=", "2026-09-01 00:00:00"), domain)
+        self.assertIn(("create_date", "<=", "2026-09-30 23:59:59"), domain)
+
+
+class ReportAvailabilityTests(unittest.TestCase):
+    """A metric whose source data does not exist says so. It is never a zero,
+    an estimate wearing a real metric's name, or a silently absent key."""
+
+    def test_a_conversion_funnel_is_refused_rather_than_faked(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(client, report_type="conversion_funnel")
+        self.assertIs(payload["available"], False)
+        self.assertIs(payload["complete"], False)
+        self.assertIn("stage-change history", payload["reason"])
+        self.assertNotIn("metrics", payload)
+        # It answers without asking Odoo anything at all.
+        self.assertEqual(client.calls, [])
+
+    def test_token_usage_is_not_estimated_from_payload_bytes(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(client, report_type="usage_efficiency")
+        self.assertIs(payload["available"], False)
+        self.assertIn("not billed tokens", payload["reason"])
+        self.assertEqual(client.calls, [])
+
+    def test_source_backed_contact_coverage_is_unavailable_until_provenance(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(client, report_type="contact_coverage")
+        self.assertIn("source_backed", payload["unavailable"])
+        self.assertIn("provenance", payload["unavailable"]["source_backed"])
+        # The coverage it can compute is still there, with its denominator.
+        self.assertEqual(payload["metrics"]["denominator"], 1)
+        self.assertEqual(payload["metrics"]["email"], 1)
+
+    def test_hard_and_soft_bounces_are_not_invented(self):
+        client = report_client([report_row(ggd_delivery_status="bounced")])
+        payload, _ = run_report(client, report_type="reply_delivery")
+        self.assertIn("bounce_hardness", payload["unavailable"])
+        self.assertEqual(payload["metrics"]["bounced"], 1)
+
+    def test_unsupported_data_quality_codes_are_named_with_a_reason(self):
+        client = report_client([report_row()])
+        payload, _ = run_report(client, report_type="data_quality")
+        self.assertEqual(
+            sorted(payload["unavailable"]),
+            ["possible_duplicate", "qualification_stale"],
+        )
+        for code in payload["unavailable"]:
+            self.assertNotIn(code, payload["metrics"]["by_code"])
+
+
+class ReportArithmeticTests(unittest.TestCase):
+    """The sums a report claims, tested without Odoo, a socket or a key."""
+
+    def test_an_unassessed_lead_is_excluded_not_averaged_as_zero(self):
+        rows = [
+            report_row(id=1, ggd_qualification_state="ready", ggd_fit_score=80),
+            report_row(id=2, ggd_qualification_state="ready", ggd_fit_score=90),
+            # Pending: ggd_fit_score is an Integer so it stores 0, which is
+            # not an assessment and must not drag the mean to 56.7.
+            report_row(id=3, ggd_qualification_state="pending", ggd_fit_score=0),
+        ]
+        payload, _ = run_report(report_client(rows), report_type="qualification")
+        metrics = payload["metrics"]
+        self.assertEqual(metrics["scored"], 2)
+        self.assertEqual(metrics["unscored"], 1)
+        self.assertEqual(metrics["average_fit_score"], 85.0)
+        self.assertEqual(metrics["median_fit_score"], 85.0)
+
+    def test_score_and_confidence_bands_break_at_the_addon_threshold(self):
+        self.assertEqual(connector.score_band(0), "0-24")
+        self.assertEqual(connector.score_band(69), "50-69")
+        self.assertEqual(connector.score_band(100), "85-100")
+        self.assertEqual(connector.confidence_band(0.69), "below_0.70")
+        self.assertEqual(connector.confidence_band(0.70), "0.70-0.89")
+        self.assertEqual(connector.confidence_band(0.95), "0.90-1.00")
+
+    def test_median_of_an_even_and_an_odd_run(self):
+        self.assertEqual(connector.median([10, 20, 30]), 20.0)
+        self.assertEqual(connector.median([10, 20, 30, 40]), 25.0)
+        self.assertIsNone(connector.median([]))
+
+    def test_send_ready_reads_the_gate_and_does_not_require_a_contact_basis(self):
+        ready = report_row(
+            ggd_outreach_approved=True, ggd_draft_status="approved",
+            ggd_draft_version="v3", ggd_approved_draft_version="v3",
+            ggd_contact_basis=False,
+        )
+        # Contact basis is recorded and reported, never a condition
+        # (AGENTS.md, Kaan's decision of 4 September 2026).
+        self.assertIs(connector.is_send_ready(ready), True)
+        for broken in (
+            dict(ggd_outreach_approved=False),
+            dict(ggd_do_not_contact=True),
+            dict(ggd_draft_status="ready"),
+            dict(ggd_approved_draft_version="v2"),
+            dict(email_from=False),
+        ):
+            row = dict(ready)
+            row.update(broken)
+            self.assertIs(connector.is_send_ready(row), False, broken)
+
+    def test_a_clean_record_reports_no_data_quality_issue(self):
+        as_of = datetime.date(2026, 9, 6)
+        self.assertEqual(connector.data_quality_codes(report_row(), as_of), [])
+
+    def test_each_supported_issue_code_is_decided_by_a_real_field(self):
+        as_of = datetime.date(2026, 9, 6)
+        cases = {
+            "missing_company_name": dict(partner_name=False),
+            "missing_source_url": dict(ggd_source_url=False),
+            "missing_website": dict(website=False),
+            "missing_named_contact": dict(contact_name=False),
+            "missing_contact_method": dict(email_from=False, phone=False),
+            "missing_owner": dict(user_id=False),
+            "qualification_missing": dict(ggd_qualification_state="pending"),
+            "qualification_needs_review": dict(
+                ggd_qualification_needs_review=True),
+            "automation_needs_review": dict(ggd_automation_needs_review=True),
+            "invalid_email_shape": dict(email_from="not-an-address"),
+            "invalid_url_shape": dict(website="fictional-panels.invalid"),
+            "suppressed_but_approved": dict(ggd_do_not_contact=True,
+                                            ggd_outreach_approved=True),
+            "approved_version_mismatch": dict(ggd_outreach_approved=True,
+                                              ggd_draft_version="v4",
+                                              ggd_approved_draft_version="v3"),
+            "incomplete_send_audit": dict(
+                ggd_send_confirmed_at="2026-09-05 10:00:00",
+                ggd_last_sent_recipient=False),
+            "overdue_activity": dict(activity_date_deadline="2026-09-01"),
+        }
+        self.assertEqual(sorted(cases), sorted(connector.DATA_QUALITY_CODES))
+        for code, overrides in cases.items():
+            codes = connector.data_quality_codes(report_row(**overrides), as_of)
+            self.assertIn(code, codes, code)
+
+    def test_data_quality_rows_carry_ids_and_codes_not_prose(self):
+        rows = [report_row(id=11, ggd_source_url=False),
+                report_row(id=12)]
+        payload, _ = run_report(
+            report_client(rows), report_type="data_quality", as_of=AS_OF,
+        )
+        self.assertEqual(payload["metrics"]["records_with_issues"], 1)
+        self.assertEqual(payload["metrics"]["by_code"]["missing_source_url"], 1)
+        self.assertEqual(payload["rows"], [{"id": 11,
+                                            "codes": ["missing_source_url"]}])
+
+    def test_the_work_queue_is_ordered_by_urgency_then_id(self):
+        rows = [
+            report_row(id=30, ggd_qualification_state="pending"),
+            report_row(id=10, ggd_qualification_needs_review=True),
+            report_row(id=20, activity_date_deadline="2026-09-01"),
+            report_row(id=5, ggd_qualification_state="pending"),
+        ]
+        payload, _ = run_report(
+            report_client(rows), report_type="daily_action", as_of=AS_OF,
+        )
+        self.assertEqual([row["id"] for row in payload["rows"]],
+                         [10, 20, 5, 30])
+        # The most urgent reason is what the queue sorts on; a record can
+        # carry more than one.
+        self.assertEqual(payload["rows"][0]["reasons"][0], "needs_human_review")
+        self.assertEqual(payload["metrics"]["by_reason"]["needs_qualification"], 2)
+
+    def test_do_not_contact_is_counted_but_never_given_a_task(self):
+        rows = [report_row(id=1, ggd_do_not_contact=True,
+                           ggd_qualification_state="pending"),
+                report_row(id=2, ggd_qualification_state="pending")]
+        payload, _ = run_report(
+            report_client(rows), report_type="daily_action", as_of=AS_OF,
+        )
+        self.assertEqual([row["id"] for row in payload["rows"]], [2])
+        self.assertEqual(payload["metrics"]["suppressed_not_queued"], 1)
+
+    def test_a_compact_queue_row_is_an_id_and_reason_codes(self):
+        rows = [report_row(id=7, ggd_qualification_state="pending")]
+        compact, _ = run_report(
+            report_client(rows), report_type="daily_action", as_of=AS_OF,
+        )
+        self.assertEqual(sorted(compact["rows"][0]), ["id", "reasons"])
+        detailed, _ = run_report(
+            report_client(rows), report_type="daily_action", as_of=AS_OF,
+            detail_level="standard",
+        )
+        self.assertEqual(detailed["rows"][0]["company"],
+                         "Fictional Panels GmbH")
+
+    def test_activities_are_counted_over_the_activity_table(self):
+        activities = [
+            activity_row(id=1, res_id=1, date_deadline="2026-09-01"),
+            activity_row(id=2, res_id=1, date_deadline="2026-09-06"),
+            activity_row(id=3, res_id=2, date_deadline="2026-09-20",
+                         user_id=False),
+        ]
+        payload, _ = run_report(
+            report_client(activities=activities), report_type="activity",
+            as_of=AS_OF,
+        )
+        metrics = payload["metrics"]
+        self.assertEqual(metrics["open"], 3)
+        self.assertEqual(metrics["overdue"], 1)
+        self.assertEqual(metrics["by_due"]["overdue"], 1)
+        self.assertEqual(metrics["by_due"]["due_today"], 1)
+        self.assertEqual(metrics["by_owner"]["(unassigned)"], 1)
+        self.assertEqual(payload["rows"][0]["days_overdue"], 5)
+
+    def test_market_groups_average_over_their_own_scored_count(self):
+        rows = [
+            report_row(id=1, ggd_industry="Machinery", ggd_fit_score=80),
+            report_row(id=2, ggd_industry="Machinery",
+                       ggd_qualification_state="pending", ggd_fit_score=0),
+            report_row(id=3, ggd_industry="Textiles", ggd_fit_score=60),
+        ]
+        payload, _ = run_report(
+            report_client(rows), report_type="industry_market",
+            group_by="industry", as_of=AS_OF,
+        )
+        groups = dict((g["group"], g) for g in payload["rows"])
+        self.assertEqual(groups["Machinery"]["opportunities"], 2)
+        self.assertEqual(groups["Machinery"]["scored"], 1)
+        self.assertEqual(groups["Machinery"]["average_fit_score"], 80.0)
+
+
+class ReportInputTests(unittest.TestCase):
+    """The report tool takes a fixed vocabulary, and refuses everything else
+    before a socket is opened."""
+
+    def setUp(self):
+        self.client = report_client([report_row()])
+
+    def test_an_unknown_report_type_is_refused(self):
+        payload, is_error = run_report(self.client, report_type="everything")
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"], "invalid_argument")
+        self.assertEqual(self.client.calls, [])
+
+    def test_a_missing_report_type_is_refused(self):
+        payload, is_error = run_report(self.client)
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"], "invalid_argument")
+
+    def test_filters_refuse_an_unknown_key(self):
+        payload, is_error = run_report(
+            self.client, report_type="dashboard", filters={"owner": "Kaan"},
+        )
+        self.assertTrue(is_error)
+        self.assertIn("does not accept owner", payload["message"])
+        self.assertEqual(self.client.calls, [])
+
+    def test_filters_refuse_an_odoo_domain(self):
+        for smuggled in ({"domain": [("id", "=", 1)]}, {"sql": "select 1"},
+                         {"model": "res.users"}, {"context": {"uid": 1}}):
+            client = report_client([report_row()])
+            payload, is_error = run_report(
+                client, report_type="dashboard", filters=smuggled,
+            )
+            self.assertTrue(is_error, smuggled)
+            self.assertEqual(client.calls, [], smuggled)
+
+    def test_filters_must_be_an_object(self):
+        payload, is_error = run_report(
+            self.client, report_type="dashboard", filters=[["id", "=", 1]],
+        )
+        self.assertTrue(is_error)
+        self.assertIn("must be an object", payload["message"])
+
+    def test_a_backwards_date_window_is_refused(self):
+        payload, is_error = run_report(
+            self.client, report_type="dashboard",
+            date_from="2026-09-30", date_to="2026-09-01",
+        )
+        self.assertTrue(is_error)
+        self.assertIn("must not be after", payload["message"])
+
+    def test_a_score_filter_outside_0_to_100_is_refused(self):
+        payload, is_error = run_report(
+            self.client, report_type="dashboard", filters={"min_fit_score": 101},
+        )
+        self.assertTrue(is_error)
+        self.assertEqual(self.client.calls, [])
+
+    def test_a_max_score_filter_warns_that_unscored_leads_store_zero(self):
+        payload, _ = run_report(
+            self.client, report_type="dashboard", filters={"max_fit_score": 40},
+        )
+        self.assertTrue(any("fit score 0" in w for w in payload["warnings"]))
+
+    def test_the_activity_report_refuses_filters_it_cannot_apply(self):
+        client = report_client(activities=[activity_row()])
+        payload, is_error = run_report(
+            client, report_type="activity", filters={"city": "Istanbul"},
+        )
+        self.assertTrue(is_error)
+        self.assertIn("cannot be applied", payload["message"])
+        self.assertEqual(client.calls, [])
+
+    def test_the_report_tool_is_annotated_read_only(self):
+        tool = dict((t["name"], t) for t in connector.build_tools())["ggd_report"]
+        self.assertIs(tool["annotations"]["readOnlyHint"], True)
+
+    def test_no_report_reaches_a_write_method(self):
+        for report_type in connector.REPORT_TYPES:
+            client = report_client([report_row()], activities=[activity_row()])
+            run_report(client, report_type=report_type)
+            for model, method, _body, _headers in client.calls:
+                self.assertNotIn(method, connector.WRITE_METHODS,
+                                 "%s called %s.%s" % (report_type, model, method))
+
+
+class SearchFilterTests(unittest.TestCase):
+    """The fixed filters the ticket names, and nothing that resembles a
+    caller-supplied domain."""
+
+    def search(self, client, **args):
+        result = connector.call_tool("ggd_search_records", args, client)
+        return json.loads(result["content"][0]["text"]), result["isError"]
+
+    def lead_client(self, rows=None):
+        rows = [lead_row()] if rows is None else rows
+        return FakeOdoo(routes={
+            ("crm.lead", "search_count"): len(rows),
+            ("crm.lead", "search_read"): rows,
+        })
+
+    def test_compact_is_the_default_and_still_the_previous_answer(self):
+        client = self.lead_client()
+        payload, _ = self.search(client, query="fictional")
+        self.assertEqual(client.calls[1][2]["fields"],
+                         connector.LEAD_SUMMARY_FIELDS)
+        # Nothing new appears in an unfiltered call, so an existing caller
+        # cannot tell that detail levels were added.
+        self.assertNotIn("detail_level", payload)
+        self.assertNotIn("warnings", payload)
+
+    def test_a_richer_detail_level_asks_odoo_for_more_fields(self):
+        client = self.lead_client()
+        payload, _ = self.search(client, detail_level="standard")
+        self.assertEqual(payload["detail_level"], "standard")
+        self.assertIn("ggd_source_url", client.calls[1][2]["fields"])
+
+    def test_full_detail_is_capped_to_a_smaller_page(self):
+        client = self.lead_client()
+        payload, _ = self.search(client, detail_level="full", limit=50)
+        self.assertEqual(payload["limit"], connector.FULL_DETAIL_LIMIT)
+        self.assertTrue(any("full is capped" in w for w in payload["warnings"]))
+
+    def test_the_fixed_filters_become_domain_leaves(self):
+        client = self.lead_client()
+        self.search(
+            client, created_from="2026-09-01", updated_to="2026-09-30",
+            country="Germany", city="Hannover", industry="Machinery",
+            qualification_state="ready", min_fit_score=70,
+            has_email=True, has_phone=False, has_named_contact=True,
+            do_not_contact=False, outreach_approved=False,
+            draft_status="empty", delivery_status="none",
+        )
+        domain = leaves(client)
+        for leaf in (
+            ("create_date", ">=", "2026-09-01 00:00:00"),
+            ("write_date", "<=", "2026-09-30 23:59:59"),
+            ("country_id.name", "ilike", "Germany"),
+            ("city", "ilike", "Hannover"),
+            ("ggd_industry", "ilike", "Machinery"),
+            ("ggd_qualification_state", "=", "ready"),
+            ("ggd_fit_score", ">=", 70),
+            ("email_from", "!=", False),
+            ("phone", "=", False),
+            ("contact_name", "!=", False),
+            ("ggd_do_not_contact", "=", False),
+            ("ggd_outreach_approved", "=", False),
+            ("ggd_draft_status", "=", "empty"),
+            ("ggd_delivery_status", "=", "none"),
+        ):
+            self.assertIn(leaf, domain)
+
+    def test_needs_review_is_any_of_the_five_flags(self):
+        client = self.lead_client()
+        self.search(client, needs_review=True)
+        domain = leaves(client)
+        for field in connector.REVIEW_FLAG_FIELDS:
+            self.assertIn((field, "=", True), domain)
+        self.assertEqual(domain.count("|"), len(connector.REVIEW_FLAG_FIELDS) - 1)
+
+    def test_a_ggd_filter_is_refused_for_a_contact_not_silently_dropped(self):
+        client = self.lead_client()
+        payload, is_error = self.search(
+            client, record_type="contact", qualification_state="ready",
+        )
+        self.assertTrue(is_error)
+        self.assertIn("opportunities and leads only", payload["message"])
+        self.assertEqual(client.calls, [])
+
+    def test_a_contact_can_still_be_filtered_by_what_it_does_carry(self):
+        client = FakeOdoo(routes={
+            ("res.partner", "search_count"): 0,
+            ("res.partner", "search_read"): [],
+        })
+        self.search(client, record_type="contact", city="Istanbul",
+                    has_email=True)
+        domain = leaves(client)
+        self.assertIn(("city", "ilike", "Istanbul"), domain)
+        self.assertIn(("email", "!=", False), domain)
+
+    def test_has_overdue_activity_is_resolved_through_the_activity_table(self):
+        client = FakeOdoo(routes={
+            ("mail.activity", "search_count"): 2,
+            ("mail.activity", "search_read"): [
+                {"id": 1, "res_id": 41}, {"id": 2, "res_id": 42},
+            ],
+            ("crm.lead", "search_count"): 0,
+            ("crm.lead", "search_read"): [],
+        })
+        self.search(client, has_overdue_activity=True, as_of=AS_OF)
+        self.assertEqual(client.calls[0][0], "mail.activity")
+        self.assertIn(("date_deadline", "<", AS_OF), leaves(client, 0))
+        self.assertIn(("id", "in", [41, 42]), leaves(client, 2))
+
+    def test_the_absence_of_an_overdue_activity_is_the_complement(self):
+        client = FakeOdoo(routes={
+            ("mail.activity", "search_count"): 1,
+            ("mail.activity", "search_read"): [{"id": 1, "res_id": 41}],
+            ("crm.lead", "search_count"): 0,
+            ("crm.lead", "search_read"): [],
+        })
+        self.search(client, has_overdue_activity=False, as_of=AS_OF)
+        self.assertIn(("id", "not in", [41]), leaves(client, 2))
+
+    def test_a_backwards_date_window_is_refused_before_any_call(self):
+        client = self.lead_client()
+        payload, is_error = self.search(
+            client, created_from="2026-09-30", created_to="2026-09-01",
+        )
+        self.assertTrue(is_error)
+        self.assertEqual(client.calls, [])
+
+
+class OpportunitySectionTests(unittest.TestCase):
+    def setUp(self):
+        self.client = FakeOdoo(routes={
+            ("crm.lead", "search_read"): [lead_row(
+                description="<p>Panel maker</p>",
+                ggd_fit_summary="Exports already",
+                ggd_draft_body="<p>Dear A. Fictional</p>",
+                ggd_industry="Machinery",
+            )],
+            ("crm.lead", "search_count"): 1,
+            ("mail.activity", "search_read"): [activity_row()],
+            ("mail.activity", "search_count"): 1,
+            ("mail.message", "search_read"): [{
+                "id": 1, "date": "2026-09-04 10:00:00", "author_id": [2, "Kaan"],
+                "email_from": False, "subject": "Note", "body": "<p>Hello</p>",
+                "message_type": "comment", "subtype_id": [1, "Note"],
+            }],
+            ("mail.message", "search_count"): 1,
+        })
+
+    def get(self, **args):
+        args.setdefault("opportunity_id", 4242)
+        result = connector.call_tool("ggd_get_opportunity", args, self.client)
+        return json.loads(result["content"][0]["text"]), result["isError"]
+
+    def test_an_existing_caller_gets_exactly_the_previous_answer(self):
+        payload, _ = self.get()
+        self.assertIn("opportunity", payload)
+        self.assertIn("open_activities", payload)
+        self.assertIn("history", payload)
+        self.assertNotIn("sections", payload)
+
+    def test_asking_for_sections_returns_only_those(self):
+        payload, _ = self.get(sections=["qualification"])
+        self.assertEqual(list(payload["sections"]), ["qualification"])
+        self.assertEqual(payload["sections"]["qualification"]["fit_score"], 74)
+        self.assertNotIn("email", payload["sections"]["qualification"])
+        # Neither chatter nor activities was asked for, so neither was fetched.
+        fetched = set(model for model, _m, _b, _h in self.client.calls)
+        self.assertEqual(fetched, {"crm.lead"})
+
+    def test_chatter_stays_opt_in(self):
+        without, _ = self.get(detail_level="compact")
+        self.assertNotIn("chatter", without["sections"])
+        with_chatter, _ = self.get(sections=["identity", "chatter"])
+        self.assertEqual(with_chatter["sections"]["chatter"]["returned"], 1)
+        self.assertEqual(
+            with_chatter["sections"]["chatter"]["total_in_chatter"], 1)
+
+    def test_compact_drops_free_text_and_full_restores_the_long_fields(self):
+        compact, _ = self.get(sections=["qualification", "outreach"],
+                              detail_level="compact")
+        self.assertNotIn("text", compact["sections"]["qualification"])
+        self.assertNotIn("untrusted", compact)
+
+        standard, _ = self.get(sections=["qualification", "outreach"],
+                               detail_level="standard")
+        self.assertEqual(
+            standard["sections"]["qualification"]["text"]["ggd_fit_summary"],
+            "Exports already",
+        )
+        # The paragraph-length fields are what full is for.
+        self.assertNotIn("ggd_draft_body",
+                         standard["sections"]["outreach"].get("text", {}))
+        self.assertIn("untrusted", standard)
+
+        full, _ = self.get(sections=["outreach"], detail_level="full")
+        self.assertEqual(full["sections"]["outreach"]["text"]["ggd_draft_body"],
+                         "Dear A. Fictional")
+
+    def test_an_unknown_section_is_refused_and_lists_the_real_ones(self):
+        payload, is_error = self.get(sections=["evidence"])
+        self.assertTrue(is_error)
+        self.assertIn("does not offer evidence", payload["message"])
+        self.assertIn("qualification", payload["message"])
+
+    def test_a_section_answer_never_carries_a_send_key(self):
+        payload, _ = self.get(sections=list(connector.OPPORTUNITY_SECTIONS),
+                              detail_level="full")
+        text = json.dumps(payload)
+        for secret in ("send_key", "last_send_key", "claimed_recipient",
+                       "approved_recipient"):
+            self.assertNotIn(secret, text)
+
+
+class Phase1PayloadSizeTests(unittest.TestCase):
+    """Recorded numbers, not intentions. Every byte here is re-read on every
+    turn it stays in the conversation."""
+
+    def test_a_ten_row_search_page_has_not_grown(self):
+        rows = [lead_row(id=4200 + n) for n in range(10)]
+        client = FakeOdoo(routes={
+            ("crm.lead", "search_count"): 37,
+            ("crm.lead", "search_read"): rows,
+        })
+        text = connector.call_tool(
+            "ggd_search_records", {"query": "fictional"}, client
+        )["content"][0]["text"]
+        # 6684 characters before Phase 1 and byte-for-byte the same after
+        # it: the default is still the compact projection, so the new filters
+        # and detail levels cost nothing in an answer that does not use them.
+        self.assertLess(len(text), 6800,
+                        "a compact search page grew to %d" % len(text))
+
+    def test_a_ten_row_report_page_stays_compact(self):
+        rows = [report_row(id=n, ggd_qualification_state="pending")
+                for n in range(1, 31)]
+        client = report_client(rows)
+        text = connector.call_tool(
+            "ggd_report",
+            {"report_type": "daily_action", "as_of": AS_OF, "limit": 10},
+            client,
+        )["content"][0]["text"]
+        # Ids and reason codes, no prose: a ten-row queue costs far less than
+        # a ten-row record page, which is the point of returning codes.
+        self.assertLess(len(text), 1200,
+                        "a ten-row work queue grew to %d" % len(text))
+        self.assertEqual(len(json.loads(text)["rows"]), 10)
+
+    def test_a_ten_row_data_quality_page_stays_compact(self):
+        rows = [report_row(id=n, ggd_source_url=False, website=False)
+                for n in range(1, 11)]
+        text = connector.call_tool(
+            "ggd_report",
+            {"report_type": "data_quality", "as_of": AS_OF, "limit": 10},
+            report_client(rows),
+        )["content"][0]["text"]
+        self.assertLess(len(text), 2000,
+                        "a ten-row quality page grew to %d" % len(text))
+
+    def test_a_report_omits_empty_values_and_never_echoes_the_request(self):
+        text = connector.call_tool(
+            "ggd_report",
+            {"report_type": "contact_coverage", "as_of": AS_OF,
+             "filters": {"city": "Hannover"}},
+            report_client([report_row()]),
+        )["content"][0]["text"]
+        self.assertNotIn("null", text)
+        self.assertNotIn("\n", text)
+        payload = json.loads(text)
+        self.assertNotIn("report_type_echo", payload)
+        self.assertEqual(payload["filters_applied"], {"city": "Hannover"})
 
 
 if __name__ == "__main__":

@@ -49,6 +49,16 @@ Ask in plain language. Some prompts that work:
 - "What is overdue? Show me the follow-up report."
 - "List the ten most overdue activities and who they are assigned to."
 
+**Reports and today's work**
+
+- "Show me the dashboard."
+- "Show today's work queue and why each company is on it."
+- "Contact coverage for Istanbul — how many have an email or a phone?"
+- "Run the data quality report and list what is missing."
+- "Which companies are ready to send to, and which are blocked?"
+- "Qualification report: average fit score and the confidence bands."
+- "Counts by industry, with the average fit score for each."
+
 **New leads (writes to Odoo — only when you ask)**
 
 - "Create a lead from https://www.fercelik.com/home, then save a sourced
@@ -64,7 +74,7 @@ Ask in plain language. Some prompts that work:
 The desktop app asks before running either write, provided your tool-approval
 setting is not `auto`. Check it under **Settings** in the desktop app; the
 `writes` mode prompts for anything not marked read-only, and this connector
-marks five tools read-only and two — `ggd_create_lead` and
+marks six tools read-only and two — `ggd_create_lead` and
 `ggd_save_qualification` — as writes.
 
 ### Reading the answers honestly
@@ -74,6 +84,20 @@ Every list answer carries `total_matching`, `returned` and `has_more`. If
 answer says which offset to ask for next. The pipeline report carries
 `complete`, and if it is false it says how many opportunities it could not add
 up. Ask for the numbers if the summary reads too confidently.
+
+`ggd_report` answers in the same spirit. Every report carries `as_of`,
+`timezone`, `complete`, `scanned`, `total_matching` and `warnings`, and
+`warnings` is present even when it is empty so that a silent answer is never
+mistaken for a clean one. Two habits are worth keeping:
+
+- **`complete: false` means the numbers are partial.** The report reads at
+  most 500 records in one pass and adds them up here rather than asking Odoo
+  to group, so past that it says how many it saw out of how many matched, and
+  the first warning tells you to narrow it with `date_from`, `date_to` or a
+  filter. It never rounds a partial scan up into a total.
+- **`unavailable` is not zero.** A metric the CRM cannot yet source comes back
+  under `unavailable` with the reason, never as `0`. See *What the reports
+  will not claim* below.
 
 ### Why the answers look terse
 
@@ -94,17 +118,115 @@ answer, `DEFAULT_LIMIT` and `DEFAULT_HISTORY` at the top of
 
 ---
 
-## The seven tools
+## The eight tools
 
 | Tool | Reads or writes | What it is for |
 | --- | --- | --- |
 | `ggd_connection_status` | read | Is Odoo up and does the key still work. Run it first when anything fails. |
 | `ggd_search_records` | read | Find opportunities, leads, companies or contacts. Returns ids. |
-| `ggd_get_opportunity` | read | One opportunity in full, with activities and chatter. |
+| `ggd_get_opportunity` | read | One opportunity, whole or by section, with activities and chatter. |
+| `ggd_report` | read | Twelve named reports over the pipeline. |
 | `ggd_pipeline_report` | read | Counts and expected revenue by stage, salesperson or qualification state. |
 | `ggd_followup_report` | read | Overdue Odoo activities, most overdue first. |
 | `ggd_create_lead` | **write** | Opens one new Target Identified opportunity from a company you researched. Refuses duplicates. |
 | `ggd_save_qualification` | **write** | Saves a fit assessment through the addon's own audited method. |
+
+### The reports
+
+`ggd_report` takes a `report_type` and nothing else is required. It also
+accepts a `date_from`/`date_to` window on the creation date, an `as_of` date,
+a `group_by` for the two grouped reports, `detail_level`, `limit`/`offset`,
+and a fixed `filters` object holding only `salesperson`, `stage`, `country`,
+`city`, `industry`, `qualification_state`, `min_fit_score`, `max_fit_score`
+and `do_not_contact`. Any other key is refused by name before a request is
+sent — there is no Odoo domain, field list, model or method here.
+
+| `report_type` | What it counts |
+| --- | --- |
+| `dashboard` | One snapshot: open pipeline and revenue by stage, qualification states, contact coverage, approvals and send-readiness, delivery and replies, review queues, overdue work. |
+| `daily_action` | Today's queue. One row per opportunity with reason codes, most urgent reason first, then id. Do-not-contact records are counted, never queued. |
+| `pipeline` | Counts and expected/weighted revenue grouped by `stage`, `salesperson` or `qualification_state`. |
+| `qualification` | Counts by state, and average, median and banded scores over the **scored** records only. |
+| `contact_coverage` | Named contact, email, phone, either, neither, and how many carry a recorded contact basis. |
+| `outreach_readiness` | Qualified, contact present, draft ready, draft approved, human approved, send-ready, suppressed, review-blocked. |
+| `activity` | Open Odoo activities by owner, type and due bucket, with drill-down rows. |
+| `reply_delivery` | Confirmed sends, replies, reply categories, bounces, and unresolved delivery/reply review. |
+| `industry_market` | Counts, expected revenue and average fit score grouped by `country`, `city` or `industry`. |
+| `data_quality` | Counts by issue code, plus rows of ids and their codes. |
+| `conversion_funnel` | Unavailable — see below. |
+| `usage_efficiency` | Unavailable — see below. |
+
+Reason codes in `daily_action`: `needs_human_review`, `reply_review`,
+`automation_review`, `overdue_activity`, `needs_qualification`,
+`needs_contact`, `needs_draft`.
+
+Issue codes in `data_quality`: `missing_company_name`, `missing_source_url`,
+`missing_website`, `missing_named_contact`, `missing_contact_method`,
+`missing_owner`, `qualification_missing`, `qualification_needs_review`,
+`automation_needs_review`, `invalid_email_shape`, `invalid_url_shape`,
+`suppressed_but_approved`, `approved_version_mismatch`,
+`incomplete_send_audit`, `overdue_activity`.
+
+`send_ready` is a reading of the outbound gate, never a grant of it: approved
+by a human, not Do-not-contact, draft status `approved` with the approved
+version still matching the current one, and an email address present. A
+contact basis is recorded and reported but is deliberately not one of the
+conditions.
+
+### What the reports will not claim
+
+Four things the CRM cannot source honestly today. Each is reported as
+unavailable, with the reason, rather than as a zero or an estimate:
+
+| Missing metric | Why |
+| --- | --- |
+| `conversion_funnel` | Nothing records stage *changes*, only the stage a record sits in now. A snapshot of where things sit is not a conversion rate, so the whole report returns `available: false`. |
+| `usage_efficiency` | No per-call telemetry is stored, and this connector cannot see ChatGPT's token usage. Payload bytes are not billed tokens and are not reported as them. |
+| `contact_coverage.source_backed` | Contact provenance — source URL, retrieval time, contact kind — is not stored yet, so coverage cannot be split into source-backed and unsourced. |
+| `reply_delivery.bounce_hardness` | Odoo records one `bounced` state; hard and soft bounces are not distinguished. |
+
+Two data-quality codes are named in the same way rather than guessed:
+`qualification_stale`, because no staleness horizon is agreed or stored, and
+`possible_duplicate`, because deciding it needs a whole-table comparison that
+a capped scan would answer with false negatives.
+
+One more denominator worth knowing: `ggd_fit_score` is an integer, so a lead
+nobody has assessed stores `0`. Every score average, median and band divides
+by the **scored** count — records whose qualification state is `ready`,
+`review` or `failed` — never by the scan, because averaging an unassessed
+record's `0` would be an invented number. For the same reason a
+`max_fit_score` filter warns that it matches unscored records too.
+
+### Narrowing a search
+
+`ggd_search_records` takes the same fixed vocabulary: `created_from`,
+`created_to`, `updated_from`, `updated_to`, `country`, `city`, `industry`,
+`qualification_state`, `min_fit_score`, `max_fit_score`, `has_email`,
+`has_phone`, `has_named_contact`, `has_contact_method`, `do_not_contact`,
+`outreach_approved`, `draft_status`, `delivery_status`,
+`has_overdue_activity`, `needs_review`. Dates are `YYYY-MM-DD`.
+
+The GGD filters only exist on opportunities and leads. Asking for one while
+searching companies or contacts is refused by name rather than quietly
+dropped, because a silently ignored filter turns a narrow question into a
+wide answer that looks narrow.
+
+`detail_level` defaults to `compact`, which is exactly what this tool has
+always returned. `standard` adds the research and next-step fields; `full`
+returns every field including the free text and is capped at 10 rows a page.
+
+### Reading one opportunity by section
+
+`ggd_get_opportunity` still returns the whole record when you pass only an
+id — nothing about the existing answer changed. Pass `sections` or
+`detail_level` and it returns only what you asked for, and only fetches that:
+`identity`, `qualification`, `contact`, `outreach`, `delivery`, `reply`,
+`activities`, `chatter`. The default is everything except `activities` and
+`chatter`, both of which cost an extra round trip and are opt-in.
+
+`detail_level` here means `compact` (no free text at all), `standard` (the
+short text fields) or `full` (adds the paragraph-length `description` and
+`ggd_draft_body`).
 
 ### What `ggd_create_lead` does, and stops at
 
@@ -261,7 +383,7 @@ cp ~/.codex/config.toml ~/.codex/config.toml.bak-$(date +%Y%m%d)
 ```
 
 Only non-secret settings are stored there. Restart the ChatGPT desktop app,
-then check **Settings > MCP servers**: `ggd_odoo` should be listed with seven
+then check **Settings > MCP servers**: `ggd_odoo` should be listed with eight
 tools.
 
 ### 5. Prove it

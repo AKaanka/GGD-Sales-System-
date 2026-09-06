@@ -160,7 +160,7 @@ def main():
           json.dumps(init)[:200])
     tools = server.request("tools/list")["result"]["tools"]
     names = sorted(t["name"] for t in tools)
-    check("seven tools are advertised", len(tools) == 7, ", ".join(names))
+    check("eight tools are advertised", len(tools) == 8, ", ".join(names))
     writes = [t["name"] for t in tools
               if not t["annotations"].get("readOnlyHint")]
     check("exactly two tools are marked as writes",
@@ -250,6 +250,69 @@ def main():
     if followup.get("records"):
         print("        %d of %d overdue activities on this page"
               % (followup["returned"], followup["total_matching"]))
+
+    for report_type in ("dashboard", "daily_action", "pipeline",
+                        "qualification", "contact_coverage",
+                        "outreach_readiness", "activity", "reply_delivery",
+                        "industry_market", "data_quality"):
+        report, is_error = server.call(
+            "ggd_report", {"report_type": report_type, "limit": 10}
+        )
+        ok = check("ggd_report %s answers against live data" % report_type,
+                   not is_error and report.get("report_type") == report_type,
+                   json.dumps(report)[:300])
+        if ok:
+            # Every report must date itself, say how much of the truth it is
+            # showing, and carry a warnings list even when it is empty.
+            check("  ... with a date, a timezone and completeness",
+                  report.get("as_of") and report.get("timezone")
+                  and isinstance(report.get("complete"), bool)
+                  and isinstance(report.get("warnings"), list),
+                  json.dumps(report)[:300])
+    dashboard, _ = server.call("ggd_report", {"report_type": "dashboard"})
+    if dashboard.get("metrics"):
+        print("        dashboard: %s scanned of %s matching, complete=%s"
+              % (dashboard.get("scanned"), dashboard.get("total_matching"),
+                 dashboard.get("complete")))
+
+    for unavailable in ("conversion_funnel", "usage_efficiency"):
+        report, is_error = server.call(
+            "ggd_report", {"report_type": unavailable}
+        )
+        check("%s reports itself unavailable rather than zero" % unavailable,
+              not is_error and report.get("available") is False
+              and bool(report.get("reason")) and "metrics" not in report,
+              json.dumps(report)[:300])
+
+    coverage, _ = server.call("ggd_report",
+                              {"report_type": "contact_coverage"})
+    check("contact coverage marks source-backed coverage unavailable",
+          "source_backed" in (coverage.get("unavailable") or {}),
+          json.dumps(coverage)[:300])
+
+    filtered, is_error = server.call("ggd_search_records", {
+        "query": "GGD-MCP-TEST", "qualification_state": "pending",
+        "has_email": True, "limit": 10,
+    })
+    check("the fixed search filters reach Odoo without a domain",
+          not is_error and "total_matching" in filtered,
+          json.dumps(filtered)[:300])
+    wrong_model, is_error = server.call("ggd_search_records", {
+        "record_type": "contact", "qualification_state": "ready",
+    })
+    check("a GGD filter on a contact is refused, not silently dropped",
+          is_error and wrong_model.get("error") == "invalid_argument",
+          json.dumps(wrong_model)[:300])
+
+    sections, is_error = server.call("ggd_get_opportunity", {
+        "opportunity_id": lead_id, "sections": ["identity", "qualification"],
+    })
+    check("an opportunity reads back by section",
+          not is_error and sorted(sections.get("sections") or {})
+          == ["identity", "qualification"],
+          json.dumps(sections)[:300])
+    check("an unrequested section is absent, not empty",
+          "chatter" not in (sections.get("sections") or {}))
 
     section("6. Creating a lead from a researched company")
     # A fresh name per run. The teardown archives fixtures rather than

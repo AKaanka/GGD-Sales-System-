@@ -254,6 +254,134 @@ PARTNER_TEXT_FIELDS = ("comment",)
 PIPELINE_GROUPINGS = ("stage", "salesperson", "qualification_state")
 RECORD_TYPES = ("opportunity", "lead", "company", "contact")
 
+# --------------------------------------------------------------------------
+# Reporting vocabulary
+# --------------------------------------------------------------------------
+
+# Odoo's JSON-2 endpoint stores and returns datetimes in UTC and this
+# connector does not convert them, so every report says UTC rather than
+# leaving a reader to guess which midnight a date boundary meant.
+REPORT_TIMEZONE = "UTC"
+
+REPORT_TYPES = (
+    "dashboard", "daily_action", "pipeline", "qualification",
+    "contact_coverage", "outreach_readiness", "activity", "reply_delivery",
+    "industry_market", "data_quality", "conversion_funnel", "usage_efficiency",
+)
+
+# Selection values exactly as the addon defines them, so a filter that names
+# a state Odoo has never heard of is refused here rather than by the server.
+QUALIFICATION_STATES = ("pending", "ready", "review", "failed")
+DRAFT_STATUSES = ("empty", "ready", "approved", "sent")
+DELIVERY_STATUSES = ("none", "claimed", "accepted", "bounced")
+
+DETAIL_LEVELS = ("compact", "standard", "full")
+MARKET_GROUPINGS = ("country", "city", "industry")
+
+OPPORTUNITY_SECTIONS = (
+    "identity", "qualification", "contact", "outreach", "delivery", "reply",
+    "activities", "chatter",
+)
+
+# Sections a caller gets when they ask for a detail level but name no
+# sections. Chatter and activities stay off this list: both cost an extra
+# Odoo round trip and chatter is the one section that carries long free text.
+DEFAULT_SECTIONS = (
+    "identity", "qualification", "contact", "outreach", "delivery", "reply",
+)
+
+# The same bargain PIPELINE_SCAN_CAP strikes: totals are added up in this
+# process from search_read rows, never by asking Odoo to group, so past the
+# cap a report says it is partial instead of implying it is the whole truth.
+REPORT_SCAN_CAP = 500
+ACTIVITY_SCAN_CAP = 500
+
+# The five review flags the addon raises. "Needs review" anywhere in a report
+# means at least one of them is true.
+REVIEW_FLAG_FIELDS = (
+    "ggd_automation_needs_review", "ggd_qualification_needs_review",
+    "ggd_reply_needs_review", "ggd_delivery_needs_review",
+    "ggd_workflow_needs_review",
+)
+
+# One field list for every report. None of it is returned as written: a
+# report answers in counts, plus ids and reason codes in its rows.
+# ggd_approved_draft_version is read for one comparison and never echoed;
+# no send key or credential field appears here at all.
+REPORT_SCAN_FIELDS = [
+    "id", "partner_name", "contact_name", "email_from", "phone", "website",
+    "city", "country_id", "user_id", "stage_id", "expected_revenue",
+    "probability", "create_date", "activity_date_deadline",
+    "ggd_industry", "ggd_source_url", "ggd_fit_score", "ggd_ai_confidence",
+    "ggd_qualification_state", "ggd_contact_basis", "ggd_do_not_contact",
+    "ggd_outreach_approved", "ggd_draft_status", "ggd_draft_version",
+    "ggd_approved_draft_version", "ggd_delivery_status",
+    "ggd_send_confirmed_at", "ggd_last_sent_recipient", "ggd_reply_category",
+    "ggd_last_reply_received_at",
+] + list(REVIEW_FLAG_FIELDS)
+
+# Work-queue reason codes, most urgent first. This order is the queue's sort
+# order, which is what makes the same pipeline produce the same queue twice.
+DAILY_ACTION_REASONS = (
+    "needs_human_review", "reply_review", "automation_review",
+    "overdue_activity", "needs_qualification", "needs_contact", "needs_draft",
+)
+
+# Issue codes today's fields can decide reliably, in report order.
+DATA_QUALITY_CODES = (
+    "missing_company_name", "missing_source_url", "missing_website",
+    "missing_named_contact", "missing_contact_method", "missing_owner",
+    "qualification_missing", "qualification_needs_review",
+    "automation_needs_review", "invalid_email_shape", "invalid_url_shape",
+    "suppressed_but_approved", "approved_version_mismatch",
+    "incomplete_send_audit", "overdue_activity",
+)
+
+# The codes the ticket names that today's fields cannot decide, each with the
+# reason. Reported as unavailable, never guessed at.
+DATA_QUALITY_UNSUPPORTED = {
+    "qualification_stale": (
+        "no staleness horizon is agreed or stored, so 'stale' would be an "
+        "invented threshold"
+    ),
+    "possible_duplicate": (
+        "needs a whole-table comparison; a capped scan would report false "
+        "negatives as clean records"
+    ),
+}
+
+# Reports whose source data does not exist yet. Each returns available=false
+# and this reason. Neither is ever answered with a zero or an estimate.
+REPORT_UNAVAILABLE = {
+    "conversion_funnel": (
+        "stage-change history is not captured, so only a current-stage "
+        "snapshot exists. A snapshot of where records sit today is not a "
+        "conversion rate and is not reported as one."
+    ),
+    "usage_efficiency": (
+        "no per-call telemetry is stored, and this connector cannot observe "
+        "ChatGPT's token usage. Payload bytes are not billed tokens and are "
+        "not reported as them."
+    ),
+}
+
+# Metrics a report is asked for but cannot source yet, per report type.
+REPORT_METRIC_UNAVAILABLE = {
+    "contact_coverage": {
+        "source_backed": (
+            "contact provenance (source URL, retrieval time, contact kind) "
+            "is not stored yet, so coverage cannot be split into "
+            "source-backed and unsourced"
+        ),
+    },
+    "reply_delivery": {
+        "bounce_hardness": (
+            "Odoo records one 'bounced' delivery state; hard and soft "
+            "bounces are not distinguished"
+        ),
+    },
+}
+
 
 # --------------------------------------------------------------------------
 # Errors
@@ -932,6 +1060,204 @@ def _search_target(record_type):
     return "res.partner", [("is_company", "=", False)]
 
 
+# Fixed search filters, and the models each one can honestly ask about. A
+# filter naming a GGD field cannot be answered about a res.partner, so it is
+# refused by name rather than quietly ignored - a filter that is dropped in
+# silence turns "no Istanbul sellers with an overdue task" into a claim the
+# search never actually made.
+SEARCH_DATE_FILTERS = (
+    ("created_from", "create_date", ">="),
+    ("created_to", "create_date", "<="),
+    ("updated_from", "write_date", ">="),
+    ("updated_to", "write_date", "<="),
+)
+
+SEARCH_SHARED_FILTERS = (
+    "created_from", "created_to", "updated_from", "updated_to",
+    "country", "city", "has_email", "has_phone", "has_contact_method",
+)
+
+SEARCH_LEAD_ONLY_FILTERS = (
+    "industry", "qualification_state", "min_fit_score", "max_fit_score",
+    "has_named_contact", "do_not_contact", "outreach_approved",
+    "draft_status", "delivery_status", "has_overdue_activity", "needs_review",
+)
+
+SEARCH_FILTER_KEYS = SEARCH_SHARED_FILTERS + SEARCH_LEAD_ONLY_FILTERS
+
+# Field names per model for the filters both models can answer.
+SEARCH_FIELD_MAP = {
+    "crm.lead": {"email": "email_from", "phone": "phone", "city": "city",
+                 "country": "country_id.name"},
+    "res.partner": {"email": "email", "phone": "phone", "city": "city",
+                    "country": "country_id.name"},
+}
+
+# Detail levels for a lead result. compact is what this tool has always
+# returned, so the default keeps every existing caller's answer identical;
+# the richer levels are opt-in and paid for only when asked for.
+SEARCH_STANDARD_EXTRA_FIELDS = [
+    "function", "team_id", "date_deadline", "ggd_industry", "ggd_source_url",
+    "ggd_ai_last_analyzed_at", "ggd_contact_basis", "ggd_reply_category",
+    "ggd_send_confirmed_at", "ggd_last_reply_received_at",
+    "ggd_suggested_follow_up_at", "ggd_qualification_needs_review",
+    "ggd_reply_needs_review", "ggd_delivery_needs_review",
+    "ggd_workflow_needs_review", "activity_date_deadline",
+    "activity_summary", "activity_type_id", "activity_user_id",
+    "activity_state",
+]
+
+SEARCH_LEVEL_FIELDS = {
+    "compact": LEAD_SUMMARY_FIELDS,
+    "standard": LEAD_SUMMARY_FIELDS + SEARCH_STANDARD_EXTRA_FIELDS,
+    "full": LEAD_FIELDS,
+}
+
+# full carries every field including the free text, so a page of fifty of
+# them is a very expensive way to ask a question. Ten at a time, and the
+# result says the ceiling moved.
+FULL_DETAIL_LIMIT = DEFAULT_LIMIT
+
+
+def _bool_filter(args, key):
+    value = args.get(key)
+    return None if value is None else bool(value)
+
+
+def _presence_leaf(field, wanted):
+    return (field, "!=", False) if wanted else (field, "=", False)
+
+
+def overdue_lead_ids(client, as_of):
+    """(ids, truncated) for leads with an activity past its deadline.
+
+    Read from the activity table rather than filtered on crm.lead, because
+    the lead's own deadline field is computed rather than stored. Bounded, so
+    a very large backlog is reported as truncated instead of silently
+    answering a different question.
+    """
+    domain = [("res_model", "=", "crm.lead"),
+              ("date_deadline", "<", as_of.isoformat())]
+    total = client.search_count("mail.activity", domain)
+    rows = client.search_read(
+        "mail.activity", domain, ["id", "res_id"], limit=ACTIVITY_SCAN_CAP,
+        order="date_deadline asc, id asc",
+    )
+    ids = sorted(set(r.get("res_id") for r in rows if r.get("res_id")))
+    return ids, total > len(rows)
+
+
+def search_filters(client, args, model, as_of):
+    """(domain, warnings) for the fixed filters. Nothing here accepts a
+    domain, a field name or an operator from the caller."""
+    supplied = [key for key in SEARCH_FILTER_KEYS if args.get(key) is not None]
+    if model != "crm.lead":
+        refused = [k for k in supplied if k in SEARCH_LEAD_ONLY_FILTERS]
+        if refused:
+            raise InvalidArgument(
+                "%s applies to opportunities and leads only; companies and "
+                "contacts do not carry %s."
+                % (", ".join(refused),
+                   "those fields" if len(refused) > 1 else "that field")
+            )
+    fields = SEARCH_FIELD_MAP[model]
+    domain = []
+    warnings = []
+
+    for key, field, operator in SEARCH_DATE_FILTERS:
+        value = parse_date(args.get(key), key)
+        if value is None:
+            continue
+        stamp = value.isoformat() + (" 23:59:59" if operator == "<=" else " 00:00:00")
+        domain.append((field, operator, stamp))
+    for early, late in (("created_from", "created_to"),
+                        ("updated_from", "updated_to")):
+        low = parse_date(args.get(early), early)
+        high = parse_date(args.get(late), late)
+        if low and high and low > high:
+            raise InvalidArgument("%s must not be after %s." % (early, late))
+
+    for key, field in (("country", fields["country"]), ("city", fields["city"])):
+        text = optional_text(args.get(key))
+        if text:
+            domain.append((field, "ilike", text))
+
+    email_wanted = _bool_filter(args, "has_email")
+    if email_wanted is not None:
+        domain.append(_presence_leaf(fields["email"], email_wanted))
+    phone_wanted = _bool_filter(args, "has_phone")
+    if phone_wanted is not None:
+        domain.append(_presence_leaf(fields["phone"], phone_wanted))
+    any_wanted = _bool_filter(args, "has_contact_method")
+    if any_wanted is not None:
+        if any_wanted:
+            domain += or_domain([(fields["email"], "!=", False),
+                                 (fields["phone"], "!=", False)])
+        else:
+            domain.append((fields["email"], "=", False))
+            domain.append((fields["phone"], "=", False))
+
+    if model != "crm.lead":
+        return domain, warnings
+
+    text = optional_text(args.get("industry"))
+    if text:
+        domain.append(("ggd_industry", "ilike", text))
+    if args.get("qualification_state") is not None:
+        domain.append(("ggd_qualification_state", "=", choice(
+            args.get("qualification_state"), QUALIFICATION_STATES,
+            "qualification_state",
+        )))
+    if args.get("draft_status") is not None:
+        domain.append(("ggd_draft_status", "=", choice(
+            args.get("draft_status"), DRAFT_STATUSES, "draft_status",
+        )))
+    if args.get("delivery_status") is not None:
+        domain.append(("ggd_delivery_status", "=", choice(
+            args.get("delivery_status"), DELIVERY_STATUSES, "delivery_status",
+        )))
+
+    low = args.get("min_fit_score")
+    high = args.get("max_fit_score")
+    if low is not None:
+        low = require_int(low, "min_fit_score", 0, 100)
+        domain.append(("ggd_fit_score", ">=", low))
+    if high is not None:
+        high = require_int(high, "max_fit_score", 0, 100)
+        domain.append(("ggd_fit_score", "<=", high))
+        warnings += score_filter_warnings({"max_fit_score": high})
+    if low is not None and high is not None and low > high:
+        raise InvalidArgument("min_fit_score must not be above max_fit_score.")
+
+    named = _bool_filter(args, "has_named_contact")
+    if named is not None:
+        domain.append(_presence_leaf("contact_name", named))
+    for key, field in (("do_not_contact", "ggd_do_not_contact"),
+                       ("outreach_approved", "ggd_outreach_approved")):
+        value = _bool_filter(args, key)
+        if value is not None:
+            domain.append((field, "=", value))
+
+    review = _bool_filter(args, "needs_review")
+    if review is not None:
+        if review:
+            domain += or_domain([(f, "=", True) for f in REVIEW_FLAG_FIELDS])
+        else:
+            domain += [(f, "=", False) for f in REVIEW_FLAG_FIELDS]
+
+    overdue = _bool_filter(args, "has_overdue_activity")
+    if overdue is not None:
+        ids, truncated = overdue_lead_ids(client, as_of)
+        domain.append(("id", "in" if overdue else "not in", ids))
+        if truncated:
+            warnings.append(
+                "more than %d overdue activities exist; has_overdue_activity "
+                "was matched against the %d oldest only, so this page may be "
+                "incomplete" % (ACTIVITY_SCAN_CAP, ACTIVITY_SCAN_CAP)
+            )
+    return domain, warnings
+
+
 def tool_search_records(client, args):
     record_type = choice(
         args.get("record_type"), RECORD_TYPES, "record_type",
@@ -941,11 +1267,21 @@ def tool_search_records(client, args):
     stage = optional_text(args.get("stage"))
     salesperson = optional_text(args.get("salesperson"))
     include_archived = bool(args.get("include_archived"))
-    limit, clamped = clamp_limit(args.get("limit"))
+    detail = choice(
+        args.get("detail_level"), DETAIL_LEVELS, "detail_level",
+        default="compact",
+    )
+    as_of = parse_date(args.get("as_of"), "as_of") or report_today()
+    limit, clamped = clamp_limit(
+        args.get("limit"),
+        maximum=FULL_DETAIL_LIMIT if detail == "full" else MAX_LIMIT,
+    )
     offset = check_offset(args.get("offset"))
 
     model, domain = _search_target(record_type)
     domain = list(domain)
+    filter_domain, warnings = search_filters(client, args, model, as_of)
+    domain += filter_domain
     if query:
         if model == "crm.lead":
             searchable = ["name", "partner_name", "contact_name",
@@ -964,7 +1300,7 @@ def tool_search_records(client, args):
 
     context = {"active_test": False} if include_archived else None
     if model == "crm.lead":
-        fields = LEAD_SUMMARY_FIELDS
+        fields = SEARCH_LEVEL_FIELDS[detail]
         order = "write_date desc, id desc"
     else:
         fields = PARTNER_FIELDS
@@ -976,16 +1312,25 @@ def tool_search_records(client, args):
         context=context,
     )
     if model == "crm.lead":
-        records = [shape_lead(row, LEAD_SUMMARY_FIELDS) for row in rows]
+        records = [shape_lead(row, fields) for row in rows]
     else:
         records = [shape_partner(row) for row in rows]
+
+    if clamped and detail == "full":
+        warnings.append(
+            "detail_level full is capped at %d rows a page because every "
+            "field including the free text comes with it"
+            % FULL_DETAIL_LIMIT
+        )
 
     # No echo of record_type or query: the call that asked for them is in the
     # caller's context already. includes_archived appears only when it is on,
     # because that one changes how the answer should be read.
     return list_result(
-        records, total, offset, limit, clamped,
+        records, total, offset, limit, clamped and detail != "full",
         includes_archived=True if include_archived else None,
+        detail_level=detail if detail != "compact" else None,
+        warnings=warnings or None,
     )
 
 
@@ -1005,10 +1350,93 @@ def _history_limit(value):
     return number, False
 
 
-def tool_get_opportunity(client, args):
-    oid = require_int(args.get("opportunity_id"), "opportunity_id", minimum=1)
-    history_limit, history_clamped = _history_limit(args.get("history_limit"))
+# What each section is made of, taken from the record shape_lead already
+# builds. The GGD keys are flattened into the section rather than nested
+# under "ggd": inside a section named "outreach", a further "ggd" wrapper is
+# a level of nesting that tells a reader nothing.
+SECTION_RECORD_KEYS = {
+    "identity": ("id", "record", "kind", "name", "company_name", "stage",
+                 "salesperson", "sales_team", "priority", "probability",
+                 "expected_revenue", "expected_close", "created",
+                 "last_change", "stage_changed", "archived", "lost_reason",
+                 "website", "city", "country"),
+    "contact": ("contact_name", "job_title", "email", "phone", "website",
+                "city", "country", "customer"),
+}
 
+SECTION_GGD_KEYS = {
+    "qualification": ("qualification_state", "fit_score", "ai_confidence",
+                      "ai_last_analyzed_at", "industry", "source_url",
+                      "qualification_needs_review", "needs_review"),
+    "contact": ("do_not_contact", "contact_basis", "contact_basis_verified_at"),
+    "outreach": ("outreach_approved", "outreach_approved_at",
+                 "outreach_approved_by", "draft_status", "draft_version",
+                 "draft_language"),
+    "delivery": ("delivery_status", "send_confirmed_at", "last_sent_recipient",
+                 "last_message_date", "delivery_needs_review"),
+    "reply": ("reply_category", "last_reply_received_at",
+              "suggested_follow_up_at", "reply_needs_review",
+              "workflow_needs_review"),
+}
+
+SECTION_TEXT_KEYS = {
+    "identity": ("description",),
+    "qualification": ("ggd_fit_summary", "ggd_personalization_angle",
+                      "ggd_product_focus", "ggd_recommended_buyer_roles"),
+    "contact": ("ggd_contact_basis_note",),
+    "outreach": ("ggd_draft_subject", "ggd_draft_body"),
+    "delivery": ("ggd_last_sent_subject",),
+    "reply": ("ggd_reply_summary", "ggd_suggested_next_action",
+              "ggd_automation_review_summary"),
+}
+
+# The two that are paragraphs rather than sentences. They arrive at
+# detail_level full and are left out of standard, which is what makes
+# standard worth asking for.
+LONG_TEXT_KEYS = frozenset(["description", "ggd_draft_body"])
+
+
+def _section_list(value):
+    if value is None:
+        return list(DEFAULT_SECTIONS)
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)) or not value:
+        raise InvalidArgument(
+            "sections must be a non-empty list of section names."
+        )
+    unknown = sorted(set(value) - set(OPPORTUNITY_SECTIONS))
+    if unknown:
+        raise InvalidArgument(
+            "sections does not offer %s. Choose from: %s."
+            % (", ".join(unknown), ", ".join(OPPORTUNITY_SECTIONS))
+        )
+    wanted = set(value)
+    return [name for name in OPPORTUNITY_SECTIONS if name in wanted]
+
+
+def _section_view(record, section, detail):
+    out = {}
+    for key in SECTION_RECORD_KEYS.get(section, ()):
+        if key in record:
+            out[key] = record[key]
+    source = record.get("ggd") or {}
+    for key in SECTION_GGD_KEYS.get(section, ()):
+        if key in source:
+            out[key] = source[key]
+    if detail != "compact":
+        available = record.get("text") or {}
+        text = dict(
+            (key, available[key])
+            for key in SECTION_TEXT_KEYS.get(section, ())
+            if key in available and (detail == "full" or key not in LONG_TEXT_KEYS)
+        )
+        if text:
+            out["text"] = text
+    return out
+
+
+def _opportunity_row(client, oid):
     rows = client.search_read(
         "crm.lead", [("id", "=", oid)], LEAD_FIELDS, limit=1,
         context={"active_test": False},
@@ -1019,7 +1447,81 @@ def tool_get_opportunity(client, args):
             kind="not_found",
             hint="Find the right id with ggd_search_records first.",
         )
-    record = shape_lead(rows[0], LEAD_FIELDS)
+    return rows[0]
+
+
+def _opportunity_chatter(client, oid, args):
+    history_limit, clamped = _history_limit(args.get("history_limit"))
+    domain = [("model", "=", "crm.lead"), ("res_id", "=", oid)]
+    total = client.search_count("mail.message", domain)
+    messages = []
+    if history_limit:
+        messages = client.search_read(
+            "mail.message", domain, MESSAGE_FIELDS,
+            limit=history_limit, order="date desc, id desc",
+        )
+    return {
+        "messages": [shape_message(m) for m in messages],
+        "returned": len(messages),
+        "total_in_chatter": total,
+        "has_more": len(messages) < total,
+        "order": "newest first",
+        "limit_note": ("history_limit capped at %d" % MAX_HISTORY
+                       if clamped else None),
+    }
+
+
+def _opportunity_sections(client, args, oid):
+    """The section-based answer: only what was asked for is fetched, so a
+    caller who wants the qualification does not pay for the chatter."""
+    detail = choice(
+        args.get("detail_level"), DETAIL_LEVELS, "detail_level",
+        default="compact",
+    )
+    wanted = _section_list(args.get("sections"))
+    record = shape_lead(_opportunity_row(client, oid), LEAD_FIELDS)
+
+    sections = {}
+    for name in wanted:
+        if name == "activities":
+            activities = client.search_read(
+                "mail.activity",
+                [("res_model", "=", "crm.lead"), ("res_id", "=", oid)],
+                ACTIVITY_FIELDS, limit=MAX_HISTORY,
+                order="date_deadline asc, id asc",
+            )
+            sections["activities"] = {
+                "open": [shape_activity(a) for a in activities],
+                "next": record.get("next_activity"),
+            }
+        elif name == "chatter":
+            sections["chatter"] = _opportunity_chatter(client, oid, args)
+        else:
+            sections[name] = _section_view(record, name, detail)
+
+    out = {
+        "opportunity_id": oid,
+        "record": "crm.lead,%s" % oid,
+        "detail_level": detail,
+        "sections": sections,
+    }
+    if carries_text([sections.get(name) for name in sections]) or (
+            sections.get("chatter", {}).get("messages")
+            or sections.get("activities", {}).get("open")):
+        out["untrusted"] = DATA_SAFETY_NOTE
+    return out
+
+
+def tool_get_opportunity(client, args):
+    oid = require_int(args.get("opportunity_id"), "opportunity_id", minimum=1)
+    if args.get("sections") is not None or args.get("detail_level") is not None:
+        return _opportunity_sections(client, args, oid)
+    # Neither new argument supplied: the whole record, exactly as this tool
+    # has always answered, down to the key order. An existing caller cannot
+    # tell that sections were added.
+    history_limit, history_clamped = _history_limit(args.get("history_limit"))
+
+    record = shape_lead(_opportunity_row(client, oid), LEAD_FIELDS)
 
     activity_domain = [("res_model", "=", "crm.lead"), ("res_id", "=", oid)]
     activities = client.search_read(
@@ -1213,6 +1715,917 @@ def tool_followup_report(client, args):
             "Do-not-contact opportunities"
         ) if suppressed else None,
     )
+
+
+# --------------------------------------------------------------------------
+# Reporting helpers
+#
+# Everything below is a pure function of a scanned row, so the arithmetic a
+# report claims can be tested without Odoo, a socket or a key.
+# --------------------------------------------------------------------------
+
+def report_today():
+    """Reports date in UTC because Odoo answers in UTC; see REPORT_TIMEZONE."""
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def has_value(row, field):
+    """Odoo sends false for an unset value of any type, and '' for a char
+    someone cleared, so neither counts as the company having published one."""
+    value = row.get(field)
+    return not (value is None or value is False or value == "")
+
+
+def flag(row, field):
+    return bool(row.get(field))
+
+
+def is_scored(row):
+    """Whether a fit score exists at all.
+
+    ggd_fit_score is an Integer, so an unscored lead stores 0 and the score
+    itself cannot tell the two apart. The qualification state can, and it is
+    the addon's own answer, so it is the denominator every score metric uses.
+    Averaging a pending record's 0 would drag the mean down with a number
+    nobody ever assessed.
+    """
+    return scalar(row.get("ggd_qualification_state")) in ("ready", "review", "failed")
+
+
+def needs_review(row):
+    return any(flag(row, field) for field in REVIEW_FLAG_FIELDS)
+
+
+def has_contact_method(row):
+    return has_value(row, "email_from") or has_value(row, "phone")
+
+
+def is_overdue(row, as_of):
+    """From the row's own next-activity deadline, read rather than filtered:
+    crm.lead computes that field instead of storing it."""
+    deadline = row.get("activity_date_deadline")
+    if not deadline:
+        return False
+    try:
+        due = datetime.datetime.strptime(str(deadline)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return due < as_of
+
+
+def median(values):
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(float(ordered[middle]), 2)
+    return round((ordered[middle - 1] + ordered[middle]) / 2.0, 2)
+
+
+def mean(values):
+    if not values:
+        return None
+    return round(sum(values) / float(len(values)), 2)
+
+
+def score_band(score):
+    for edge, name in ((25, "0-24"), (50, "25-49"), (70, "50-69"), (85, "70-84")):
+        if score < edge:
+            return name
+    return "85-100"
+
+
+def confidence_band(value):
+    """0.70 is the addon's own review threshold, so the bands break there."""
+    if value < 0.70:
+        return "below_0.70"
+    if value < 0.90:
+        return "0.70-0.89"
+    return "0.90-1.00"
+
+
+def tally(counts, key):
+    counts[key] = counts.get(key, 0) + 1
+
+
+def looks_like_url(value):
+    text = optional_text(value)
+    if not text or not text.lower().startswith(("http://", "https://")):
+        return False
+    parts = urllib.parse.urlsplit(text)
+    return bool(parts.netloc) and "." in parts.netloc
+
+
+def data_quality_codes(row, as_of):
+    """Every issue today's fields can decide about one opportunity.
+
+    Codes are appended in DATA_QUALITY_CODES order so the same record always
+    reports the same list. Anything this cannot decide is absent from here
+    and named in DATA_QUALITY_UNSUPPORTED instead of being guessed.
+    """
+    codes = []
+    if not has_value(row, "partner_name"):
+        codes.append("missing_company_name")
+    if not has_value(row, "ggd_source_url"):
+        codes.append("missing_source_url")
+    if not has_value(row, "website"):
+        codes.append("missing_website")
+    if not has_value(row, "contact_name"):
+        codes.append("missing_named_contact")
+    if not has_contact_method(row):
+        codes.append("missing_contact_method")
+    if not row.get("user_id"):
+        codes.append("missing_owner")
+    if scalar(row.get("ggd_qualification_state")) in (None, "pending"):
+        codes.append("qualification_missing")
+    if flag(row, "ggd_qualification_needs_review"):
+        codes.append("qualification_needs_review")
+    if flag(row, "ggd_automation_needs_review"):
+        codes.append("automation_needs_review")
+    email = optional_text(row.get("email_from"))
+    if email and not EMAIL_RE.match(email.lower()):
+        codes.append("invalid_email_shape")
+    for field in ("website", "ggd_source_url"):
+        if has_value(row, field) and not looks_like_url(row.get(field)):
+            codes.append("invalid_url_shape")
+            break
+    if flag(row, "ggd_do_not_contact") and flag(row, "ggd_outreach_approved"):
+        codes.append("suppressed_but_approved")
+    if flag(row, "ggd_outreach_approved"):
+        # Approval is granted against one draft version. If the draft has
+        # moved on since, what a human approved is not what is on the record.
+        if (optional_text(row.get("ggd_approved_draft_version"))
+                != optional_text(row.get("ggd_draft_version"))):
+            codes.append("approved_version_mismatch")
+    if has_value(row, "ggd_send_confirmed_at") and not has_value(
+            row, "ggd_last_sent_recipient"):
+        codes.append("incomplete_send_audit")
+    if is_overdue(row, as_of):
+        codes.append("overdue_activity")
+    return codes
+
+
+def daily_action_reasons(row, as_of):
+    """Why one opportunity is in today's queue, most urgent reason first."""
+    reasons = []
+    if (flag(row, "ggd_qualification_needs_review")
+            or flag(row, "ggd_workflow_needs_review")):
+        reasons.append("needs_human_review")
+    if (flag(row, "ggd_reply_needs_review")
+            or scalar(row.get("ggd_reply_category")) == "unclear"):
+        reasons.append("reply_review")
+    if (flag(row, "ggd_automation_needs_review")
+            or flag(row, "ggd_delivery_needs_review")):
+        reasons.append("automation_review")
+    if is_overdue(row, as_of):
+        reasons.append("overdue_activity")
+    state = scalar(row.get("ggd_qualification_state"))
+    if state in (None, "pending"):
+        reasons.append("needs_qualification")
+    if not has_contact_method(row):
+        reasons.append("needs_contact")
+    if state == "ready" and scalar(row.get("ggd_draft_status")) in (None, "empty"):
+        reasons.append("needs_draft")
+    return reasons
+
+
+def is_send_ready(row):
+    """Reported, never granted. This is the gate in AGENTS.md read off the
+    record: approved by a human, not suppressed, an approved draft version
+    still matching the current one, and somewhere to send it. A contact basis
+    is recorded and reported elsewhere; it is deliberately not a condition
+    here (Kaan's decision, 4 September 2026).
+    """
+    if not flag(row, "ggd_outreach_approved") or flag(row, "ggd_do_not_contact"):
+        return False
+    if scalar(row.get("ggd_draft_status")) != "approved":
+        return False
+    if (optional_text(row.get("ggd_approved_draft_version"))
+            != optional_text(row.get("ggd_draft_version"))):
+        return False
+    return has_value(row, "email_from")
+
+
+# --------------------------------------------------------------------------
+# Report input
+# --------------------------------------------------------------------------
+
+# The only filter keys ggd_report accepts. There is no domain, no field list
+# and no model name here, and an unknown key is refused rather than ignored.
+REPORT_FILTER_KEYS = (
+    "salesperson", "stage", "country", "city", "industry",
+    "qualification_state", "min_fit_score", "max_fit_score", "do_not_contact",
+)
+
+
+def report_filters(raw):
+    """(domain, applied) for the fixed filter object. Validated before any
+    network request, so a typo costs nothing and reaches nothing."""
+    if raw is None:
+        return [], {}
+    if not isinstance(raw, dict):
+        raise InvalidArgument(
+            "filters must be an object holding only the named filters."
+        )
+    unknown = sorted(set(raw) - set(REPORT_FILTER_KEYS))
+    if unknown:
+        raise InvalidArgument(
+            "filters does not accept %s. It takes only: %s."
+            % (", ".join(unknown), ", ".join(REPORT_FILTER_KEYS))
+        )
+    domain = []
+    applied = {}
+    for key, field in (
+        ("salesperson", "user_id.name"),
+        ("stage", "stage_id.name"),
+        ("country", "country_id.name"),
+        ("city", "city"),
+        ("industry", "ggd_industry"),
+    ):
+        text = optional_text(raw.get(key))
+        if text:
+            domain.append((field, "ilike", text))
+            applied[key] = text
+    state = raw.get("qualification_state")
+    if state is not None:
+        applied["qualification_state"] = choice(
+            state, QUALIFICATION_STATES, "filters.qualification_state"
+        )
+        domain.append(("ggd_qualification_state", "=", applied["qualification_state"]))
+    low = raw.get("min_fit_score")
+    high = raw.get("max_fit_score")
+    if low is not None:
+        applied["min_fit_score"] = require_int(low, "filters.min_fit_score", 0, 100)
+        domain.append(("ggd_fit_score", ">=", applied["min_fit_score"]))
+    if high is not None:
+        applied["max_fit_score"] = require_int(high, "filters.max_fit_score", 0, 100)
+        domain.append(("ggd_fit_score", "<=", applied["max_fit_score"]))
+    if (low is not None and high is not None
+            and applied["min_fit_score"] > applied["max_fit_score"]):
+        raise InvalidArgument("min_fit_score must not be above max_fit_score.")
+    if raw.get("do_not_contact") is not None:
+        applied["do_not_contact"] = bool(raw.get("do_not_contact"))
+        domain.append(("ggd_do_not_contact", "=", applied["do_not_contact"]))
+    return domain, applied
+
+
+def score_filter_warnings(applied):
+    """An unscored lead stores fit score 0, which a max_fit_score filter will
+    happily match. Saying so is cheaper than a silent extra condition the
+    caller did not ask for."""
+    if "max_fit_score" in applied:
+        return ["a lead that was never assessed stores fit score 0, so "
+                "max_fit_score matches unscored records too"]
+    return []
+
+
+def scan_leads(client, args):
+    """One bounded pass over the opportunities a report covers.
+
+    Archived records are left out, which is how Odoo stores a lost
+    opportunity, so every report is about live pipeline unless it says
+    otherwise.
+    """
+    date_from = parse_date(args.get("date_from"), "date_from")
+    date_to = parse_date(args.get("date_to"), "date_to")
+    if date_from and date_to and date_from > date_to:
+        raise InvalidArgument("date_from must not be after date_to.")
+
+    domain = [("type", "=", "opportunity")]
+    applied = {}
+    if date_from:
+        domain.append(("create_date", ">=", date_from.isoformat() + " 00:00:00"))
+        applied["date_from"] = date_from.isoformat()
+    if date_to:
+        domain.append(("create_date", "<=", date_to.isoformat() + " 23:59:59"))
+        applied["date_to"] = date_to.isoformat()
+    filter_domain, filter_applied = report_filters(args.get("filters"))
+    domain += filter_domain
+    applied.update(filter_applied)
+
+    total = client.search_count("crm.lead", domain)
+    rows = client.search_read(
+        "crm.lead", domain, REPORT_SCAN_FIELDS, limit=REPORT_SCAN_CAP,
+        order="id asc",
+    )
+    return rows, total, applied
+
+
+def report_result(report_type, as_of, scanned=None, total_matching=None,
+                  filters_applied=None, metrics=None, unavailable=None,
+                  rows=None, matching_rows=None, offset=0, limit=None,
+                  warnings=None, complete=None, **extra):
+    """The one envelope every report answers in.
+
+    complete, the denominators and warnings are always present, including
+    when they are empty: a missing "warnings" reads as "nothing to say",
+    which is exactly the claim a capped scan must not make by accident.
+    """
+    warnings = list(warnings or [])
+    if complete is None:
+        complete = (scanned is None or total_matching is None
+                    or scanned >= total_matching)
+    if not complete and scanned is not None:
+        warnings.insert(0, (
+            "only the first %d of %d matching records were scanned, so every "
+            "count below covers those %d and no more. Narrow it with "
+            "date_from, date_to or filters."
+            % (scanned, total_matching, scanned)
+        ))
+    out = {
+        "report_type": report_type,
+        "as_of": as_of.isoformat() if hasattr(as_of, "isoformat") else as_of,
+        "timezone": REPORT_TIMEZONE,
+        "complete": complete,
+        "scanned": scanned,
+        "total_matching": total_matching,
+        "warnings": warnings,
+    }
+    if filters_applied:
+        out["filters_applied"] = filters_applied
+    if metrics:
+        out["metrics"] = metrics
+    if unavailable:
+        out["unavailable"] = unavailable
+    if rows is not None:
+        total_rows = matching_rows if matching_rows is not None else len(rows)
+        out["rows"] = rows
+        out["returned"] = len(rows)
+        out["matching_rows"] = total_rows
+        out["offset"] = offset
+        out["limit"] = limit
+        out["has_more"] = (offset + len(rows)) < total_rows
+        if out["has_more"]:
+            out["next_page_offset"] = offset + (limit or len(rows))
+    out.update(extra)
+    return out
+
+
+def page(items, offset, limit):
+    return items[offset:offset + limit]
+
+
+# --------------------------------------------------------------------------
+# Reports
+# --------------------------------------------------------------------------
+
+def _report_dashboard(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    by_stage = {}
+    by_state = {}
+    by_draft = {}
+    by_delivery = {}
+    by_reply = {}
+    by_flag = {}
+    revenue = 0.0
+    weighted = 0.0
+    scores = []
+    counts = {
+        "named_contact": 0, "email": 0, "phone": 0, "any_contact_method": 0,
+        "approved": 0, "send_ready": 0, "suppressed": 0, "contact_basis": 0,
+        "send_confirmed": 0, "replied": 0, "bounced": 0, "needs_review": 0,
+        "overdue_activity": 0,
+    }
+    for row in rows:
+        tally(by_stage, m2o_name(row.get("stage_id")) or "(no stage)")
+        tally(by_state, scalar(row.get("ggd_qualification_state")) or "(not set)")
+        tally(by_draft, scalar(row.get("ggd_draft_status")) or "(not set)")
+        tally(by_delivery, scalar(row.get("ggd_delivery_status")) or "(not set)")
+        category = scalar(row.get("ggd_reply_category"))
+        if category:
+            tally(by_reply, category)
+        amount = float(row.get("expected_revenue") or 0.0)
+        revenue += amount
+        weighted += amount * float(row.get("probability") or 0.0) / 100.0
+        if is_scored(row):
+            scores.append(int(row.get("ggd_fit_score") or 0))
+        if has_value(row, "contact_name"):
+            counts["named_contact"] += 1
+        if has_value(row, "email_from"):
+            counts["email"] += 1
+        if has_value(row, "phone"):
+            counts["phone"] += 1
+        if has_contact_method(row):
+            counts["any_contact_method"] += 1
+        if has_value(row, "ggd_contact_basis"):
+            counts["contact_basis"] += 1
+        if flag(row, "ggd_outreach_approved"):
+            counts["approved"] += 1
+        if is_send_ready(row):
+            counts["send_ready"] += 1
+        if flag(row, "ggd_do_not_contact"):
+            counts["suppressed"] += 1
+        if has_value(row, "ggd_send_confirmed_at"):
+            counts["send_confirmed"] += 1
+        if has_value(row, "ggd_last_reply_received_at"):
+            counts["replied"] += 1
+        if scalar(row.get("ggd_delivery_status")) == "bounced":
+            counts["bounced"] += 1
+        if needs_review(row):
+            counts["needs_review"] += 1
+            for field in REVIEW_FLAG_FIELDS:
+                if flag(row, field):
+                    tally(by_flag, field[4:])
+        if is_overdue(row, as_of):
+            counts["overdue_activity"] += 1
+
+    scanned = len(rows)
+    metrics = {
+        "pipeline": {
+            "opportunities": scanned,
+            "expected_revenue": round(revenue, 2),
+            "weighted_revenue": round(weighted, 2),
+            "by_stage": by_stage,
+        },
+        "qualification": {
+            "by_state": by_state,
+            "scored": len(scores),
+            "average_fit_score": mean(scores),
+        },
+        "contact_coverage": {
+            "denominator": scanned,
+            "named_contact": counts["named_contact"],
+            "email": counts["email"],
+            "phone": counts["phone"],
+            "any_contact_method": counts["any_contact_method"],
+            "no_contact_method": scanned - counts["any_contact_method"],
+            "contact_basis_recorded": counts["contact_basis"],
+        },
+        "outreach": {
+            "approved": counts["approved"],
+            "send_ready": counts["send_ready"],
+            "suppressed": counts["suppressed"],
+            "by_draft_status": by_draft,
+        },
+        "delivery": {
+            "send_confirmed": counts["send_confirmed"],
+            "replied": counts["replied"],
+            "bounced": counts["bounced"],
+            "by_status": by_delivery,
+            "by_reply_category": by_reply or None,
+        },
+        "review": {
+            "needs_review": counts["needs_review"],
+            "by_flag": by_flag or None,
+        },
+        "activity": {
+            "opportunities_with_overdue_activity": counts["overdue_activity"],
+        },
+    }
+    return report_result(
+        "dashboard", as_of, scanned=scanned, total_matching=total,
+        filters_applied=applied, metrics=metrics,
+        warnings=score_filter_warnings(applied),
+        note=("counts cover live opportunities; a lost one is archived in "
+              "Odoo and is not among them"),
+    )
+
+
+def _report_daily_action(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    detail = choice(
+        args.get("detail_level"), DETAIL_LEVELS, "detail_level",
+        default="compact",
+    )
+    limit, clamped = clamp_limit(args.get("limit"))
+    offset = check_offset(args.get("offset"))
+
+    queued = []
+    by_reason = {}
+    suppressed = 0
+    for row in rows:
+        if flag(row, "ggd_do_not_contact"):
+            # Do-not-contact is an answer, not a task. Counted, never queued.
+            suppressed += 1
+            continue
+        reasons = daily_action_reasons(row, as_of)
+        if not reasons:
+            continue
+        for reason in reasons:
+            tally(by_reason, reason)
+        item = {"id": row.get("id"), "reasons": reasons}
+        if detail != "compact":
+            item["company"] = scalar(row.get("partner_name"))
+            item["stage"] = m2o_name(row.get("stage_id"))
+            item["owner"] = m2o_name(row.get("user_id"))
+        queued.append((DAILY_ACTION_REASONS.index(reasons[0]), row.get("id"), item))
+    queued.sort(key=lambda entry: (entry[0], entry[1]))
+    items = [entry[2] for entry in queued]
+
+    return report_result(
+        "daily_action", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied,
+        metrics={"in_queue": len(items), "by_reason": by_reason,
+                 "suppressed_not_queued": suppressed},
+        rows=page(items, offset, limit), matching_rows=len(items),
+        offset=offset, limit=limit,
+        warnings=score_filter_warnings(applied) + (
+            ["limit capped at %d" % MAX_LIMIT] if clamped else []
+        ),
+        order="most urgent reason first, then id",
+    )
+
+
+def _report_pipeline(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    group_by = choice(
+        args.get("group_by"), PIPELINE_GROUPINGS, "group_by", default="stage",
+    )
+    _won, stage_order = _won_stage_ids(client)
+    groups = {}
+    revenue = 0.0
+    weighted = 0.0
+    for row in rows:
+        if group_by == "stage":
+            key = m2o_name(row.get("stage_id")) or "(no stage)"
+        elif group_by == "salesperson":
+            key = m2o_name(row.get("user_id")) or "(unassigned)"
+        else:
+            key = scalar(row.get("ggd_qualification_state")) or "(not set)"
+        amount = float(row.get("expected_revenue") or 0.0)
+        share = amount * float(row.get("probability") or 0.0) / 100.0
+        revenue += amount
+        weighted += share
+        bucket = groups.setdefault(key, {
+            "group": key, "opportunities": 0,
+            "expected_revenue": 0.0, "weighted_revenue": 0.0,
+        })
+        bucket["opportunities"] += 1
+        bucket["expected_revenue"] += amount
+        bucket["weighted_revenue"] += share
+
+    ordered = list(groups.values())
+    if group_by == "stage":
+        ordered.sort(key=lambda g: (stage_order.get(g["group"], 9999), g["group"]))
+    else:
+        ordered.sort(key=lambda g: (-g["opportunities"], g["group"]))
+    for bucket in ordered:
+        bucket["expected_revenue"] = round(bucket["expected_revenue"], 2)
+        bucket["weighted_revenue"] = round(bucket["weighted_revenue"], 2)
+
+    return report_result(
+        "pipeline", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied,
+        metrics={
+            "grouped_by": group_by,
+            "expected_revenue": round(revenue, 2),
+            "weighted_revenue": round(weighted, 2),
+            "groups": ordered,
+        },
+        warnings=score_filter_warnings(applied),
+        scope=("live opportunities, won stages included; a lost one is "
+               "archived in Odoo and is not counted"),
+    )
+
+
+def _report_qualification(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    by_state = {}
+    bands = {}
+    confidence = {}
+    scores = []
+    confidences = []
+    for row in rows:
+        tally(by_state, scalar(row.get("ggd_qualification_state")) or "(not set)")
+        if not is_scored(row):
+            continue
+        score = int(row.get("ggd_fit_score") or 0)
+        scores.append(score)
+        tally(bands, score_band(score))
+        value = float(row.get("ggd_ai_confidence") or 0.0)
+        confidences.append(value)
+        tally(confidence, confidence_band(value))
+
+    metrics = {
+        "by_state": by_state,
+        "scanned": len(rows),
+        # Everything below divides by this, never by the scan: a pending
+        # record has no score, and counting its stored 0 as one would be a
+        # made-up number dressed as a measurement.
+        "scored": len(scores),
+        "unscored": len(rows) - len(scores),
+        "average_fit_score": mean(scores),
+        "median_fit_score": median(scores),
+        "fit_score_bands": bands or None,
+        "average_confidence": mean(confidences),
+        "confidence_bands": confidence or None,
+    }
+    return report_result(
+        "qualification", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied, metrics=metrics,
+        warnings=score_filter_warnings(applied),
+        denominator_note=(
+            "score and confidence figures use the scored denominator, not the "
+            "scan: an unassessed lead stores 0 and is excluded, never averaged"
+        ),
+        confidence_field_note=(
+            "ggd_ai_confidence is shared with reply analysis, so on a record "
+            "that has had a reply analysed it is no longer the qualification's "
+            "confidence"
+        ),
+    )
+
+
+def _report_contact_coverage(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    counts = {"named_contact": 0, "email": 0, "phone": 0, "both": 0,
+              "any_contact_method": 0, "contact_basis_recorded": 0}
+    for row in rows:
+        if has_value(row, "contact_name"):
+            counts["named_contact"] += 1
+        email = has_value(row, "email_from")
+        phone = has_value(row, "phone")
+        if email:
+            counts["email"] += 1
+        if phone:
+            counts["phone"] += 1
+        if email and phone:
+            counts["both"] += 1
+        if email or phone:
+            counts["any_contact_method"] += 1
+        if has_value(row, "ggd_contact_basis"):
+            counts["contact_basis_recorded"] += 1
+    counts["no_contact_method"] = len(rows) - counts["any_contact_method"]
+    counts["denominator"] = len(rows)
+    return report_result(
+        "contact_coverage", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied, metrics=counts,
+        unavailable=REPORT_METRIC_UNAVAILABLE["contact_coverage"],
+        warnings=score_filter_warnings(applied),
+        contact_basis_note=(
+            "contact basis is recorded and counted here; it is not a "
+            "condition of approval or of a send"
+        ),
+    )
+
+
+def _report_outreach_readiness(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    counts = {
+        "qualified": 0, "contact_present": 0, "draft_ready": 0,
+        "draft_approved": 0, "human_approved": 0, "send_ready": 0,
+        "suppressed": 0, "review_blocked": 0, "contact_basis_recorded": 0,
+    }
+    for row in rows:
+        if scalar(row.get("ggd_qualification_state")) == "ready":
+            counts["qualified"] += 1
+        if has_contact_method(row):
+            counts["contact_present"] += 1
+        status = scalar(row.get("ggd_draft_status"))
+        if status == "ready":
+            counts["draft_ready"] += 1
+        if status == "approved":
+            counts["draft_approved"] += 1
+        if flag(row, "ggd_outreach_approved"):
+            counts["human_approved"] += 1
+        if is_send_ready(row):
+            counts["send_ready"] += 1
+        if flag(row, "ggd_do_not_contact"):
+            counts["suppressed"] += 1
+        if needs_review(row):
+            counts["review_blocked"] += 1
+        if has_value(row, "ggd_contact_basis"):
+            counts["contact_basis_recorded"] += 1
+    counts["denominator"] = len(rows)
+    return report_result(
+        "outreach_readiness", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied, metrics=counts,
+        warnings=score_filter_warnings(applied),
+        send_ready_definition=(
+            "approved by a human, not Do-not-contact, draft status approved "
+            "with the approved version still matching the current one, and an "
+            "email address present. Reported only: nothing here approves or "
+            "sends anything, and contact basis is not one of the conditions"
+        ),
+    )
+
+
+def _report_activity(client, args, as_of):
+    """Counted over the activity table rather than the lead scan, because one
+    opportunity can carry several activities and a per-lead count would say
+    something else.
+
+    That is also why it refuses the lead filters instead of ignoring them: a
+    silently dropped "city Istanbul" would return every open activity in the
+    CRM under a heading claiming it was Istanbul's.
+    """
+    ignored = [key for key in ("filters", "date_from", "date_to")
+               if args.get(key) is not None]
+    if ignored:
+        raise InvalidArgument(
+            "the activity report counts Odoo activities, which do not carry "
+            "the opportunity filters, so %s cannot be applied to it. Use "
+            "report_type daily_action for a filtered queue of overdue work."
+            % ", ".join(ignored)
+        )
+    limit, clamped = clamp_limit(args.get("limit"))
+    offset = check_offset(args.get("offset"))
+    domain = [("res_model", "=", "crm.lead")]
+    total = client.search_count("mail.activity", domain)
+    scanned_rows = client.search_read(
+        "mail.activity", domain, ACTIVITY_FIELDS, limit=ACTIVITY_SCAN_CAP,
+        order="date_deadline asc, id asc",
+    )
+
+    by_owner = {}
+    by_type = {}
+    by_due = {}
+    overdue = 0
+    items = []
+    horizon = as_of + datetime.timedelta(days=7)
+    for raw in scanned_rows:
+        tally(by_owner, m2o_name(raw.get("user_id")) or "(unassigned)")
+        tally(by_type, m2o_name(raw.get("activity_type_id")) or "(no type)")
+        days = days_between(raw.get("date_deadline"), as_of)
+        if days is None:
+            bucket = "no_deadline"
+        elif days > 0:
+            bucket = "overdue"
+            overdue += 1
+        elif days == 0:
+            bucket = "due_today"
+        else:
+            due = as_of - datetime.timedelta(days=days)
+            bucket = "next_7_days" if due <= horizon else "later"
+        tally(by_due, bucket)
+        item = {
+            "id": raw.get("id"),
+            "opportunity_id": raw.get("res_id"),
+            "due": scalar(raw.get("date_deadline")),
+            "type": m2o_name(raw.get("activity_type_id")),
+            "assigned_to": m2o_name(raw.get("user_id")),
+            "days_overdue": days if days and days > 0 else None,
+        }
+        items.append(item)
+
+    return report_result(
+        "activity", as_of, scanned=len(scanned_rows), total_matching=total,
+        metrics={"open": len(scanned_rows), "overdue": overdue,
+                 "by_due": by_due, "by_owner": by_owner, "by_type": by_type},
+        rows=page(items, offset, limit), matching_rows=len(items),
+        offset=offset, limit=limit,
+        warnings=["limit capped at %d" % MAX_LIMIT] if clamped else [],
+        scope=("open Odoo activities on opportunities; Odoo deletes an "
+               "activity when it is marked done, so this is what is still "
+               "outstanding"),
+        order="earliest deadline first",
+    )
+
+
+def _report_reply_delivery(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    by_status = {}
+    by_category = {}
+    counts = {"send_confirmed": 0, "replied": 0, "bounced": 0,
+              "delivery_review": 0, "reply_review": 0}
+    for row in rows:
+        tally(by_status, scalar(row.get("ggd_delivery_status")) or "(not set)")
+        category = scalar(row.get("ggd_reply_category"))
+        if category:
+            tally(by_category, category)
+        if has_value(row, "ggd_send_confirmed_at"):
+            counts["send_confirmed"] += 1
+        if has_value(row, "ggd_last_reply_received_at"):
+            counts["replied"] += 1
+        if scalar(row.get("ggd_delivery_status")) == "bounced":
+            counts["bounced"] += 1
+        if flag(row, "ggd_delivery_needs_review"):
+            counts["delivery_review"] += 1
+        if flag(row, "ggd_reply_needs_review"):
+            counts["reply_review"] += 1
+    counts["denominator"] = len(rows)
+    counts["by_delivery_status"] = by_status
+    counts["by_reply_category"] = by_category or None
+    return report_result(
+        "reply_delivery", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied, metrics=counts,
+        unavailable=REPORT_METRIC_UNAVAILABLE["reply_delivery"],
+        warnings=score_filter_warnings(applied),
+        reply_rate_note=(
+            "replied divided by send_confirmed is a rate over records that "
+            "still exist and are still visible, not a campaign statistic"
+        ),
+    )
+
+
+def _report_industry_market(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    group_by = choice(
+        args.get("group_by"), MARKET_GROUPINGS, "group_by", default="industry",
+    )
+    limit, clamped = clamp_limit(args.get("limit"))
+    offset = check_offset(args.get("offset"))
+
+    groups = {}
+    for row in rows:
+        if group_by == "country":
+            key = m2o_name(row.get("country_id")) or "(no country)"
+        elif group_by == "city":
+            key = scalar(row.get("city")) or "(no city)"
+        else:
+            key = scalar(row.get("ggd_industry")) or "(no industry)"
+        bucket = groups.setdefault(key, {
+            "group": key, "opportunities": 0, "scored": 0,
+            "expected_revenue": 0.0, "_scores": [],
+        })
+        bucket["opportunities"] += 1
+        bucket["expected_revenue"] += float(row.get("expected_revenue") or 0.0)
+        if is_scored(row):
+            bucket["scored"] += 1
+            bucket["_scores"].append(int(row.get("ggd_fit_score") or 0))
+
+    ordered = sorted(
+        groups.values(), key=lambda g: (-g["opportunities"], g["group"])
+    )
+    for bucket in ordered:
+        bucket["average_fit_score"] = mean(bucket.pop("_scores"))
+        bucket["expected_revenue"] = round(bucket["expected_revenue"], 2)
+
+    return report_result(
+        "industry_market", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied,
+        metrics={"grouped_by": group_by, "groups": len(ordered)},
+        rows=page(ordered, offset, limit), matching_rows=len(ordered),
+        offset=offset, limit=limit,
+        warnings=score_filter_warnings(applied) + (
+            ["limit capped at %d" % MAX_LIMIT] if clamped else []
+        ),
+        denominator_note="average_fit_score uses each group's scored count",
+    )
+
+
+def _report_data_quality(client, args, as_of):
+    rows, total, applied = scan_leads(client, args)
+    detail = choice(
+        args.get("detail_level"), DETAIL_LEVELS, "detail_level",
+        default="compact",
+    )
+    limit, clamped = clamp_limit(args.get("limit"))
+    offset = check_offset(args.get("offset"))
+
+    by_code = dict((code, 0) for code in DATA_QUALITY_CODES)
+    flagged = []
+    for row in rows:
+        codes = data_quality_codes(row, as_of)
+        if not codes:
+            continue
+        for code in codes:
+            by_code[code] += 1
+        item = {"id": row.get("id"), "codes": codes}
+        if detail != "compact":
+            item["company"] = scalar(row.get("partner_name"))
+        flagged.append(item)
+
+    return report_result(
+        "data_quality", as_of, scanned=len(rows), total_matching=total,
+        filters_applied=applied,
+        metrics={"denominator": len(rows), "records_with_issues": len(flagged),
+                 "by_code": by_code},
+        unavailable=DATA_QUALITY_UNSUPPORTED,
+        rows=page(flagged, offset, limit), matching_rows=len(flagged),
+        offset=offset, limit=limit,
+        warnings=score_filter_warnings(applied) + (
+            ["limit capped at %d" % MAX_LIMIT] if clamped else []
+        ),
+        order="id ascending",
+    )
+
+
+def _report_unavailable(client, args, as_of):
+    """A report whose source data does not exist. It says so and stops: no
+    Odoo call, no zero, no estimate standing in for a measurement."""
+    report_type = args["report_type"]
+    return report_result(
+        report_type, as_of, complete=False, available=False,
+        reason=REPORT_UNAVAILABLE[report_type],
+    )
+
+
+# Fixed map, never getattr: adding a report is an edit here, not something a
+# caller can reach for by naming a function.
+REPORT_BUILDERS = {
+    "dashboard": _report_dashboard,
+    "daily_action": _report_daily_action,
+    "pipeline": _report_pipeline,
+    "qualification": _report_qualification,
+    "contact_coverage": _report_contact_coverage,
+    "outreach_readiness": _report_outreach_readiness,
+    "activity": _report_activity,
+    "reply_delivery": _report_reply_delivery,
+    "industry_market": _report_industry_market,
+    "data_quality": _report_data_quality,
+    "conversion_funnel": _report_unavailable,
+    "usage_efficiency": _report_unavailable,
+}
+
+
+def tool_report(client, args):
+    report_type = choice(args.get("report_type"), REPORT_TYPES, "report_type")
+    as_of = parse_date(args.get("as_of"), "as_of") or report_today()
+    args = dict(args)
+    args["report_type"] = report_type
+    return REPORT_BUILDERS[report_type](client, args, as_of)
 
 
 def _clean_roles(value):
@@ -1642,6 +3055,7 @@ TOOL_HANDLERS = {
     "ggd_get_opportunity": tool_get_opportunity,
     "ggd_pipeline_report": tool_pipeline_report,
     "ggd_followup_report": tool_followup_report,
+    "ggd_report": tool_report,
     "ggd_create_lead": tool_create_lead,
     "ggd_save_qualification": tool_save_qualification,
 }
@@ -1697,9 +3111,10 @@ def build_tools():
             "title": "Search the CRM",
             "description": (
                 "Find opportunities, leads, companies or contacts by name, "
-                "company name, email or website. Returns summary rows with "
-                "the numeric id needed by the other tools, plus "
-                "total_matching and has_more."
+                "company name, email or website, narrowed by any of the "
+                "filters below. Dates are YYYY-MM-DD. The GGD filters suit "
+                "opportunities and leads only. Rows carry the numeric id the "
+                "other tools need, plus total_matching and has_more."
             ),
             "inputSchema": _schema({
                 "query": _str("matched against name, company, contact, email, website"),
@@ -1711,6 +3126,35 @@ def build_tools():
                     "type": "boolean", "default": False,
                     "description": "archived is how Odoo stores a lost opportunity",
                 },
+                "detail_level": {
+                    "type": "string", "enum": list(DETAIL_LEVELS),
+                    "default": "compact",
+                    "description": "opportunities and leads; full is %d a page"
+                                   % FULL_DETAIL_LIMIT,
+                },
+                "created_from": _str(),
+                "created_to": _str(),
+                "updated_from": _str(),
+                "updated_to": _str(),
+                "country": _str(),
+                "city": _str(),
+                "industry": _str(),
+                "qualification_state": {"type": "string",
+                                        "enum": list(QUALIFICATION_STATES)},
+                "min_fit_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "max_fit_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "has_email": {"type": "boolean"},
+                "has_phone": {"type": "boolean"},
+                "has_named_contact": {"type": "boolean"},
+                "has_contact_method": {"type": "boolean"},
+                "do_not_contact": {"type": "boolean"},
+                "outreach_approved": {"type": "boolean"},
+                "draft_status": {"type": "string", "enum": list(DRAFT_STATUSES)},
+                "delivery_status": {"type": "string",
+                                    "enum": list(DELIVERY_STATUSES)},
+                "has_overdue_activity": {"type": "boolean"},
+                "needs_review": {"type": "boolean"},
+                "as_of": _str("dates has_overdue_activity"),
                 "limit": _paging()["limit"],
                 "offset": _paging()["offset"],
             }),
@@ -1730,6 +3174,17 @@ def build_tools():
                     "type": "integer", "minimum": 0, "maximum": MAX_HISTORY,
                     "default": DEFAULT_HISTORY,
                     "description": "chatter messages, newest first; 0 for none",
+                },
+                "sections": {
+                    "type": "array", "maxItems": len(OPPORTUNITY_SECTIONS),
+                    "items": {"type": "string",
+                              "enum": list(OPPORTUNITY_SECTIONS)},
+                    "description": "default: all but activities and chatter",
+                },
+                "detail_level": {
+                    "type": "string", "enum": list(DETAIL_LEVELS),
+                    "default": "compact",
+                    "description": "compact drops free text; full adds the long fields",
                 },
             }, ["opportunity_id"]),
             "annotations": READ_ONLY,
@@ -1767,6 +3222,49 @@ def build_tools():
                 "limit": _paging()["limit"],
                 "offset": _paging()["offset"],
             }),
+            "annotations": READ_ONLY,
+        },
+        {
+            "name": "ggd_report",
+            "title": "CRM report",
+            "description": (
+                "One read-only report over the pipeline; report_type picks "
+                "which. Dates are YYYY-MM-DD. Totals come from a capped scan, "
+                "so quote complete and warnings with them. A metric the CRM "
+                "cannot source yet comes back under unavailable with a "
+                "reason, never as a zero."
+            ),
+            "inputSchema": _schema({
+                "report_type": {"type": "string", "enum": list(REPORT_TYPES)},
+                "date_from": _str("on creation date"),
+                "date_to": _str(),
+                "as_of": _str("defaults to today"),
+                "group_by": _str("pipeline: %s. industry_market: %s"
+                                 % ("|".join(PIPELINE_GROUPINGS),
+                                    "|".join(MARKET_GROUPINGS))),
+                "filters": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "salesperson": {"type": "string"},
+                        "stage": {"type": "string"},
+                        "country": {"type": "string"},
+                        "city": {"type": "string"},
+                        "industry": {"type": "string"},
+                        "qualification_state": {
+                            "type": "string",
+                            "enum": list(QUALIFICATION_STATES)},
+                        "min_fit_score": {"type": "integer", "minimum": 0,
+                                          "maximum": 100},
+                        "max_fit_score": {"type": "integer", "minimum": 0,
+                                          "maximum": 100},
+                        "do_not_contact": {"type": "boolean"},
+                    },
+                },
+                "detail_level": {"type": "string", "enum": list(DETAIL_LEVELS),
+                                 "default": "compact"},
+                "limit": _paging()["limit"],
+                "offset": _paging()["offset"],
+            }, ["report_type"]),
             "annotations": READ_ONLY,
         },
         {
@@ -1841,8 +3339,11 @@ SERVER_INSTRUCTIONS = (
     "Read access to the local Germany Growth Desk Odoo 19 CRM, plus two "
     "narrow writes.\n"
     "Reporting: ggd_search_records for an id, then ggd_get_opportunity for "
-    "detail. Every list answer gives total_matching and has_more - quote "
-    "those rather than implying a page is the whole answer.\n"
+    "detail. ggd_report answers pipeline, queue, coverage, quality and "
+    "readiness questions in one call. Every answer gives total_matching, "
+    "complete and has_more - quote those rather than implying a page or a "
+    "capped scan is the whole answer, and report unavailable metrics as "
+    "unavailable rather than as zero.\n"
     "Writing: ggd_create_lead opens one Target Identified opportunity and "
     "refuses duplicates; if it names an existing record, qualify that one. "
     "ggd_save_qualification records an assessment; false from it means saved "
