@@ -16,7 +16,7 @@
         <field name="name">crm.lead.search.ggd.review</field>
         <field name="model">crm.lead</field>
         <field name="arch" type="xml">
-            <search string="GGD review desk">
+            <search string="Review desk">
                 <field name="name"/>
                 <field name="partner_name"/>
                 <field name="email_from"/>
@@ -125,7 +125,7 @@
     </record>
 
     <record id="action_ggd_review_desk" model="ir.actions.act_window">
-        <field name="name">GGD review desk</field>
+        <field name="name">Review desk</field>
         <field name="res_model">crm.lead</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="crm_lead_view_search_ggd"/>
@@ -148,7 +148,7 @@
     </record>
 
     <menuitem id="menu_ggd_review_desk"
-              name="GGD review desk"
+              name="Review desk"
               parent="crm.crm_menu_root"
               action="action_ggd_review_desk"
               sequence="15"/>

@@ -2,17 +2,28 @@
 <templates xml:space="preserve">
 
     <t t-name="ggd_crm.RingField">
-        <div class="ggd_ring"
-             t-att-class="{ 'ggd_ring--sm': props.size === 'sm', 'ggd_ring--empty': !hasValue }"
-             t-att-style="style"
-             t-att-title="title"
-             role="img"
-             t-att-aria-label="title">
-            <div class="ggd_ring_inner">
-                <t t-if="hasValue" t-esc="value"/>
-                <t t-else="">–</t>
+        <t t-if="props.variant === 'bar'">
+            <div class="ggd_score" t-att-title="title" role="img" t-att-aria-label="title">
+                <t t-if="hasValue">
+                    <span class="ggd_score_value" t-esc="value"/>
+                    <span class="ggd_score_bar"><span t-att-style="style"/></span>
+                </t>
+                <span t-else="" class="ggd_score_none">no score</span>
             </div>
-        </div>
+        </t>
+        <t t-else="">
+            <div class="ggd_ring"
+                 t-att-class="{ 'ggd_ring--sm': props.size === 'sm', 'ggd_ring--empty': !hasValue }"
+                 t-att-style="style"
+                 t-att-title="title"
+                 role="img"
+                 t-att-aria-label="title">
+                <div class="ggd_ring_inner">
+                    <t t-if="hasValue" t-esc="value"/>
+                    <t t-else="">–</t>
+                </div>
+            </div>
+        </t>
     </t>
 
 </templates>

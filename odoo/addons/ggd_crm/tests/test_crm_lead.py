@@ -2197,3 +2197,94 @@ class TestGgdPipelineOrder(TransactionCase):
             self.Lead.search([("id", "in", moved.ids)], order="sequence, id").ids,
             [second.id, first.id],
         )
+
+
+class TestGgdBoardState(TransactionCase):
+    """The one field the pipeline column's status line groups on."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def _lead(self, **values):
+        return self.Lead.create(dict({"name": "Board QA", "type": "opportunity"}, **values))
+
+    def test_a_new_lead_has_nothing_to_say(self):
+        self.assertEqual(self._lead().ggd_board_state, "none")
+
+    def test_a_draft_nobody_has_approved_is_waiting(self):
+        self.assertEqual(self._lead(ggd_draft_status="ready").ggd_board_state, "wait")
+
+    def test_an_approved_draft_is_done(self):
+        lead = self._lead(ggd_draft_status="approved")
+        self.assertEqual(lead.ggd_board_state, "ok")
+
+    def test_a_review_flag_outranks_a_waiting_draft(self):
+        lead = self._lead(ggd_draft_status="ready", ggd_qualification_state="review")
+        self.assertEqual(lead.ggd_board_state, "review")
+
+    def test_an_open_claim_outranks_everything_else(self):
+        """A send whose outcome is unknown is the one thing that must be looked at."""
+        lead = self._lead(
+            ggd_draft_status="ready",
+            ggd_qualification_state="review",
+            ggd_delivery_status="claimed",
+        )
+        self.assertEqual(lead.ggd_board_state, "stop")
+
+    def test_do_not_contact_is_a_stop_whatever_else_is_true(self):
+        lead = self._lead(ggd_draft_status="approved", ggd_do_not_contact=True)
+        self.assertEqual(lead.ggd_board_state, "stop")
+
+    def test_the_state_follows_a_later_write(self):
+        lead = self._lead(ggd_draft_status="ready")
+        lead.ggd_delivery_status = "bounced"
+        self.assertEqual(lead.ggd_board_state, "stop")
+
+    def test_the_field_is_stored_and_searchable(self):
+        """read_progress_bar groups on it in SQL and a segment click searches it."""
+        lead = self._lead(ggd_draft_status="ready")
+        self.assertTrue(self.Lead._fields["ggd_board_state"].store)
+        self.assertIn(lead, self.Lead.search([("ggd_board_state", "=", "wait")]))
+
+
+class TestGgdBoardChipCounts(TransactionCase):
+    """The counts behind the four chips above the pipeline columns."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Lead = cls.env["crm.lead"]
+
+    def test_the_call_answers_every_chip_and_the_cap(self):
+        counts = self.Lead.ggd_board_chip_counts()
+        self.assertEqual(
+            set(counts),
+            {"sendable", "needs_review", "unresolved_claim", "replies", "cap"},
+        )
+        for key, value in counts.items():
+            self.assertIsInstance(value, int, key)
+
+    def test_a_sendable_lead_is_counted_once_it_is_sendable(self):
+        before = self.Lead.ggd_board_chip_counts()["sendable"]
+        lead = self.Lead.create({
+            "name": "Chip QA",
+            "type": "opportunity",
+            "email_from": "chip-qa@ggd-qa.invalid",
+            "ggd_draft_status": "approved",
+        })
+        self.assertEqual(self.Lead.ggd_board_chip_counts()["sendable"], before)
+        lead.ggd_outreach_approved = True
+        self.assertEqual(self.Lead.ggd_board_chip_counts()["sendable"], before + 1)
+
+    def test_the_chip_domains_are_the_search_view_domains(self):
+        """A chip that counts one set and filters another is worse than no chip."""
+        arch = self.Lead.get_views([(False, "search")])["views"]["search"]["arch"]
+        for name in (
+            "ggd_chip_sendable",
+            "ggd_chip_needs_review",
+            "ggd_chip_unresolved_claim",
+            "ggd_chip_replies",
+        ):
+            self.assertIn('name="%s"' % name, arch)

@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 
-    <!-- Markup follows Odoo's own systray items: a bare button holding an
-         fa-lg icon inside o_menu_systray_item, so it sits and hovers like the
-         clock and chat icons beside it. -->
+    <!-- Markup follows Odoo's own systray items: a bare button inside
+         o_menu_systray_item, so it sits and hovers like the activity and chat
+         icons beside it. The glyph is the design's, from ggd_icons.xml. -->
     <t t-name="ggd_crm.AppearanceMenu">
         <div class="o_menu_systray_item o_ggd_appearance">
             <Dropdown position="'bottom-end'" menuClass="'o_ggd_appearance_menu'">
                 <button title="Appearance" aria-label="Appearance">
-                    <i t-att-class="'fa fa-lg ' + (isDark ? 'fa-moon-o' : 'fa-sun-o')" role="img"/>
+                    <span class="ggd_icon" role="img">
+                        <t t-if="isDark" t-call="ggd_crm.icon.moon"/>
+                        <t t-else="" t-call="ggd_crm.icon.sun"/>
+                    </span>
                 </button>
                 <t t-set-slot="content">
                     <div class="dropdown-header">Scheme</div>
                     <DropdownItem class="{ 'ggd_on': !isDark }" onSelected="() => this.setScheme('light')">
-                        <i class="fa fa-sun-o me-2" role="img"/>Light
+                        <span class="ggd_icon me-2"><t t-call="ggd_crm.icon.sun"/></span>Light
                     </DropdownItem>
                     <DropdownItem class="{ 'ggd_on': isDark }" onSelected="() => this.setScheme('dark')">
-                        <i class="fa fa-moon-o me-2" role="img"/>Dark
+                        <span class="ggd_icon me-2"><t t-call="ggd_crm.icon.moon"/></span>Dark
                     </DropdownItem>
                     <div class="dropdown-divider"/>
                     <div class="dropdown-header">Tone</div>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        A box around the cards of a pipeline column (#58).
+
+        Odoo hangs the header and every card off .o_kanban_group directly, so
+        the only thing that can scroll is the column itself and the header has
+        to be sticky inside it. That is what the design cannot use: a sticky
+        header only paints its own width, so the scrollbar gutter beside it
+        shows the column through in another tone, and the column's own padding
+        leaves a strip of that tone between the header and the cards. Giving
+        the cards a box of their own moves the scroll into it and lets the
+        header go back to being an ordinary block at the top of the column,
+        full width, with nothing behind it.
+
+        The box repeats the group's data-id on purpose. Odoo's card drag asks
+        the dragged card's parentElement for its id to tell "dropped in the
+        column it came from" from "dropped in another one"
+        (kanban_renderer.js, sortRecordDrop); that parent is now this box.
+    -->
+    <t t-name="ggd_crm.KanbanRenderer" t-inherit="web.KanbanRenderer" t-inherit-mode="extension">
+
+        <!--
+            Odoo's branch for a folded column on a phone is a t-elif of the
+            branch below, and Owl refuses to compile a t-elif that no longer
+            follows a t-if - which is what boxing the branch below would leave
+            it as. Spelling its condition out keeps exactly the same branch
+            and lets it stand on its own. It stays outside the box on purpose:
+            the box is the thing a fold hides.
+        -->
+        <xpath expr="//t[@t-elif='env.isSmall']" position="attributes">
+            <attribute name="t-elif"/>
+            <attribute name="t-if">env.isSmall and group.isFolded</attribute>
+        </xpath>
+
+        <xpath expr="//t[@t-if='!group.isFolded']" position="replace">
+            <div class="ggd_col_body" t-att-data-id="group.id">$0</div>
+        </xpath>
+
+    </t>
+
+</templates>

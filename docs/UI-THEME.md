@@ -37,22 +37,116 @@ and a small patch (`ggd_navbar.js`):
 
 ## The pipeline board
 
-The board fills the viewport and never scrolls as a page: each column hugs
-its cards, caps at the viewport, and scrolls on its own under a header that
-stays put, so a drag never moves a column's title. Columns are borderless
-glass, 276 px wide, 56 px when folded; the gear is always visible. The
-header counts records rather than summing revenue (this pipeline is about
-people to write to), and the line under the title is the accent pair with
-Odoo's activity segments drawn over it. The card shows the opportunity, the
-company as a subtitle, the fit ring, the industry and the outbound pills;
-the revenue line is hidden by the theme rather than removed from the
-template, because the CRM's forecast kanban inherits the same template.
+The board fills the viewport and never scrolls as a page. Every column is
+the full height of it - folded or not - and scrolls on its own under a
+header that stays put, so a drag never moves a column's title and an empty
+stage is still a place to drop a card. Columns are borderless glass, 268 px
+wide; folded, a column becomes a 56 px spine with its title running up it
+and the count under the title. The gear is always visible.
+
+The header counts records rather than summing revenue (this pipeline is
+about people to write to). The count sits in a pill beside the stage name,
+which Odoo only prints there when a column has no progress bar; the
+pipeline has one, so `ggd_kanban_header.xml` puts the number back - for
+`crm.lead` only, because `web.KanbanHeader` is one template for every
+kanban in the database.
+
+### The line under the column title
+
+In the design that line is the mix of outbound states of the cards in the
+column, in the four status colours. In Odoo the same drawing already
+exists, as `<progressbar>`, and it does more than draw: clicking a segment
+filters the column down to the records in that state. So the theme stopped
+painting over it with an accent gradient and gave it the right field.
+
+That field is `ggd_board_state`: a stored, indexed, computed selection that
+collapses qualification, draft, delivery, reply and the review flags into
+one of five values, highest urgency first - `stop`, `review`, `wait`, `ok`,
+`none`. It exists because `read_progress_bar` groups on a single stored
+field in SQL and a segment click is a search on it, and because a card can
+be in several states at once and the colour has to say the most urgent.
+It is derived and never written.
+
+### The quick-filter chips
+
+Above the columns sit four chips: **Sendable today**, **Needs review**,
+**Unresolved claim**, **Replies**. They are the review desk's four
+questions asked from the board, and the point of them is that the count is
+visible without opening a menu.
+
+A chip does not filter by itself. It toggles the matching `ggd_chip_*`
+filter in the search view, so a click leaves a facet behind, the Filters
+menu shows it ticked and a saved favourite keeps it. The counts come from
+`crm.lead.ggd_board_chip_counts()` in one call; that method's domains and
+the search view's filters are the same four domains written twice, and
+they have to be edited together. `Sendable today` shows the sendable count
+against the daily send cap.
+
+### The card
+
+The card is the design's: the opportunity, then city and industry as a
+subtitle, then one row with the fit score on the left and the outbound
+state on the right. Three things Odoo puts on a CRM card are gone -
+priority stars, because the column is ordered by hand; the assignee
+avatar, because there is one user; the rotting clock, because the review
+desk already asks that question. The scheduled activity moved into the pill
+row rather than being dropped, and the CRM tags moved there with it. The
+card that is waiting on a person is lit with the accent, as the design
+lights it; the theme finds it with `:has()` on a marker the view renders
+when `ggd_board_state` is `wait`.
+
+The revenue line is hidden by the theme rather than removed from the
+template, because the CRM's forecast kanban inherits the same template and
+has an xpath of its own on it.
 
 Cards can be reordered by hand inside a column. Stock Odoo refuses this
 on `crm.lead`, which has no `sequence` field and orders by priority; the
 addon adds `sequence` (default 10, set by dragging) and makes the kanban
 sort by it first. The model's own order is untouched, so the list view and
 searches still order by priority as the CRM ships them.
+
+## The control panel
+
+The design's toolbar reads left to right: breadcrumb and title, then all
+the way over, the search, the view switcher, and the primary button. Odoo's
+order is the reverse and its rows are top-aligned, so the search sat a few
+pixels above the title. Both are fixed in CSS, not in a template: the
+control panel is one component for every view in the database, and this is
+a layout, not a structure. Odoo nests the create buttons inside the
+breadcrumb block, so that block is dissolved with `display: contents` and
+the five parts are ordered as flex items of one row. It applies from
+Odoo's `lg` breakpoint up; below it the panel wraps onto three rows and
+keeps Odoo's own order.
+
+## The fit score
+
+Two shapes, both the design's. On the opportunity form it is a 64 px ring,
+a conic gradient filled to the value. On a kanban card it is the number
+followed by a 46x5 bar, because a ring at card scale reads as an avatar and
+the row has to stay one line high. One widget, `ggd_ring`, with
+`options="{'variant': 'bar'}"` selecting the second.
+
+## Sizes, weights and the type scale
+
+The design fixes one type scale - Manrope at 13 px on a 1.45 line, against
+Odoo's 14 px - and one set of metrics for every control. They live as
+custom properties in the `--ggd-*` metrics block at the top of
+`ggd_theme.scss`: button and chip and pill heights, input padding, radii,
+the page margin, the column width, the gap between panels. A structural
+rule reads one of those rather than repeating a number, so a change to the
+design is a change to that block.
+
+## Icons
+
+The design draws round-capped 2 px strokes on a 24 unit grid; Odoo ships
+Font Awesome, whose glyphs are solid and heavier. Only the icons the
+design actually draws are replaced (issue #58). Where the markup is ours -
+the search button, the appearance menu, the Fetch mail button, the systray
+activity bell, the chips - the glyph is an inline SVG from
+`ggd_icons.xml`. Where it is an Odoo `<i>` carrying an icon-font class with
+no room for a child - the kanban and list view switchers, the column plus -
+the glyph is blanked and the design's outline is painted through a CSS mask
+in the current colour.
 
 ## The colour language
 
@@ -80,13 +174,17 @@ All of it is in `odoo/addons/ggd_crm/static/src/`:
 | `ggd_fonts.scss` and `fonts/` | `@font-face` for the bundled Manrope and IBM Plex Mono, latin and latin-ext subsets. Nothing is fetched from Google at runtime. |
 | `appearance_menu.js` and `.xml` | the systray menu. Sets `data-ggd-scheme` and `data-ggd-tone` on `<html>` at module load and on every change. |
 | `ggd_navbar.js` and `.xml` | the top bar: mark, wordmark, lit section, search button. |
-| `ggd_ring_field.js` and `.xml` | the `ggd_ring` field widget: a conic-gradient ring for the fit score, 64px on the form, 30px with `options="{'size': 'sm'}"` on kanban cards and list rows. |
+| `ggd_ring_field.js` and `.xml` | the `ggd_ring` field widget: a conic-gradient ring for the fit score, 64px on the form and 30px with `options="{'size': 'sm'}"` in list rows, or the number and a 46x5 bar with `options="{'variant': 'bar'}"` on kanban cards. |
+| `ggd_icons.xml` | the design's SVG icons, as QWeb templates the other files `t-call`. |
+| `ggd_quick_filters.js` and `.xml` | the four chips above the pipeline columns, and the `web.KanbanView` extension that places them. |
+| `ggd_kanban_header.xml` | the card count beside the column title, for `crm.lead` only. |
 
 The views that use the widgets:
 
 - `views/crm_lead_views.xml`: the status strip above the opportunity title
-  (ring, pills, approval line, send key) and the kanban card row (ring,
-  industry, pills).
+  (ring, pills, approval line, send key), the kanban card (subtitle, score
+  bar, pills), the `ggd_board_state` progress bar on the column header, and
+  the four `ggd_chip_*` filters behind the quick-filter chips.
 - `views/ggd_review_desk_views.xml`: badge widgets with `decoration-*`
   attributes on the status columns.
 
@@ -120,3 +218,26 @@ kanban, the review desk, an opportunity with the GGD Intelligence tab open,
 and the search dropdown. In dark mode, anything white is a missed selector.
 A dark and a light screenshot of each screen are the evidence a pull request
 should carry.
+
+Two surfaces are easy to forget because they are not GGD screens and only
+appear on a click: the calendar view, whose FullCalendar paints from its own
+`--fc-*` variables rather than from Bootstrap's, and the tooltips, which
+render in the overlay container outside `.o_web_client` and so are reached by
+none of the rules scoped to it. Both have a block of their own in the theme.
+
+That the stylesheet compiles can be checked without logging in - but only
+after the cached bundle is cleared. Odoo stores the compiled bundle as an
+`ir.attachment` and does not notice that a file on disk changed, so a plain
+restart serves the old CSS and every grep below passes on stale content:
+
+```
+docker compose exec -T odoo-db psql -U odoo -d ggd \
+  -c "delete from ir_attachment where url like '/web/assets/%';"
+docker compose restart odoo
+curl -sL -o /tmp/b.css "http://localhost:8069/web/assets/any/web.assets_backend.min.css"
+grep -c ggd_quick_filters /tmp/b.css
+```
+
+The route is public and rebuilds the bundle on demand, so a SCSS error shows
+up as a failed request and a traceback in `docker compose logs odoo`. The
+deleted rows are a cache and are written again on the first request.

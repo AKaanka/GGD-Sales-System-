@@ -449,6 +449,137 @@ class CrmLead(models.Model):
         copy=False,
     )
 
+    # The one field the pipeline board reads. The Aurora design draws a line
+    # under each column title that is the mix of outbound states of the cards
+    # in it, and Odoo's <progressbar> draws exactly that - but it groups by a
+    # single stored field, and this addon spreads outbound state over five.
+    # So the five collapse here, in the order a human would read them: a stop
+    # outranks a question, a question outranks a wait, a wait outranks a done.
+    # Stored and indexed because read_progress_bar groups on it in SQL, and
+    # clicking a segment filters the column, which is a search on it.
+    GGD_BOARD_STATE_SELECTION = [
+        ("none", "Nothing yet"),
+        ("ok", "Done"),
+        ("wait", "Waiting on a person"),
+        ("review", "Needs a human decision"),
+        ("stop", "Stop and look"),
+    ]
+    ggd_board_state = fields.Selection(
+        selection=GGD_BOARD_STATE_SELECTION,
+        string="Board state",
+        compute="_compute_ggd_board_state",
+        store=True,
+        index=True,
+        readonly=True,
+        copy=False,
+        help=(
+            "The outbound state of this opportunity in one value, for the "
+            "line under the pipeline column title. Derived; never written."
+        ),
+    )
+
+    @api.depends(
+        "ggd_do_not_contact",
+        "ggd_delivery_status",
+        "ggd_qualification_state",
+        "ggd_reply_category",
+        "ggd_draft_status",
+        "ggd_outreach_approved",
+        "ggd_automation_needs_review",
+        "ggd_qualification_needs_review",
+        "ggd_reply_needs_review",
+        "ggd_delivery_needs_review",
+        "ggd_workflow_needs_review",
+    )
+    def _compute_ggd_board_state(self):
+        """Collapse the outbound state into one of the design's four colours.
+
+        Precedence, highest first, because a card can be in several states at
+        once and the colour has to say the most urgent one:
+
+          stop   - do not contact, a claim whose SMTP outcome is unknown, a
+                   bounce, an unsubscribe or a refusal. Look before acting.
+          review - the automation declined to decide: qualification, reply or
+                   any of the review flags.
+          wait   - a draft is ready and a person has not approved it.
+          ok     - approved, sent, accepted, or a positive reply.
+          none   - nothing has happened to this record yet.
+        """
+        stop_replies = ("unsubscribe", "not_interested")
+        review_replies = ("objection", "unclear", "information", "referral")
+        ok_replies = ("interested", "meeting")
+        for lead in self:
+            if (
+                lead.ggd_do_not_contact
+                or lead.ggd_delivery_status in ("claimed", "bounced")
+                or lead.ggd_reply_category in stop_replies
+            ):
+                lead.ggd_board_state = "stop"
+            elif (
+                lead.ggd_qualification_state == "review"
+                or lead.ggd_reply_category in review_replies
+                or lead.ggd_automation_needs_review
+                or lead.ggd_qualification_needs_review
+                or lead.ggd_reply_needs_review
+                or lead.ggd_delivery_needs_review
+                or lead.ggd_workflow_needs_review
+            ):
+                lead.ggd_board_state = "review"
+            elif lead.ggd_draft_status == "ready" and not lead.ggd_outreach_approved:
+                lead.ggd_board_state = "wait"
+            elif (
+                lead.ggd_draft_status in ("approved", "sent")
+                or lead.ggd_delivery_status == "accepted"
+                or lead.ggd_reply_category in ok_replies
+            ):
+                lead.ggd_board_state = "ok"
+            else:
+                lead.ggd_board_state = "none"
+
+    # The four chips the design puts above the pipeline columns. They are the
+    # same four questions the review desk opens on, asked from the board: what
+    # can go out now, what is the automation refusing to decide, what send has
+    # an unknown outcome, and who has written back. The domains are the review
+    # desk's own filters, so a chip and its filter can never drift apart.
+    GGD_BOARD_CHIP_DOMAINS = {
+        "sendable": [
+            ("ggd_outreach_approved", "=", True),
+            ("ggd_draft_status", "=", "approved"),
+            ("ggd_do_not_contact", "=", False),
+            ("email_from", "!=", False),
+        ],
+        "needs_review": [
+            "|", "|", "|", "|",
+            ("ggd_automation_needs_review", "=", True),
+            ("ggd_qualification_needs_review", "=", True),
+            ("ggd_reply_needs_review", "=", True),
+            ("ggd_delivery_needs_review", "=", True),
+            ("ggd_workflow_needs_review", "=", True),
+        ],
+        "unresolved_claim": [("ggd_delivery_status", "=", "claimed")],
+        "replies": [("ggd_last_reply_received_at", "!=", False)],
+    }
+
+    @api.model
+    def ggd_board_chip_counts(self):
+        """Counts for the pipeline's quick-filter chips, in one call.
+
+        Read-only and unprivileged: search_count applies the user's own record
+        rules, so a chip never claims a record the user cannot open. The cap is
+        read with sudo because ir.config_parameter is not readable by a plain
+        user, and the number is not a secret - it is printed on the chip.
+        """
+        counts = {
+            key: self.search_count([("type", "=", "opportunity")] + domain)
+            for key, domain in self.GGD_BOARD_CHIP_DOMAINS.items()
+        }
+        try:
+            counts["cap"] = self._ggd_daily_send_cap()
+        except ValidationError:
+            # A malformed cap stops sending; it must not also blank the board.
+            counts["cap"] = 0
+        return counts
+
     @api.constrains("ggd_fit_score")
     def _check_ggd_fit_score(self):
         for lead in self:
