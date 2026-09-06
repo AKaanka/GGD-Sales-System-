@@ -1002,25 +1002,24 @@ body,
 
 // ------------------------------------------------------------- list
 
-// A wide table scrolls inside the glass panel, not on the page. The panel
-// used to be overflow: hidden purely so the rounded corners clipped it,
-// which left a table wider than the panel with nowhere to go: the overflow
-// escaped to the document, the whole page slid sideways, and the navbar
-// brand and the first column left the screen together. A scroll container
-// clips to its rounded corners just as well, so the corners cost nothing.
-// Same bargain the board makes: the panel stays put, its contents move.
+// A table wider than the panel scrolls inside it. This was overflow: hidden,
+// set in the first theme commit so the rounded corners clipped the glass -
+// but hidden clips without offering a way back, so the columns past the edge
+// are simply unreachable, and a container scrolled by a focused cell leaves
+// the first column cut off against the frame. A scroll container clips to
+// its rounded corners just as well, so the corners cost nothing.
+//
+// Deliberately the overflow and nothing else. The board above restructures
+// its flex chain; copying that here is what a list does not need, because
+// flex: 1 means flex-basis: 0 and any ancestor without a definite height
+// would then collapse the list to zero. A blank panel is a worse bug than a
+// clipped column. Vertical scrolling stays where Odoo puts it, on .o_content.
 .o_list_view .o_content {
     padding: 0 var(--ggd-page-pad) var(--ggd-page-pad) !important;
-    overflow: hidden !important;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
 }
 .o_list_renderer {
     @extend %ggd-glass;
     overflow: auto;
-    flex: 1;
-    min-height: 0;
     border-radius: var(--ggd-radius-lg) !important;
 }
 .o_list_table {
