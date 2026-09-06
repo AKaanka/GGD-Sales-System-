@@ -154,8 +154,13 @@ decision suite.
 
 The ChatGPT desktop app can read this CRM and produce customer, pipeline and
 follow-up reports through a local connector that talks to Odoo over
-`127.0.0.1`. Nothing is published and no OpenAI API billing is involved. Setup,
-example prompts, and key renewal: `docs/CHATGPT-MCP-CONNECTOR.md`.
+`127.0.0.1`. When you ask for it, it can also make a small, fixed set of
+changes: open a researched lead, save a qualification or a reply draft, add
+source-backed contact details, record a manual contact, move a non-terminal
+stage, schedule a follow-up, or save an outreach draft. None of them can send
+email, approve outreach or clear `Do not contact`. Nothing is published and no
+OpenAI API billing is involved. Setup, example prompts, and key renewal:
+`docs/CHATGPT-MCP-CONNECTOR.md`.
 
 ```bash
 ./scripts/check-mcp-connector.sh
