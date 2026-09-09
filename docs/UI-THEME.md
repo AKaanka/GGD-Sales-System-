@@ -67,20 +67,61 @@ field in SQL and a segment click is a search on it, and because a card can
 be in several states at once and the colour has to say the most urgent.
 It is derived and never written.
 
-### The quick-filter chips
+### The selection bar
 
-Above the columns sit four chips: **Sendable today**, **Needs review**,
-**Unresolved claim**, **Replies**. They are the review desk's four
-questions asked from the board, and the point of them is that the count is
-visible without opening a menu.
+Above the columns sits one row of controls. It began (issue #58) as four
+chips and grew (issue #67) into the whole of how a salesperson narrows the
+board:
 
-A chip does not filter by itself. It toggles the matching `ggd_chip_*`
-filter in the search view, so a click leaves a facet behind, the Filters
-menu shows it ticked and a saved favourite keeps it. The counts come from
-`crm.lead.ggd_board_chip_counts()` in one call; that method's domains and
-the search view's filters are the same four domains written twice, and
-they have to be edited together. `Sendable today` shows the sendable count
-against the daily send cap.
+`Country ▾  Product group ▾  Company type ▾  More ▾ | Sendable today · Needs
+review · Unresolved claim · Replies | N leads · Clear selection · Daily send
+cap`
+
+Three rules hold it together.
+
+**Nothing in the bar is a filter of its own.** Every control toggles a
+search item that lives in the search view, so a click leaves a facet
+behind, the Filters menu shows it ticked, and "Save current search" keeps
+it. That is what makes a saved working view an ordinary Odoo favourite
+rather than a second, private idea of what a filter is - and it is why the
+bar renders over the list as well as the board, where the same selection
+has to stay visible while rows are ticked for a bulk action.
+
+**Odoo's own AND/OR is the AND/OR.** Each picker drives one search-view
+*field*, and `SearchModel._getFieldDomain` ORs the values of one field
+while ANDing different fields. Two countries mean either; a country and a
+product group mean both. No domain is written in the component. A lead in
+two product groups matches once, because a domain returns records rather
+than rows - which is also why the product group is deliberately not offered
+as a group-by.
+
+**The numbers describe what is on screen.** The counts come from
+`crm.lead.ggd_board_chip_counts(domain)`, called with the active search
+domain, so a chip counts inside the selection rather than across the
+database. Before #67 it was the second, and the bar contradicted the board
+the moment a group was picked. `matching` is the same count for the
+selection itself, printed beside the facets.
+
+The daily send cap is the exception, and it is printed apart from the chips
+and labelled *system-wide*. It limits send claims across the whole
+installation per 24 hours; sitting on the Sendable chip as `3 / 20` it read
+like the selected group's allowance, which it never was.
+
+`Clear selection` deactivates the groups this bar set and nothing else, so
+the pipeline's default `My Pipeline` scope survives it.
+
+Two things to keep in step when editing: the four chip domains exist both in
+`GGD_BOARD_CHIP_DOMAINS` and in the search view's `ggd_chip_*` filters, and
+the picker fields and named filters are matched by name between
+`ggd_quick_filters.js` and `views/crm_lead_views.xml`.
+
+One OWL detail worth knowing before touching the template: a Dropdown's
+content slot is rendered in a popover that captures the parent's render
+context when it opens, so a `t-foreach` **in the parent** whose loop
+variable is used **inside** the slot goes stale. The bar renders the
+pickers that way and gets away with it only because the component re-renders
+on every `searchModel` update; if that changes, move the loop inside the
+slot or give each picker a component of its own.
 
 ### The card
 
@@ -176,15 +217,19 @@ All of it is in `odoo/addons/ggd_crm/static/src/`:
 | `ggd_navbar.js` and `.xml` | the top bar: mark, wordmark, lit section, search button. |
 | `ggd_ring_field.js` and `.xml` | the `ggd_ring` field widget: a conic-gradient ring for the fit score, 64px on the form and 30px with `options="{'size': 'sm'}"` in list rows, or the number and a 46x5 bar with `options="{'variant': 'bar'}"` on kanban cards. |
 | `ggd_icons.xml` | the design's SVG icons, as QWeb templates the other files `t-call`. |
-| `ggd_quick_filters.js` and `.xml` | the four chips above the pipeline columns, and the `web.KanbanView` extension that places them. |
+| `ggd_quick_filters.js` and `.xml` | the selection bar above the pipeline: the country, product-group and company-type pickers, the More menu, the four state chips, the result count, Clear selection and the send-cap label, plus the `web.KanbanView` and `web.ListView` extensions that place it. |
 | `ggd_kanban_header.xml` | the card count beside the column title, for `crm.lead` only. |
 
 The views that use the widgets:
 
 - `views/crm_lead_views.xml`: the status strip above the opportunity title
   (ring, pills, approval line, send key), the kanban card (subtitle, score
-  bar, pills), the `ggd_board_state` progress bar on the column header, and
-  the four `ggd_chip_*` filters behind the quick-filter chips.
+  bar, pills), the `ggd_board_state` progress bar on the column header, the
+  four `ggd_chip_*` filters behind the state chips, and the search fields and
+  named filters behind the selection bar's pickers and More menu.
+- `views/ggd_lead_bulk_action_views.xml`: the three bulk-action dialogs. They
+  are ordinary Odoo wizard forms and carry no theme of their own; the alert
+  blocks and the footer are Bootstrap classes the theme already paints.
 - `views/ggd_review_desk_views.xml`: badge widgets with `decoration-*`
   attributes on the status columns.
 

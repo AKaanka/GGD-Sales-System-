@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The product groups GGD starts with.
+
+        They are a starting point, not the list. Kaan renames, reorders,
+        adds and archives them from CRM > Configuration > Pipeline > Product
+        groups, and noupdate keeps every one of those edits across an addon
+        upgrade - without it, a rename would be silently undone the next time
+        the module is updated, which is the surest way to make a person stop
+        trusting a configuration screen.
+    -->
+    <data noupdate="1">
+        <record id="product_group_wire" model="ggd.product.group">
+            <field name="name">Wire</field>
+            <field name="sequence">10</field>
+            <field name="color">4</field>
+            <field name="description">Drawn wire, wire rod, mesh, and wire-based products.</field>
+        </record>
+        <record id="product_group_pipe" model="ggd.product.group">
+            <field name="name">Pipe</field>
+            <field name="sequence">20</field>
+            <field name="color">3</field>
+            <field name="description">Tube and pipe, welded or seamless, and pipe fittings.</field>
+        </record>
+        <record id="product_group_fasteners" model="ggd.product.group">
+            <field name="name">Fasteners</field>
+            <field name="sequence">30</field>
+            <field name="color">6</field>
+            <field name="description">Bolts, nuts, screws, anchors, and connecting elements.</field>
+        </record>
+        <record id="product_group_machinery" model="ggd.product.group">
+            <field name="name">Machinery</field>
+            <field name="sequence">40</field>
+            <field name="color">1</field>
+            <field name="description">Production machinery and equipment, and its spare parts.</field>
+        </record>
+    </data>
+</odoo>

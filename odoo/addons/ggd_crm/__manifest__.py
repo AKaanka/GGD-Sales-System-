@@ -1,7 +1,7 @@
 {
     "name": "Germany Growth Desk CRM Controls",
     "summary": "Qualification, outreach approval, reply analysis, and AI audit fields for GGD",
-    "version": "19.0.1.22.0",
+    "version": "19.0.1.23.0",
     "category": "Sales/CRM",
     "author": "Germany Growth Desk",
     "license": "LGPL-3",
@@ -9,8 +9,11 @@
     "data": [
         "security/ggd_security.xml",
         "data/ggd_config_parameter.xml",
+        "data/ggd_product_group.xml",
+        "views/ggd_product_group_views.xml",
         "views/crm_lead_views.xml",
         "views/ggd_review_desk_views.xml",
+        "views/ggd_lead_bulk_action_views.xml",
     ],
     "assets": {
         "web.assets_backend": [

@@ -54,16 +54,157 @@ Keep `Do Not Contact` as a visible stage and also select the `Do not contact` ch
 
 The approval button refuses approval when the contact basis is missing or the opportunity is marked `Do not contact`.
 
+## Working views: country, product groups, and the selection bar
+
+Since addon 19.0.1.23.0 the pipeline can be narrowed to the customers being
+worked on - "Türkiye + Wire + Manufacturer" - and that selection can be saved,
+reopened, and acted on in bulk. Nothing about the sales stages changed: the
+kanban columns are still the pipeline in the table above, and the selection
+filters the cards inside them.
+
+### Where the classification lives
+
+Four dimensions, and each one uses a single field rather than a second record
+of the same fact:
+
+| Dimension | Field | Notes |
+| --- | --- | --- |
+| Country | `country_id` (`Country` on the opportunity) | Where the company is. Odoo's own field, filled from the linked company. This is not a target market; there is no target-market field. |
+| Product group | `ggd_product_group_ids` (`Product groups`) | The managed list below. Several per opportunity. |
+| Company type | `ggd_company_type` (`Company type`) | Manufacturer, Distributor, or Wholesaler. |
+| Lead source | `source_id` (`Source`) | Odoo's own UTM source: create `Trade fair`, `Referral`, `Research` and pick one. |
+
+The free-text `Product / capability focus` paragraph is untouched by all of
+this and is never rewritten from a group. It is what a researcher wrote about
+the company; the group is the shelf it is filed on.
+
+### Managing product groups
+
+**Settings must be in developer-free normal use: CRM > Configuration >
+Pipeline > Product groups.** The menu is visible to a Sales Administrator.
+
+The addon installs four to start with - `Wire`, `Pipe`, `Fasteners`,
+`Machinery` - and every edit survives an addon upgrade. A Sales Administrator
+may add a group, rename one, reorder them, and archive one.
+
+**Retire a group by archiving it. Nobody may delete one**, including the
+administrator: deleting would take the links with it and quietly rewrite what
+an opportunity was once classified as. An archived group
+
+- disappears from the pickers and from the bulk action, so nothing new can be
+  filed under it;
+- stays visible on every opportunity that already carried it;
+- leaves those opportunities findable through the **Only archived product
+  groups** filter, which is the case that would otherwise hide - the record
+  looks classified and appears under no live group.
+
+### Narrowing the pipeline
+
+Above the board (and above the list) sits the selection bar:
+
+`Country ▾  Product group ▾  Company type ▾  More ▾ | the four state chips | N leads · Clear selection · Daily send cap`
+
+- Several values inside one picker mean **either** (Türkiye or Poland); values
+  in two pickers mean **both** (Türkiye and Wire). An opportunity in two
+  product groups matches once and is counted once.
+- Every control leaves an ordinary Odoo facet behind, so the same selection
+  can be built or edited from the search bar, and the Filters menu shows it.
+- The four state chips - Sendable today, Needs review, Unresolved claim,
+  Replies - now count **inside the current selection**, so they never
+  contradict the board.
+- **Daily send cap** is printed apart from the chips and labelled
+  *system-wide*, because it limits outbound send claims across the whole
+  installation in any 24 hours. It is not a quota for the selected group.
+- **Clear selection** undoes what the bar set and leaves the default
+  `My Pipeline` scope alone.
+- **More** holds the follow-up states and the classification gaps.
+
+The selection survives a switch between kanban and list, which is how the
+working flow ends: narrow on the board, switch to the list, tick rows, act.
+
+### What the follow-up states are derived from
+
+None of these is a stored status anyone has to maintain. Each is a question
+asked of records the system already keeps:
+
+| Filter | Derived from |
+| --- | --- |
+| Not contacted | `ggd_send_confirmed_at` is empty **and** `ggd_last_reply_received_at` is empty - Odoo has confirmed no send, and nobody has written in. A prepared draft is not contact and does not count. |
+| Awaiting a reply | `ggd_delivery_status = accepted` **and** no reply recorded. The same domain as the review desk's *Sent, no reply yet*. |
+| Follow-up due or late | Odoo's own `activity_state` is `today` or `overdue` - the next scheduled activity is due today or is late. |
+
+And the two gaps: **Country missing** is an empty `country_id`; **Product
+group missing** is `ggd_product_group_state = none`.
+
+### Saving a view
+
+The selection bar drives ordinary search filters, so Odoo's own favourites
+save it:
+
+1. Build the selection.
+2. Open the search dropdown (the small caret at the right of the search box).
+3. Under **Favorites**, type a name - `Türkiye - wire makers` - and save it.
+
+A saved view is a live filter, not a snapshot: reopening it later includes
+every matching opportunity created since. Reopen it from the same Favorites
+list; rename or remove it with the pencil beside its name.
+
+### The three bulk actions
+
+Tick rows in the list, then **Actions**. Each one shows what is selected and
+what will change before anything is written, and reports applied and blocked
+counts with reasons afterwards. Blocked records are named as blocked - there
+is no silent partial success - and only the ticked rows are ever touched.
+
+1. **Add product groups.** Adds to whatever each opportunity already carries;
+   it never replaces or removes. A `Do not contact` opportunity may still be
+   classified - suppression stops outreach, not filing.
+2. **Change stage.** Offers only the working stages, and applies the same
+   rules the assistant is held to (issue #65): no won stage, and *Contacted*
+   needs an Odoo-confirmed send or a recorded manual contact. *Reply
+   Received*, *Won*, *Lost* and *Do Not Contact* are a person's decision on
+   the opportunity itself and are not offered.
+3. **Schedule a follow-up.** One activity per selected opportunity, with the
+   type, responsible person, due date and summary you choose. It sends no
+   email and starts no outbound workflow, and pressing Apply twice does not
+   book it twice.
+
+All three obey Odoo's own record access: an opportunity you may not write is
+reported as blocked and left alone, whether the call comes from the button or
+from the JSON-2 API.
+
+### Classifying the records you already have
+
+Nothing is guessed from the product-focus paragraph, so existing records
+arrive unclassified and are meant to be worked through:
+
+1. Open the pipeline and switch to the list.
+2. **More > Product group missing** (and **Country missing** for the other
+   gap).
+3. Read the `Product / capability focus` column or open a record, then tick
+   the rows that belong together.
+4. **Actions > Add product groups**, pick the group, apply.
+5. Repeat until the filter is empty. Country is edited on the opportunity's
+   address, or on the linked company, as it always was.
+
+Do the same with **Only archived product groups** after retiring a group, to
+re-file the records it left behind.
+
 ## Recommended tags
+
+Company type and lead source have fields of their own now (see the table
+above); use those rather than a tag, so they can be counted. Tags stay useful
+for everything that has no field:
 
 - `Turkey to Germany`
 - `Germany to Turkey`
-- `Manufacturer`
-- `Distributor`
 - `Trade fair`
 - `Inbound`
 - `Referral`
 - industry tags such as `Packaging`, `Machinery`, or `Building products`
+
+Tags already on records are left exactly as they are; nothing was migrated or
+deleted.
 
 ## Automation service user
 

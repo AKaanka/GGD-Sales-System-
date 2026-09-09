@@ -1000,6 +1000,75 @@ body,
     svg { display: block; }
 }
 
+// The three dimension pickers and the More menu wear the chip, with a caret
+// instead of a count when nothing is picked. Same height, same radius: the
+// bar reads as one row of controls rather than two kinds of thing.
+.ggd_picker {
+    .ggd_caret {
+        width: 0;
+        height: 0;
+        margin-left: 2px;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 4px solid currentColor;
+        opacity: 0.7;
+    }
+}
+
+// Only the size and the two labels: the dropdowns block above already gives
+// every menu in the database the popover's glass, radius, shadow and padding.
+.ggd_picker_menu {
+    min-width: 220px;
+    max-height: 60vh;
+    overflow-y: auto;
+    .ggd_picker_title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ggd-faint);
+        padding: 8px 10px 4px;
+    }
+    .ggd_picker_empty {
+        font-size: 12px;
+        color: var(--ggd-faint);
+        padding: 10px;
+    }
+}
+
+// The count, the way out, and the cap. Pushed to the far end of the bar, so
+// the left of the row is what the user chose and the right is what it came to.
+.ggd_bar_sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background: var(--ggd-border);
+}
+.ggd_bar_end {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--ggd-muted);
+    white-space: nowrap;
+    b { color: var(--ggd-text); font-variant-numeric: tabular-nums; }
+}
+.ggd_bar_clear {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ggd-accent);
+    cursor: pointer;
+    &:hover { text-decoration: underline; }
+    &:focus-visible { outline: none; box-shadow: 0 0 0 3px RGBA(var(--ggd-accent-rgb), 0.35); }
+}
+.ggd_bar_cap {
+    color: var(--ggd-faint);
+}
+
 // ------------------------------------------------------------- list
 
 // A table wider than the panel scrolls inside it. This was overflow: hidden,

@@ -2,17 +2,94 @@
 <templates xml:space="preserve">
 
     <t t-name="ggd_crm.QuickFilters">
-        <div t-if="chips.length" class="ggd_quick_filters">
+        <div t-if="!isEmpty" class="ggd_quick_filters">
+
+            <!-- The dimensions. One dropdown per search-view field; ticking
+                 several values inside one asks for any of them, and ticking
+                 values in two asks for both. -->
+            <Dropdown t-foreach="pickers" t-as="picker" t-key="picker.key"
+                      menuClass="'ggd_picker_menu'" position="'bottom-start'">
+                <button type="button" class="ggd_chip ggd_picker"
+                        t-att-class="{ 'ggd_chip--on': picker.active }"
+                        t-att-aria-expanded="'false'">
+                    <span t-esc="picker.label"/>
+                    <span class="ggd_chip_n" t-if="picker.active"
+                          t-esc="picker.values.filter(v => v.active).length"/>
+                    <span class="ggd_caret"/>
+                </button>
+                <t t-set-slot="content">
+                    <div t-if="!picker.values.length" class="ggd_picker_empty">
+                        Nothing to choose from yet.
+                    </div>
+                    <CheckboxItem t-foreach="picker.values" t-as="option"
+                                  t-key="picker.key + '-' + option.id"
+                                  class="{ 'o_menu_item text-truncate': true, selected: option.active }"
+                                  checked="option.active"
+                                  closingMode="'none'"
+                                  onSelected="() => this.toggleValue(picker, option)">
+                        <t t-esc="option.name"/>
+                    </CheckboxItem>
+                </t>
+            </Dropdown>
+
+            <!-- Everything else the search view offers this bar, in one menu
+                 rather than four more chips: these are asked far less often
+                 than a country or a product group. -->
+            <Dropdown t-if="moreGroups.length" menuClass="'ggd_picker_menu'" position="'bottom-start'">
+                <button type="button" class="ggd_chip ggd_picker"
+                        t-att-class="{ 'ggd_chip--on': moreActiveCount }">
+                    <span>More</span>
+                    <span class="ggd_chip_n" t-if="moreActiveCount" t-esc="moreActiveCount"/>
+                    <span class="ggd_caret"/>
+                </button>
+                <t t-set-slot="content">
+                    <t t-foreach="moreGroups" t-as="group" t-key="group.title">
+                        <div class="ggd_picker_title" t-esc="group.title"/>
+                        <CheckboxItem t-foreach="group.filters" t-as="filter" t-key="filter.name"
+                                      class="{ 'o_menu_item text-truncate': true, selected: filter.active }"
+                                      checked="filter.active"
+                                      closingMode="'none'"
+                                      onSelected="() => this.toggleSearchItem(filter)">
+                            <t t-esc="filter.label"/>
+                        </CheckboxItem>
+                    </t>
+                </t>
+            </Dropdown>
+
+            <span class="ggd_bar_sep" t-if="chips.length"/>
+
+            <!-- The four state chips. Their counts are inside the selection
+                 above, so they never contradict what is on the board. -->
             <button t-foreach="chips" t-as="chip" t-key="chip.id"
                     type="button"
                     class="ggd_chip"
                     t-att-class="{ 'ggd_chip--on': chip.active, 'ggd_chip--empty': chip.empty }"
                     t-att-aria-pressed="chip.active ? 'true' : 'false'"
-                    t-on-click="() => this.toggle(chip)">
+                    t-on-click="() => this.toggleSearchItem(chip)">
                 <t t-if="chip.check" t-call="ggd_crm.icon.check"/>
                 <span t-esc="chip.label"/>
                 <span class="ggd_chip_n" t-esc="chip.counter"/>
             </button>
+
+            <div class="ggd_bar_end">
+                <span class="ggd_bar_count" t-if="matching !== null">
+                    <b t-esc="matching"/>
+                    <t t-if="matching === 1"> lead</t>
+                    <t t-else=""> leads</t>
+                </span>
+                <button t-if="hasSelection" type="button" class="ggd_bar_clear"
+                        t-on-click="() => this.clear()">
+                    Clear selection
+                </button>
+                <!-- Deliberately apart from the chips and labelled. It caps
+                     send claims across the whole installation per 24 hours;
+                     printed on the Sendable chip it read as this group's
+                     allowance, which it never was. -->
+                <span class="ggd_bar_cap" t-if="cap !== null"
+                      title="A limit on outbound send claims across the whole system in any 24 hours. It is not a limit on this selection.">
+                    Daily send cap <b t-esc="cap"/> · system-wide
+                </span>
+            </div>
         </div>
     </t>
 
@@ -21,6 +98,14 @@
          horizontal padding, but outside .o_kanban_renderer so it does not
          scroll sideways with the columns. -->
     <t t-name="ggd_crm.KanbanView" t-inherit="web.KanbanView" t-inherit-mode="extension">
+        <xpath expr="//t[@t-component='props.Renderer']" position="before">
+            <GgdQuickFilters t-if="props.resModel === 'crm.lead'"/>
+        </xpath>
+    </t>
+
+    <!-- And over the list, so the selection a salesperson is working in stays
+         on screen while they tick the rows a bulk action will change. -->
+    <t t-name="ggd_crm.ListView" t-inherit="web.ListView" t-inherit-mode="extension">
         <xpath expr="//t[@t-component='props.Renderer']" position="before">
             <GgdQuickFilters t-if="props.resModel === 'crm.lead'"/>
         </xpath>

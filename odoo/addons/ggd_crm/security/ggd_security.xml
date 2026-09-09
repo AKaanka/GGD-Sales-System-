@@ -49,4 +49,80 @@
         <field name="perm_write" eval="0"/>
         <field name="perm_unlink" eval="0"/>
     </record>
+
+    <!--
+        Product groups (issue #67).
+
+        Every internal user reads them, because a group that cannot be read
+        cannot be filtered on and the pipeline selector would be empty for
+        everybody but an administrator. Only a Sales Administrator adds or
+        renames one: the list is a shared vocabulary, and a vocabulary each
+        salesperson can extend at will stops being one.
+
+        Nobody deletes one, including the administrator. Archiving is the
+        supported retirement, and it is deliberately not the same thing:
+        archiving hides the group from the pickers and leaves every historical
+        link in place, while a delete would take the m2m rows with it and
+        quietly rewrite what a lead was once classified as. A genuine repair
+        is still possible from the shell as the superuser, deliberately.
+    -->
+    <record id="access_ggd_product_group_user" model="ir.model.access">
+        <field name="name">ggd.product.group: read</field>
+        <field name="model_id" ref="model_ggd_product_group"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="0"/>
+        <field name="perm_write" eval="0"/>
+        <field name="perm_unlink" eval="0"/>
+    </record>
+
+    <record id="access_ggd_product_group_manager" model="ir.model.access">
+        <field name="name">ggd.product.group: add, rename and archive</field>
+        <field name="model_id" ref="model_ggd_product_group"/>
+        <field name="group_id" ref="sales_team.group_sale_manager"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_unlink" eval="0"/>
+    </record>
+
+    <!--
+        The three bulk actions.
+
+        These are transient records that hold a selection and a set of
+        options; they enforce nothing themselves. Every rule that matters -
+        who may write which opportunity, which stage may be reached, what
+        Do not contact stops - is checked against crm.lead when Apply runs,
+        so giving a salesperson full rights on the wizard grants no power
+        they did not already have on the records they own.
+    -->
+    <record id="access_ggd_lead_group_wizard" model="ir.model.access">
+        <field name="name">ggd.lead.group.wizard: salesperson</field>
+        <field name="model_id" ref="model_ggd_lead_group_wizard"/>
+        <field name="group_id" ref="sales_team.group_sale_salesman"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
+
+    <record id="access_ggd_lead_stage_wizard" model="ir.model.access">
+        <field name="name">ggd.lead.stage.wizard: salesperson</field>
+        <field name="model_id" ref="model_ggd_lead_stage_wizard"/>
+        <field name="group_id" ref="sales_team.group_sale_salesman"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
+
+    <record id="access_ggd_lead_followup_wizard" model="ir.model.access">
+        <field name="name">ggd.lead.followup.wizard: salesperson</field>
+        <field name="model_id" ref="model_ggd_lead_followup_wizard"/>
+        <field name="group_id" ref="sales_team.group_sale_salesman"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
 </odoo>
