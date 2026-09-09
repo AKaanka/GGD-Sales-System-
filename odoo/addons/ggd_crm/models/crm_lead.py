@@ -170,6 +170,107 @@ class CrmLead(models.Model):
     ggd_product_focus = fields.Text(string="Product / capability focus")
     ggd_source_url = fields.Char(string="Research source URL")
 
+    # ------------------------------------------------------------------
+    # Working classification (issue #67)
+    #
+    # Three dimensions a salesperson narrows the board by, and one rule
+    # behind all three: if Odoo already records the fact, use Odoo's field.
+    #
+    #   Country      country_id, which the CRM already keeps and fills from
+    #                the linked company. Where the firm is, never a target
+    #                market - there is no target-market field and this is
+    #                not one.
+    #   Product      ggd_product_group_ids, the new managed list. A lead may
+    #                be in several; it stays one record and is counted once.
+    #   Lead source  source_id, the UTM source crm.lead already carries.
+    #
+    # ggd_product_focus is untouched by every one of them. It is the
+    # paragraph a researcher wrote; the group is the shelf it is filed on.
+    # ------------------------------------------------------------------
+
+    ggd_product_group_ids = fields.Many2many(
+        "ggd.product.group",
+        "ggd_lead_product_group_rel",
+        "lead_id",
+        "group_id",
+        string="Product groups",
+        # Archiving a group must not quietly unfile every lead that carried
+        # it. The relation rows survive an archive on their own, but Odoo
+        # filters inactive records out of an x2many when it turns the cache
+        # into a recordset (Field.convert_to_record), so without this the
+        # group would vanish from the record and the history would be gone as
+        # far as anybody could tell. The views restrict what may be *added*
+        # to the live ones instead.
+        context={"active_test": False},
+        help=(
+            "What this company makes or sells, from the managed list. Several "
+            "are allowed. Does not replace the product focus paragraph."
+        ),
+    )
+
+    # Manufacturer, distributor and wholesaler were three of the tags
+    # docs/ODOO-SETUP.md used to recommend. Tags are free text with a
+    # colour, so "Distributor", "distributor" and "Distributer" were three
+    # different answers to one question and none of them could be counted.
+    # This is the same question asked once, and the old tags are left alone.
+    GGD_COMPANY_TYPES = [
+        ("manufacturer", "Manufacturer"),
+        ("distributor", "Distributor"),
+        ("wholesaler", "Wholesaler"),
+    ]
+    ggd_company_type = fields.Selection(
+        selection=GGD_COMPANY_TYPES,
+        string="Company type",
+        index=True,
+        help="What the company is in the chain: it makes, it distributes, or it wholesales.",
+    )
+
+    # Which of the three classification states a record is in, stored so the
+    # board can find the gaps in one indexed search rather than by reading
+    # every m2m row:
+    #
+    #   none      no product group at all - the records still to be filed.
+    #   archived  every group it carries has been archived. Archiving is not
+    #             deletion, so the link survived; without this value those
+    #             leads would silently look classified and never appear in
+    #             any picker.
+    #   active    at least one live group.
+    GGD_PRODUCT_GROUP_STATES = [
+        ("none", "Not classified"),
+        ("archived", "Archived groups only"),
+        ("active", "Classified"),
+    ]
+    ggd_product_group_state = fields.Selection(
+        selection=GGD_PRODUCT_GROUP_STATES,
+        string="Product classification",
+        compute="_compute_ggd_product_group_state",
+        store=True,
+        index=True,
+        readonly=True,
+        help=(
+            "Whether this opportunity carries a live product group, only "
+            "archived ones, or none. Derived; never written."
+        ),
+    )
+
+    @api.depends("ggd_product_group_ids", "ggd_product_group_ids.active")
+    def _compute_ggd_product_group_state(self):
+        """Read with active_test off, because archived links are the point.
+
+        Many2many.read already forces active_test=False, so `groups` below
+        holds the archived ones too. That is deliberate: a lead whose only
+        group was archived is neither classified nor unclassified, and
+        collapsing it into either would hide it.
+        """
+        for lead in self:
+            groups = lead.ggd_product_group_ids
+            if not groups:
+                lead.ggd_product_group_state = "none"
+            elif any(group.active for group in groups):
+                lead.ggd_product_group_state = "active"
+            else:
+                lead.ggd_product_group_state = "archived"
+
     # Contact provenance. Odoo already has somewhere to put a contact's name,
     # role, address and number; what it has nowhere to put is where those came
     # from and when. Without that, an address read off a public page and an
@@ -658,24 +759,86 @@ class CrmLead(models.Model):
     }
 
     @api.model
-    def ggd_board_chip_counts(self):
-        """Counts for the pipeline's quick-filter chips, in one call.
+    def ggd_board_chip_counts(self, domain=None):
+        """Counts for the pipeline's selection bar, in one call.
+
+        `domain` is the search that is on screen - country, product group,
+        stage, whatever the user has picked. Every chip is counted inside it,
+        so a chip answers "of the records I am looking at, how many are in
+        this state" rather than "how many are there in the database". Before
+        issue #67 it was the second, which made the bar contradict the board
+        the moment a group was selected.
+
+        Also returned:
+
+          matching  how many records the selection holds, which is the number
+                    the bar prints next to the facets and the number a bulk
+                    action is about to be offered.
+          cap       the daily send cap. It is a system-wide limit on claims
+                    per 24 hours and has nothing to do with the selection;
+                    the bar labels it so, because printed beside a group
+                    count it read like that group's quota.
 
         Read-only and unprivileged: search_count applies the user's own record
-        rules, so a chip never claims a record the user cannot open. The cap is
-        read with sudo because ir.config_parameter is not readable by a plain
-        user, and the number is not a secret - it is printed on the chip.
+        rules, so no count here can describe a record the user may not open,
+        whatever domain is passed in. The cap is read with sudo because
+        ir.config_parameter is not readable by a plain user, and the number is
+        not a secret - it is printed on the chip.
         """
+        if domain is None:
+            domain = []
+        if not isinstance(domain, (list, tuple)):
+            raise ValidationError(_("A board selection must be a domain list."))
+        base = [("type", "=", "opportunity")]
+        selection = base + list(domain)
         counts = {
-            key: self.search_count([("type", "=", "opportunity")] + domain)
-            for key, domain in self.GGD_BOARD_CHIP_DOMAINS.items()
+            key: self.search_count(selection + chip)
+            for key, chip in self.GGD_BOARD_CHIP_DOMAINS.items()
         }
+        counts["matching"] = self.search_count(selection)
         try:
             counts["cap"] = self._ggd_daily_send_cap()
         except ValidationError:
             # A malformed cap stops sending; it must not also blank the board.
             counts["cap"] = 0
         return counts
+
+    @api.model
+    def ggd_board_selection_options(self):
+        """What the three pickers on the selection bar offer, in one call.
+
+        None of the three lists carries a count, on purpose. A number in a
+        picker is either scoped to the current selection - in which case
+        choosing Turkey empties the country menu - or it is not, in which case
+        it contradicts everything else on the bar. The counts that matter are
+        on the chips and beside the facets, where they follow the selection.
+
+        Countries are only those that occur on opportunities the user may
+        read, so the menu is short and says nothing about anyone else's
+        pipeline. Product groups are the live ones, in their configured
+        order; an archived group is deliberately absent, and the records that
+        only carry archived groups are reached through the classification
+        filter instead.
+        """
+        used = self._read_group(
+            [("type", "=", "opportunity"), ("country_id", "!=", False)],
+            groupby=["country_id"],
+            aggregates=[],
+        )
+        countries = sorted(
+            ({"id": country.id, "name": country.display_name} for (country,) in used),
+            key=lambda option: option["name"],
+        )
+        groups = self.env["ggd.product.group"].search([])
+        return {
+            "countries": countries,
+            "product_groups": [
+                {"id": group.id, "name": group.name} for group in groups
+            ],
+            "company_types": [
+                {"id": value, "name": label} for value, label in self.GGD_COMPANY_TYPES
+            ],
+        }
 
     @api.constrains("ggd_fit_score")
     def _check_ggd_fit_score(self):
@@ -2195,8 +2358,8 @@ class CrmLead(models.Model):
         )
         return self._ggd_action_receipt(action, contact_event_id=event.id)
 
-    def _ggd_action_contacted_blocked(self):
-        """None when Contacted is earned, a rejection when it is only claimed.
+    def _ggd_has_contact_evidence(self):
+        """True when somebody or something can show this contact happened.
 
         Two things count: a send Odoo itself confirmed, and a manual contact
         somebody recorded. A prepared draft counts for nothing, which is the
@@ -2204,20 +2367,69 @@ class CrmLead(models.Model):
         it move a record to Contacted would make the pipeline report outreach
         that never left the building.
         """
+        self.ensure_one()
         if self.ggd_send_confirmed_at and self.ggd_last_confirmed_send_key:
-            return None
-        if self.env["ggd.opportunity.action.log"].search_count(
-            [("lead_id", "=", self.id), ("action", "=", "record_manual_contact")]
-        ):
-            return None
-        return self._ggd_action_reject(
-            "transition_stage",
-            "contact_not_evidenced",
-            _(
-                "Contacted needs an Odoo-confirmed send or a recorded manual "
-                "contact. A saved draft is not contact."
-            ),
+            return True
+        return bool(
+            self.env["ggd.opportunity.action.log"].search_count(
+                [("lead_id", "=", self.id), ("action", "=", "record_manual_contact")]
+            )
         )
+
+    def _ggd_stage_change_blocker(self, stage):
+        """None when this record may move to `stage`, else (code, message).
+
+        The one place the stage rules live. The connector's transition_stage
+        action asks it, and so does the bulk stage change on the list view
+        (issue #67), because a rule enforced on one route and not the other is
+        not a rule - and JSON-2 exposes both.
+
+        What it does not cover, because the callers already have to: the
+        caller's own optimistic concurrency, and Odoo access rights. Both are
+        checked before this is reached.
+        """
+        self.ensure_one()
+        if not self.active:
+            return (
+                "archived",
+                _("This opportunity is archived. Restore it in Odoo first."),
+            )
+        if self.ggd_do_not_contact:
+            return (
+                "suppressed",
+                _("This opportunity is marked Do not contact."),
+            )
+        target = (stage.name or "").strip()
+        allowed = {name.lower() for name in self.GGD_ACTION_STAGES}
+        if target.lower() not in allowed:
+            return (
+                "stage_not_allowed",
+                _(
+                    "'%(stage)s' is not one of the stages this action may set. "
+                    "Reply Received, Won, Lost and Do Not Contact are a "
+                    "person's decision, made on the record itself.",
+                    stage=target or _("no stage"),
+                ),
+            )
+        if stage.is_won:
+            return (
+                "not_allowed",
+                _(
+                    "'%(stage)s' is configured as a won stage, and a commercial "
+                    "outcome is a person's decision.",
+                    stage=target,
+                ),
+            )
+        if target.lower() == self.GGD_ACTION_STAGE_CONTACTED.lower():
+            if not self._ggd_has_contact_evidence():
+                return (
+                    "contact_not_evidenced",
+                    _(
+                        "Contacted needs an Odoo-confirmed send or a recorded "
+                        "manual contact. A saved draft is not contact."
+                    ),
+                )
+        return None
 
     def _ggd_action_transition_stage(self, payload):
         """Move between documented non-terminal stages, and nowhere else."""
@@ -2259,20 +2471,10 @@ class CrmLead(models.Model):
                     stage=target,
                 ),
             )
-        if stage.is_won:
-            return self._ggd_action_reject(
-                action,
-                "not_allowed",
-                _(
-                    "'%(stage)s' is configured as a won stage, and a commercial "
-                    "outcome is a person's decision.",
-                    stage=target,
-                ),
-            )
-        if target == self.GGD_ACTION_STAGE_CONTACTED:
-            blocked = self._ggd_action_contacted_blocked()
-            if blocked is not None:
-                return blocked
+        blocker = self._ggd_stage_change_blocker(stage)
+        if blocker is not None:
+            reason_code, message = blocker
+            return self._ggd_action_reject(action, reason_code, message)
         previous = current or _("no stage")
         self.write({"stage_id": stage.id})
         self.message_post(

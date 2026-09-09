@@ -84,6 +84,31 @@
 
             <xpath expr="//notebook" position="inside">
                 <page string="GGD Intelligence" name="ggd_intelligence">
+                    <!-- How this record is filed, and nothing else. The
+                         product-focus paragraph below is the description a
+                         researcher wrote and is never rewritten from these;
+                         these are the shelves it is filed on. Country is
+                         shown read-only because it is the CRM's own field,
+                         edited in the address block above - there is one
+                         country on an opportunity and this is it. -->
+                    <group string="Working classification" col="2">
+                        <group>
+                            <!-- The domain limits what may be added; it does
+                                 not limit what is shown, so an archived group
+                                 a record already carries stays visible. -->
+                            <field name="ggd_product_group_ids"
+                                   widget="many2many_tags"
+                                   domain="[('active', '=', True)]"
+                                   options="{'color_field': 'color', 'no_create': True}"/>
+                            <field name="ggd_product_group_state" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="ggd_company_type"/>
+                            <field name="country_id" string="Country (from the address)"
+                                   readonly="1" options="{'no_open': True}"/>
+                        </group>
+                    </group>
+
                     <group string="Qualification" col="2">
                         <group>
                             <field name="ggd_industry"/>
@@ -283,6 +308,24 @@
         </field>
     </record>
 
+    <!-- The list is where the bulk actions are used, so the two things a
+         bulk action changes are available as columns. Both are optional and
+         hidden by default: the stock list is already wide, and a column
+         nobody asked for is a column in the way. -->
+    <record id="crm_lead_view_list_ggd_classification" model="ir.ui.view">
+        <field name="name">crm.lead.list.ggd.classification</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='stage_id']" position="before">
+                <field name="ggd_product_group_ids" string="Product groups"
+                       optional="hide" widget="many2many_tags"
+                       options="{'color_field': 'color'}"/>
+                <field name="ggd_company_type" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
     <!-- The four filters behind the pipeline's quick-filter chips. They live
          in the search view rather than in the chip component because a chip
          has to leave a facet behind: a user who clicks "Needs review" and then
@@ -296,6 +339,21 @@
         <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
         <field name="arch" type="xml">
             <xpath expr="//search/field[1]" position="before">
+                <!-- The three dimensions the board is narrowed by. They are
+                     search *fields*, not filters, because Odoo gives each
+                     field its own facet group: several values inside one
+                     field are ORed, and two different fields are ANDed. That
+                     is exactly "Turkey or Poland, and Wire, and Manufacturer",
+                     without a line of code. country_id is already in the
+                     stock search view above; source_id and these two are not.
+
+                     No group-by is offered on the product group. Grouping a
+                     list by a many2many prints a lead once per group it is
+                     in, and a lead in Wire and Pipe must be shown once and
+                     counted once. -->
+                <field name="ggd_product_group_ids" string="Product group"/>
+                <field name="ggd_company_type"/>
+                <field name="source_id" string="Lead source"/>
                 <filter name="ggd_chip_sendable" string="Sendable today"
                         domain="[('ggd_outreach_approved','=',True),
                                  ('ggd_draft_status','=','approved'),
@@ -312,7 +370,60 @@
                         domain="[('ggd_delivery_status','=','claimed')]"/>
                 <filter name="ggd_chip_replies" string="Replies"
                         domain="[('ggd_last_reply_received_at','!=',False)]"/>
+
                 <separator/>
+
+                <!-- Follow-up state. Derived, never stored a second time -
+                     every one of the three is a question asked of records the
+                     addon already keeps:
+
+                       not contacted   Odoo has confirmed no send, and nobody
+                                       has written in. A prepared draft is not
+                                       contact, so it does not count here
+                                       either.
+                       awaiting reply  the same domain the review desk's
+                                       "Sent, no reply yet" filter uses: the
+                                       delivery was accepted and no reply has
+                                       arrived.
+                       follow-up due   Odoo's own activity state. The next
+                                       scheduled activity is due today or is
+                                       late.
+
+                     The three are one group, so picking two asks for either. -->
+                <filter name="ggd_follow_not_contacted" string="Not contacted"
+                        domain="[('ggd_send_confirmed_at','=',False),
+                                 ('ggd_last_reply_received_at','=',False)]"/>
+                <filter name="ggd_follow_awaiting_reply" string="Awaiting a reply"
+                        domain="[('ggd_delivery_status','=','accepted'),
+                                 ('ggd_last_reply_received_at','=',False)]"/>
+                <filter name="ggd_follow_up_due" string="Follow-up due or late"
+                        domain="[('activity_state','in',['today','overdue'])]"/>
+
+                <separator/>
+
+                <!-- The gaps. Classification is never guessed from the
+                     product-focus paragraph, so records simply arrive
+                     unclassified and have to be findable. The third one is
+                     the case that would otherwise hide: archiving a group
+                     leaves it on every lead that carried it, so those leads
+                     look classified and appear in no picker. -->
+                <filter name="ggd_gap_country" string="Country missing"
+                        domain="[('country_id','=',False)]"/>
+                <filter name="ggd_gap_product_group" string="Product group missing"
+                        domain="[('ggd_product_group_state','=','none')]"/>
+                <filter name="ggd_gap_archived_group" string="Only archived product groups"
+                        domain="[('ggd_product_group_state','=','archived')]"/>
+
+                <separator/>
+            </xpath>
+
+            <!-- Group-by. Country and company type only, for the reason given
+                 above the product-group field. -->
+            <xpath expr="//search/group[1]" position="inside">
+                <filter name="ggd_group_by_country" string="Country"
+                        context="{'group_by': 'country_id'}"/>
+                <filter name="ggd_group_by_company_type" string="Company type"
+                        context="{'group_by': 'ggd_company_type'}"/>
             </xpath>
         </field>
     </record>

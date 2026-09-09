@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The three bulk actions of issue #67, on the list's Actions menu.
+
+        Each form has the same two halves and the same promise. Above the
+        line: what was selected, what the change is, how many records it will
+        reach and how many it will not, with the reasons - all of it before
+        anything is written. Below: after Apply, what actually happened.
+
+        They are bound to crm.lead through binding_model_id, so they appear
+        only when rows are ticked, and they read only the ticked rows.
+    -->
+
+    <!-- 1. Add product groups -->
+
+    <record id="ggd_lead_group_wizard_view_form" model="ir.ui.view">
+        <field name="name">ggd.lead.group.wizard.form</field>
+        <field name="model">ggd.lead.group.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add product groups">
+                <field name="state" invisible="1"/>
+                <field name="lead_ids" invisible="1"/>
+                <group invisible="state == 'done'">
+                    <field name="group_ids" widget="many2many_tags"
+                           options="{'color_field': 'color', 'no_create': True}"/>
+                </group>
+                <div class="alert alert-info" role="status" invisible="state == 'done'">
+                    <p class="mb-1">
+                        Selected: <field name="selected_count" class="fw-bold"/> ·
+                        will be changed: <field name="ready_count" class="fw-bold"/>
+                    </p>
+                    <p class="mb-0">
+                        The groups above are <b>added</b> to whatever each opportunity already
+                        carries. Nothing is replaced or removed.
+                    </p>
+                </div>
+                <div class="alert alert-warning" role="alert"
+                     invisible="state == 'done' or blocked_count == 0">
+                    <p class="mb-1">Will not be changed: <field name="blocked_count" class="fw-bold"/></p>
+                    <field name="blocked_summary" nolabel="1" readonly="1"/>
+                </div>
+                <div invisible="state != 'done'">
+                    <field name="result_summary" nolabel="1" readonly="1"/>
+                </div>
+                <footer>
+                    <button name="action_ggd_apply" type="object" string="Add groups"
+                            class="btn-primary" invisible="state == 'done'"
+                            data-hotkey="q"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"
+                            invisible="state == 'done'" data-hotkey="x"/>
+                    <button string="Close" class="btn-primary" special="cancel"
+                            invisible="state != 'done'" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ggd_lead_group_wizard_action" model="ir.actions.act_window">
+        <field name="name">Add product groups</field>
+        <field name="res_model">ggd.lead.group.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="crm.model_crm_lead"/>
+        <field name="binding_view_types">list,kanban</field>
+    </record>
+
+    <!-- 2. Change stage -->
+
+    <record id="ggd_lead_stage_wizard_view_form" model="ir.ui.view">
+        <field name="name">ggd.lead.stage.wizard.form</field>
+        <field name="model">ggd.lead.stage.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Change stage">
+                <field name="state" invisible="1"/>
+                <field name="lead_ids" invisible="1"/>
+                <field name="allowed_stage_ids" invisible="1"/>
+                <group invisible="state == 'done'">
+                    <field name="stage_id" options="{'no_create': True, 'no_open': True}"/>
+                </group>
+                <div class="alert alert-info" role="status" invisible="state == 'done'">
+                    <p class="mb-1">
+                        Selected: <field name="selected_count" class="fw-bold"/> ·
+                        will move: <field name="ready_count" class="fw-bold"/>
+                    </p>
+                    <p class="mb-0">
+                        Won, Lost, Reply Received and Do Not Contact are not offered here:
+                        they are a person's decision, taken on the opportunity itself.
+                    </p>
+                </div>
+                <div class="alert alert-warning" role="alert"
+                     invisible="state == 'done' or blocked_count == 0">
+                    <p class="mb-1">Will not move: <field name="blocked_count" class="fw-bold"/></p>
+                    <field name="blocked_summary" nolabel="1" readonly="1"/>
+                </div>
+                <div invisible="state != 'done'">
+                    <field name="result_summary" nolabel="1" readonly="1"/>
+                </div>
+                <footer>
+                    <button name="action_ggd_apply" type="object" string="Change stage"
+                            class="btn-primary" invisible="state == 'done'"
+                            data-hotkey="q"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"
+                            invisible="state == 'done'" data-hotkey="x"/>
+                    <button string="Close" class="btn-primary" special="cancel"
+                            invisible="state != 'done'" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ggd_lead_stage_wizard_action" model="ir.actions.act_window">
+        <field name="name">Change stage</field>
+        <field name="res_model">ggd.lead.stage.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="crm.model_crm_lead"/>
+        <field name="binding_view_types">list,kanban</field>
+    </record>
+
+    <!-- 3. Schedule a follow-up -->
+
+    <record id="ggd_lead_followup_wizard_view_form" model="ir.ui.view">
+        <field name="name">ggd.lead.followup.wizard.form</field>
+        <field name="model">ggd.lead.followup.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Schedule a follow-up">
+                <field name="state" invisible="1"/>
+                <field name="lead_ids" invisible="1"/>
+                <field name="batch_key" invisible="1"/>
+                <group invisible="state == 'done'">
+                    <group>
+                        <field name="activity_type_id" options="{'no_create': True}"/>
+                        <field name="user_id" widget="many2one_avatar_user"
+                               options="{'no_create': True}"/>
+                        <field name="date_deadline"/>
+                    </group>
+                    <group>
+                        <field name="summary" placeholder="e.g. Call about the wire enquiry"/>
+                        <field name="note" placeholder="Optional detail for the assignee."/>
+                    </group>
+                </group>
+                <div class="alert alert-info" role="status" invisible="state == 'done'">
+                    <p class="mb-1">
+                        Selected: <field name="selected_count" class="fw-bold"/> ·
+                        will each get one activity: <field name="ready_count" class="fw-bold"/>
+                    </p>
+                    <p class="mb-0">
+                        This schedules work in Odoo. It sends no email and starts no
+                        outbound workflow, and pressing Apply twice does not book it twice.
+                    </p>
+                </div>
+                <div class="alert alert-warning" role="alert"
+                     invisible="state == 'done' or blocked_count == 0">
+                    <p class="mb-1">Will be skipped: <field name="blocked_count" class="fw-bold"/></p>
+                    <field name="blocked_summary" nolabel="1" readonly="1"/>
+                </div>
+                <div invisible="state != 'done'">
+                    <field name="result_summary" nolabel="1" readonly="1"/>
+                </div>
+                <footer>
+                    <button name="action_ggd_apply" type="object" string="Schedule"
+                            class="btn-primary" invisible="state == 'done'"
+                            data-hotkey="q"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"
+                            invisible="state == 'done'" data-hotkey="x"/>
+                    <button string="Close" class="btn-primary" special="cancel"
+                            invisible="state != 'done'" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ggd_lead_followup_wizard_action" model="ir.actions.act_window">
+        <field name="name">Schedule a follow-up</field>
+        <field name="res_model">ggd.lead.followup.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="crm.model_crm_lead"/>
+        <field name="binding_view_types">list,kanban</field>
+    </record>
+
+</odoo>

@@ -96,6 +96,15 @@ Never use the Odoo master password as your normal Odoo login password.
 
 The extension adds approval, compliance, qualification, reply-analysis, and LLM audit fields to opportunities.
 
+It also gives the pipeline a working view: narrow the board by country,
+product group, company type, lead source and follow-up state; save the
+combination as an Odoo favourite; then act on the rows you tick - add product
+groups, change stage, or schedule a follow-up on all of them at once. The
+product groups are a short list a Sales Administrator keeps under
+**CRM > Configuration > Pipeline > Product groups**. Setup, the filters and
+their derivations, and how to classify the records you already have:
+[docs/ODOO-SETUP.md](docs/ODOO-SETUP.md).
+
 ## 5. Set up n8n
 
 1. Open `http://localhost:5678`.

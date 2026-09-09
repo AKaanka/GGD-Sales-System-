@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Where a Sales Administrator keeps the product vocabulary.
+
+        Deliberately plain, and deliberately not a kanban: this is a short
+        ordered list that is read far more often than it is edited, and the
+        one thing it has to make obvious is what is live and what has been
+        retired.
+    -->
+
+    <record id="ggd_product_group_view_list" model="ir.ui.view">
+        <field name="name">ggd.product.group.list</field>
+        <field name="model">ggd.product.group</field>
+        <field name="arch" type="xml">
+            <list string="Product groups" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="description" optional="show"/>
+                <field name="lead_count" string="Opportunities"/>
+                <field name="color" widget="color_picker" optional="hide"/>
+                <field name="active" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ggd_product_group_view_form" model="ir.ui.view">
+        <field name="name">ggd.product.group.form</field>
+        <field name="model">ggd.product.group</field>
+        <field name="arch" type="xml">
+            <form string="Product group">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_ggd_open_leads" type="object"
+                                class="oe_stat_button" icon="fa-list">
+                            <field name="lead_count" widget="statinfo" string="Opportunities"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="e.g. Wire"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="sequence"/>
+                            <field name="color" widget="color_picker"/>
+                        </group>
+                        <group>
+                            <!-- Archiving is how a group is retired. It leaves
+                                 every historical link on the opportunities that
+                                 carried it; deleting is refused for everyone. -->
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                    </group>
+                    <group string="What belongs here">
+                        <field name="description" nolabel="1"
+                               placeholder="One or two lines telling the next person what to file here."/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="ggd_product_group_view_search" model="ir.ui.view">
+        <field name="name">ggd.product.group.search</field>
+        <field name="model">ggd.product.group</field>
+        <field name="arch" type="xml">
+            <search string="Product groups">
+                <field name="name"/>
+                <filter name="ggd_group_archived" string="Archived"
+                        domain="[('active','=',False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="ggd_product_group_action" model="ir.actions.act_window">
+        <field name="name">Product groups</field>
+        <field name="res_model">ggd.product.group</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ggd_product_group_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add the first product group</p>
+            <p>
+                Product groups are what GGD sells, as a short list a salesperson
+                picks from: Wire, Pipe, Fasteners, Machinery. They are what the
+                pipeline is narrowed by, alongside the country.
+            </p>
+            <p>
+                Retire a group by archiving it, not by deleting it. An archived
+                group disappears from the pickers and stays on every opportunity
+                that already carried it, so no history is rewritten.
+            </p>
+        </field>
+    </record>
+
+    <menuitem
+        id="ggd_product_group_menu"
+        name="Product groups"
+        parent="crm.menu_crm_config_lead"
+        action="ggd_product_group_action"
+        groups="sales_team.group_sale_manager"
+        sequence="5"/>
+
+</odoo>

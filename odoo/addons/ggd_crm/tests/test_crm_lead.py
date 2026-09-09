@@ -2257,11 +2257,20 @@ class TestGgdBoardChipCounts(TransactionCase):
         super().setUpClass()
         cls.Lead = cls.env["crm.lead"]
 
-    def test_the_call_answers_every_chip_and_the_cap(self):
+    def test_the_call_answers_every_chip_the_total_and_the_cap(self):
         counts = self.Lead.ggd_board_chip_counts()
         self.assertEqual(
             set(counts),
-            {"sendable", "needs_review", "unresolved_claim", "replies", "cap"},
+            {
+                "sendable",
+                "needs_review",
+                "unresolved_claim",
+                "replies",
+                # How many records the selection holds. Added with the
+                # selection bar (#67); the bar prints it beside the facets.
+                "matching",
+                "cap",
+            },
         )
         for key, value in counts.items():
             self.assertIsInstance(value, int, key)
